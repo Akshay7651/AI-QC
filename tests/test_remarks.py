@@ -20,7 +20,7 @@ def form(**kw):
 def photos(**kw):
     p = {"_state": "ok", "_n_photos": 3, "photo_status": "OK", "field_photo": "standing crop", "photo_is_form": False,
          "n_form_photos": 0, "n_duplicates": 0, "stamp_dist_m": 6.0, "stamp_date": "14092026", "rotated": False, "remarks": [],
-         "photo_loss": 0}
+         "photo_loss": 0, "photo_conf": "high", "photo_agree": True}
     p.update(kw)
     return p
 
@@ -200,3 +200,14 @@ def test_same_location_remark_verbatim():
     e = ev(gps={"Suggested_Remark": "Same Location - QC Required", "Nearby_Same_Surveyor_25m": 448, "Same_Location_Remark": txt})
     assert "SAME LOCATION: " + txt in e["remark"] and e["verdict"] == "Review" and "same_location" in e["counters"]
     assert "448 same-surveyor records within" not in e["remark"]
+
+
+def test_uncertain_photo_claims_are_not_asserted():
+    """Crop type / flooding / damage / no-crop are only asserted when both photo models agree with high confidence."""
+    p = photos(scene_type="field", crop_present=False, crop_seen="maize", crop_seen_conf=0.9, crop_matches_declared=False,
+               flooded=True, damage_state="lodged", photo_conf="low", photo_agree=False)
+    e = ev(p=p)
+    assert "low confidence - manual check" in e["remark"]
+    assert "does NOT match declared crop" not in e["remark"]
+    assert "Crop mismatch" not in e["flags"] and "No crop in photo" not in e["flags"]
+    assert "Field state vs reported loss" not in e["flags"]

@@ -290,25 +290,32 @@ def evaluate(row, form=None, photos=None, gps=None, data_flags="", risk=None):
                 s += f"; scene: {scene}"
             cs, cconf = photos.get("crop_seen"), _num(photos.get("crop_seen_conf"))
             declared = row.get("crop_name")
+            # Photo-content claims (crop type / flooding / damage / no crop) are only ~60-95% accurate, so they are
+            # asserted as facts only when both independent photo models agree and confidence is high.
+            trusted = photos.get("photo_conf") == "high" and photos.get("photo_agree") is not False
             if cs:
-                lowc = cconf is not None and cconf < LOW_FIELD_CONF
+                lowc = (cconf is not None and cconf < LOW_FIELD_CONF) or not trusted
                 s += f"; crop seen: {cs}" + (" (low confidence)" if lowc else "")
                 if photos.get("crop_matches_declared") is False and not lowc:
                     s += f" - does NOT match declared crop{'' if _blank(declared) else ' ' + str(declared)}"
                     flag("Crop mismatch", "review", "crop in the photo differs from the declared crop")
                 elif photos.get("crop_matches_declared") is True:
                     s += " (matches declared crop)"
-            if photos.get("flooded"):
+            if photos.get("flooded") in (True, "yes"):
                 wf = _num(photos.get("water_frac"))
-                s += "; flooding/waterlogging seen" + (f" (~{wf * 100:.0f}% of the frame)" if wf else "")
+                s += ("; flooding/waterlogging seen" if trusted else "; possible flooding (low confidence - manual check)") + (f" (~{wf * 100:.0f}% of the frame)" if wf else "")
                 flag("Flooding seen", None)
             if photos.get("damage_state"):
-                s += f"; damage state: {photos['damage_state']}"
+                s += (f"; damage state: {photos['damage_state']}" if trusted
+                      else f"; possible damage state: {photos['damage_state']} (low confidence - manual check)")
             if label:
                 s += f"; field state: {label} (heuristic)"
             parts_photo.append(s + ".")
-            crop_absent = photos.get("crop_present") is False or (photos.get("crop_present") is None and field_photo == "no crop")
-            if crop_absent and scene in (None, "field"):
+            cp = photos.get("crop_present")
+            crop_absent = cp in (False, "no") or (cp is None and field_photo == "no crop")
+            if crop_absent and scene in (None, "field") and not trusted:
+                parts_photo.append("Crop may be absent in the photo (low confidence - manual check).")
+            elif crop_absent and scene in (None, "field"):
                 parts_photo.append("No crop visible in the photo.")
                 low_claim = app_loss is not None and app_loss <= 50
                 flag("No crop in photo", "review" if low_claim else None,
@@ -351,7 +358,9 @@ def evaluate(row, form=None, photos=None, gps=None, data_flags="", risk=None):
         # field state vs reported loss
         est = _num(photos.get("photo_loss"))
         dstate = photos.get("damage_state")
-        if not is_form and app_loss is not None and dstate:
+        if not is_form and app_loss is not None and dstate and not (photos.get("photo_conf") == "high" and photos.get("photo_agree") is not False):
+            pass  # uncertain photo reading: no conflict flag, manual check is already suggested in the photo remark
+        elif not is_form and app_loss is not None and dstate:
             if dstate == "healthy" and app_loss >= 50:
                 parts_photo.append(f"Photo shows a healthy crop but reported crop loss is {_fmt(app_loss)}%.")
                 flag("Field state vs reported loss", "review")
