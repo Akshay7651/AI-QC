@@ -29,6 +29,8 @@ def eval_dockets():
     p = os.path.join(HERE, "data", "eval")
     s = set()
     for f in glob.glob(os.path.join(p, "*.csv")):
+        if os.path.basename(f) in ("app_values.csv", "mined_sel.csv"):
+            continue  # app-wide tables, not hand labels
         try:
             d = pd.read_csv(f, dtype=str)
             if "docket" in d.columns:
