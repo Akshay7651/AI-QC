@@ -637,8 +637,8 @@ def _field_outputs(Pf, row, n_form, n):
     # crop present (mean over field photos)
     pcrop = float(pc_[:, cs_c.index(1)].mean()) if 1 in cs_c else 0.5
     pflood = float(pf_[:, cs_f.index(1)].mean()) if 1 in cs_f else 0.0
-    dmean = pd_.mean(0); dstate = cs_d[int(dmean.argmax())]; dconf = float(dmean.max())
-    tmean = pt_.mean(0); tstate = cs_t[int(tmean.argmax())]; tconf = float(tmean.max())
+    dmean = pd_.mean(0); dstate = str(cs_d[int(dmean.argmax())]); dconf = float(dmean.max())
+    tmean = pt_.mean(0); tstate = str(cs_t[int(tmean.argmax())]); tconf = float(tmean.max())
     wf = float(np.mean([min(1.0, Pf[i]["water"]["w_smooth_low"]) for i in fi]))
     no_crop_state = dstate in ("weeds-uncultivated", "bare soil", "harvested")
     crop_yes = (pcrop >= 0.5) and not (no_crop_state and dconf >= 0.5)
@@ -652,7 +652,7 @@ def _field_outputs(Pf, row, n_form, n):
     elif sky > 0.5 and veg < 0.1:
         out["scene_type"] = "house-road-sky-other"      # rule only: no labelled examples
     if tconf >= 0.5:
-        out["crop_seen"] = tstate; out["crop_seen_conf"] = round(tconf, 2)
+        out["crop_seen"] = str(tstate); out["crop_seen_conf"] = round(tconf, 2)
         if declared:
             out["crop_matches_declared"] = bool(tstate == declared)
     else:
