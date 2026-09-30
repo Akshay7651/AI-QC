@@ -440,7 +440,7 @@ def cell_boxes(tab, vl, scale):
             xr, _ = snap_cols(vl, tab["xs"], y0 + 2 * p, tab["ybot"], w)
             xs = [a if abs(a - b) > 0.001 else c for a, b, c in zip(xs, tab["xs"], xr)]
         for cname, (i0, i1) in {"area": (5, 6), "loss": (6, 7)}.items():
-            padv = 0.08 * (yb - ya)
+            padv = 0.08 * (yb - ya) if name != "tot" else -0.06 * (yb - ya)
             out[f"{cname}_{name}"] = tuple(int(round(v * scale)) for v in (xs[i0], ya - padv, xs[i1], yb + padv))
     return out
 
@@ -645,9 +645,9 @@ def ink_mask(rgb_or_gray, min_len_frac=0.3, contrast=18):
     """binary handwriting-like ink mask (uint8 0/255): pixels darker than their local background, straight ruled
     lines removed. Works on gray or RGB crops."""
     a = np.asarray(rgb_or_gray)
-    g = _gray(a) if a.ndim == 3 else a
-    if g.size == 0:
+    if a.size == 0 or min(a.shape[:2]) < 3:
         return np.zeros((1, 1), np.uint8)
+    g = _gray(a) if a.ndim == 3 else a
     h, w = g.shape
     k = max(3, (min(h, w) // 2) | 1)
     bg = cv2.morphologyEx(g, cv2.MORPH_CLOSE, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (k, k)))
@@ -661,10 +661,23 @@ def ink_mask(rgb_or_gray, min_len_frac=0.3, contrast=18):
     return cv2.subtract(b, cv2.bitwise_or(hl, vl))
 
 
-def ink_frac(crop, inset=0.06):
-    """fraction of ink pixels in the crop (borders inset to ignore ruled-line remains)"""
+def ink_frac(crop, inset=0.06, drop_strokes=True):
+    """fraction of ink pixels in the crop (borders inset to ignore ruled-line remains). With drop_strokes, long
+    pen strokes that run across the whole cell (vertical 'nil' lines drawn down a column, strike-through lines) are
+    removed first so that only glyph-like ink counts."""
     m = ink_mask(crop)
     h, w = m.shape
     dy, dx = int(h * inset), int(w * inset)
     m = m[dy: h - dy, dx: w - dx]
-    return float((m > 0).mean()) if m.size else 0.0
+    if not m.size:
+        return 0.0
+    if drop_strokes and m.any():
+        H, W = m.shape
+        n, lab, st, _ = cv2.connectedComponentsWithStats(cv2.dilate(m, np.ones((3, 3), np.uint8)))
+        for l in range(1, n):
+            x, y, ww, hh, ar = st[l]
+            vertical = hh >= 0.85 * H and ww <= 0.35 * hh
+            horizontal = ww >= 0.85 * W and hh <= 0.3 * ww
+            if vertical or horizontal:
+                m[lab == l] = 0
+    return float((m > 0).mean())

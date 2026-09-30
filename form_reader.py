@@ -74,10 +74,13 @@ def _find_formno(txt):
 
 def _ocr_formno(band, strip):
     """-> (form_no|None, conf, raw, note); independent passes must agree for high confidence"""
+    sharp = cv2.addWeighted(strip, 2.0, cv2.GaussianBlur(strip, (0, 0), 3), -1.0, 0)
     tries = []
     if band is not None:
-        tries += [(band, 7, "otsu"), (band, 7, "adapt")]
-    tries += [(strip, 6, "otsu"), (strip, 6, "adapt"), (strip, 11, "otsu")]
+        tries += [(band, 7, "otsu")]
+    tries += [(strip, 11, "otsu"), (strip, 6, "otsu"), (sharp, 11, "otsu")]
+    if band is not None:
+        tries += [(band, 7, "adapt")]
     got, raws = [], []
     for img, psm, bn in tries:
         txt, cf = _tess(img, psm, bn)
@@ -210,7 +213,7 @@ def stamp_features(rgb_zone, p):
     return {"frac": float(bm.mean()), "span": float((cols.max() - cols.min()) / rgb_zone.shape[1])}
 
 
-SIG_LOW_MIN = {"farmer": 0.12, "company": 0.12, "worker": 0.25, "officer": 0.25}   # ink area (p^2 units) below the remark zone
+SIG_LOW_MIN = {"farmer": 0.40, "company": 0.20, "worker": 0.30, "officer": 0.90}   # ink area (p^2 units) below the remark zone
 STAMP_FRAC_MIN = 0.012
 STAMP_SPAN_MIN = 0.45
 
@@ -435,8 +438,8 @@ def _hin_header_is_form(rgb):
         g = P._resize_w(_gray_hi(rgb), 900)
         strip = g[: int(0.3 * g.shape[0])]
         txt = pytesseract.image_to_string(strip, lang="hin+eng", config="--psm 6")
-        keys = ["प्रारूप", "फसल", "बीमा", "योजना", "मंत्री", "हानि", "रिपोर्ट", "PO ID", "वर्ष", "मौसम"]
-        return sum(k in txt for k in keys) >= 2, txt[:80]
+        hit = ("प्रारूप" in txt) or ("रिपोर्ट" in txt and "हानि" in txt) or ("PO ID" in txt and "मौसम" in txt)
+        return bool(hit), txt[:80]
     except Exception:      # noqa: BLE001
         return False, ""
 
@@ -490,18 +493,22 @@ def read_form(path_or_pil, docket=None, debug=False):
     out["is_proforma3"] = True
     if tab["n_cols"] < 5 or tab["n_rowlines"] < 8:
         notes.append("table only weakly matched to the template")
+    grid_ok = bool(lay.get("grid") and lay["grid"].get("detected"))
     W = r.shape[1]
     if tab["L"] < 0.02 * P.GW or tab["R"] > 0.985 * P.GW:
         out["quality"] = "cropped" if out["quality"] == "good" else out["quality"]
         notes.append("table touches the image border (page may be cropped)")
     # ---- FORM NO
-    fn, fcf, raw, note = read_formno(lay)
+    try:
+        fn, fcf, raw, note = read_formno(lay)
+    except Exception as e:     # noqa: BLE001
+        fn, fcf, raw, note = None, 0.0, "", f"form no reading failed: {type(e).__name__}"
     out["form_no"], out["form_no_conf"] = fn, round(float(fcf), 3)
     fc["form_no"] = out["form_no_conf"]
     if note:
         notes.append(note)
     # ---- PO ID
-    if "po_id" in B:
+    if "po_id" in B and P.crop(r, B["po_id"]).size:
         po, pcf, pm, pinfo = read_po_id(P.crop(r, B["po_id"]), docket)
         out["po_id"], out["po_id_matches"] = po, pm
         fc["po_id"] = round(float(pcf), 3)
@@ -513,7 +520,7 @@ def read_form(path_or_pil, docket=None, debug=False):
     # ---- table cells
     cells = {}
     for k in ("area_r1", "loss_r1", "area_r2", "loss_r2", "area_tot", "loss_tot"):
-        cells[k] = read_cell(P.crop(r, B[k], 2))
+        cells[k] = read_cell(P.crop(r, B[k], 0 if k.endswith("_tot") else 2))
     out["_cells"] = {k: {kk: vv for kk, vv in v.items() if kk != "err"} for k, v in cells.items()}
     tot_blank = cells["area_tot"]["blank"] and cells["loss_tot"]["blank"]
     out["total_row_blank"] = bool(tot_blank)
@@ -535,7 +542,11 @@ def read_form(path_or_pil, docket=None, debug=False):
             if dn and dn != "blank":
                 notes.append(f"{key}: {dn}")
     # ---- signatures
-    sg, stamp, feats = read_signatures(lay)
+    try:
+        sg, stamp, feats = read_signatures(lay)
+    except Exception as e:     # noqa: BLE001
+        sg, stamp, feats = {"farmer": False, "company": False, "worker": False, "officer": False}, False, {}
+        notes.append(f"signature analysis failed: {type(e).__name__}")
     out["farmer_signed"], out["company_signed"], out["worker_signed"], out["officer_signed"] = (sg["farmer"], sg["company"], sg["worker"], sg["officer"])
     out["officer_stamp_only"] = bool(stamp and not sg["officer"])
     out["_sig_feats"] = feats
@@ -545,6 +556,13 @@ def read_form(path_or_pil, docket=None, debug=False):
             out["overwrite_suspected"] = True
             notes.append(f"{k}: very heavy ink (possible over-writing / scribble)")
             break
+    # ---- is it really a Proforma-3? (ruled table alone is not enough: need the form no, the upper grid or a Hindi header)
+    strong = tab["n_cols"] >= 6 and tab["n_rowlines"] >= 11
+    if not fn and not grid_ok and not strong:
+        ok_h, _ = _hin_header_is_form(r)
+        if not ok_h:
+            out["is_proforma3"] = False
+            notes.append("ruled table found but no form number / field grid / printed header: probably not a Proforma-3")
     # ---- confidence
     parts = [out["form_no_conf"] if fn else 0.3]
     parts += [c for k, c in fc.items() if k in ("form_area", "form_loss", "row_area", "row_loss")]

@@ -19,3 +19,13 @@ with open('data/eval/photos_labels_mined.csv', 'w', newline='') as f:
         cp = 1 if c in 'HPSD' else 0     # crop present (dried = crop present but dead)
         w.writerow([fn, tag, ND[c], scene, cp, int(i in FLOOD or c == 'S'), int(i in ROT), int(i in PERS or c == 'p')])
 from collections import Counter; print(Counter(T))
+
+# ---- second pass: flood-mined candidates (ImageNet water-class scores of the MobileNet logits), data/eval/flood_sel.txt
+FL = {0, 1, 2, 7, 10, 14, 16, 20, 25, 26, 27}
+fl = [l.strip() for l in open('data/eval/flood_sel.txt') if l.strip()]
+with open('data/eval/photos_labels_mined.csv', 'a', newline='') as f:
+    w = csv.writer(f)
+    for i, fn in enumerate(fl):
+        fld = int(i in FL)
+        w.writerow([fn, 'floodmine', 'submerged' if fld else '', 'field', 1, fld, 0, 0])
+print('flood rows', len(fl), len(FL))

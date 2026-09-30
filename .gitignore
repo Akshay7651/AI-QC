@@ -11,3 +11,4 @@ data/*
 !data/eval/
 data/eval/sheets/
 photo_models/image_classification_*.onnx
+photo_models/heads.pkl

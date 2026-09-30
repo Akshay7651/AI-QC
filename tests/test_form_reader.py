@@ -75,3 +75,34 @@ def test_layout_boxes_inside_image():
         h, w = lay["rgb"].shape[:2]
         for k, (x0, y0, x1, y1) in lay["boxes"].items():
             assert x1 > x0 and y1 > y0, k
+
+
+def _fake_probs(seq):
+    """seq of chars '0'-'9' or '/' -> (probs (N,13), comps) as digits.py would hand back"""
+    probs, comps = [], []
+    for i, ch in enumerate(seq):
+        v = np.full(13, 0.001)
+        v[int(ch) if ch.isdigit() else 11] = 0.98
+        probs.append(v)
+        tall = 1.6 if ch == "/" else 1.0
+        comps.append({"x0": i * 20, "x1": i * 20 + (8 if ch == "/" else 14), "y0": 0, "y1": int(30 * tall), "dot": False})
+    return np.array(probs), comps
+
+
+@pytest.mark.parametrize("txt,want", [("10/08/2026", "10082026"), ("9/8/26", "09082026"), ("10-08-26", "10082026"), ("10082026", "10082026")])
+def test_parse_date_from_component_classes(monkeypatch, txt, want):
+    txt2 = txt.replace("-", "/")
+    monkeypatch.setattr(R, "_digit_probs", lambda crop: _fake_probs(txt2))
+    monkeypatch.setattr(P, "ink_frac", lambda crop, inset=0.06, drop_strokes=True: 0.1)
+    d, conf, note = R.parse_date(np.zeros((40, 200, 3), np.uint8))
+    assert d == want
+
+
+def test_po_id_verification_with_fake_digits(monkeypatch):
+    docket = "040106260000636479"
+    monkeypatch.setattr(R, "_digit_probs", lambda crop: _fake_probs(docket))
+    monkeypatch.setattr(P, "ink_frac", lambda crop, inset=0.06, drop_strokes=True: 0.1)
+    po, conf, match, info = R.read_po_id(np.zeros((40, 400, 3), np.uint8), docket)
+    assert po == docket and match is True
+    po, conf, match, info = R.read_po_id(np.zeros((40, 400, 3), np.uint8), "040106260000636478")
+    assert match is False

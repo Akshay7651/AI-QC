@@ -1,0 +1,187 @@
+{
+ "scene_person_only_vs_field": {
+  "bb": 0.993485342019544,
+  "bb_balanced_acc": 0.9782182103610675,
+  "cl": 0.990228013029316,
+  "cl_balanced_acc": 0.8846153846153846,
+  "combined": 0.993485342019544,
+  "combined_balanced_acc": 0.9414573521716378,
+  "disagree_rate": 0.013029315960912058,
+  "acc_when_agree": 0.9983498349834984,
+  "acc_when_disagree": 0.625,
+  "majority_baseline": 0.9576547231270358,
+  "n": 614,
+  "classes": [
+   "field",
+   "person-only"
+  ],
+  "per_class_recall": {
+   "field": 0.9982993197278912,
+   "person-only": 0.8846153846153846
+  },
+  "per_class_precision": {
+   "field": 0.9949152542372881,
+   "person-only": 0.9583333333333334
+  },
+  "per_class_n": {
+   "field": 588,
+   "person-only": 26
+  }
+ },
+ "crop_present": {
+  "bb": 0.75,
+  "bb_balanced_acc": 0.6415964050773649,
+  "cl": 0.8282312925170068,
+  "cl_balanced_acc": 0.513967386268878,
+  "combined": 0.7976190476190477,
+  "combined_balanced_acc": 0.6020337255628648,
+  "disagree_rate": 0.23129251700680276,
+  "acc_when_agree": 0.8761061946902655,
+  "acc_when_disagree": 0.5367647058823529,
+  "majority_baseline": 0.8537414965986394,
+  "n": 588,
+  "classes": [
+   "0",
+   "1"
+  ],
+  "per_class_recall": {
+   "0": 0.32558139534883723,
+   "1": 0.8784860557768924
+  },
+  "per_class_precision": {
+   "0": 0.3146067415730337,
+   "1": 0.8837675350701403
+  },
+  "per_class_n": {
+   "0": 86,
+   "1": 502
+  }
+ },
+ "flooded": {
+  "bb": 0.9642857142857143,
+  "bb_balanced_acc": 0.4896373056994819,
+  "cl": 0.9846938775510204,
+  "cl_balanced_acc": 0.5,
+  "combined": 0.9829931972789115,
+  "combined_balanced_acc": 0.4991364421416235,
+  "disagree_rate": 0.020408163265306145,
+  "acc_when_agree": 0.984375,
+  "acc_when_disagree": 0.9166666666666666,
+  "majority_baseline": 0.9846938775510204,
+  "n": 588,
+  "classes": [
+   "0",
+   "1"
+  ],
+  "per_class_recall": {
+   "0": 0.998272884283247,
+   "1": 0.0
+  },
+  "per_class_precision": {
+   "0": 0.9846678023850085,
+   "1": 0.0
+  },
+  "per_class_n": {
+   "0": 579,
+   "1": 9
+  }
+ },
+ "damage_classes_used": {
+  "healthy": 113,
+  "weeds-uncultivated": 61,
+  "dried-burnt": 47,
+  "partly damaged": 46,
+  "submerged": 9,
+  "bare soil": 9,
+  "cut & spread": 3,
+  "harvested": 1
+ },
+ "damage_state": {
+  "bb": 0.5543859649122806,
+  "bb_balanced_acc": 0.3792904994065913,
+  "cl": 0.5578947368421052,
+  "cl_balanced_acc": 0.39015795960664085,
+  "combined": 0.6280701754385964,
+  "combined_balanced_acc": 0.4342270792105003,
+  "disagree_rate": 0.43157894736842106,
+  "acc_when_agree": 0.7037037037037037,
+  "acc_when_disagree": 0.5284552845528455,
+  "majority_baseline": 0.39649122807017545,
+  "n": 285,
+  "classes": [
+   "bare soil",
+   "dried-burnt",
+   "healthy",
+   "partly damaged",
+   "submerged",
+   "weeds-uncultivated"
+  ],
+  "per_class_recall": {
+   "bare soil": 0.1111111111111111,
+   "dried-burnt": 0.7021276595744681,
+   "healthy": 0.8053097345132744,
+   "partly damaged": 0.41304347826086957,
+   "submerged": 0.0,
+   "weeds-uncultivated": 0.5737704918032787
+  },
+  "per_class_precision": {
+   "bare soil": 0.2,
+   "dried-burnt": 0.6346153846153846,
+   "healthy": 0.7777777777777778,
+   "partly damaged": 0.475,
+   "submerged": 0.0,
+   "weeds-uncultivated": 0.5223880597014925
+  },
+  "per_class_n": {
+   "bare soil": 9,
+   "dried-burnt": 47,
+   "healthy": 113,
+   "partly damaged": 46,
+   "submerged": 9,
+   "weeds-uncultivated": 61
+  }
+ },
+ "crop_type_label_counts": {
+  "cotton": 2685,
+  "pearl millet": 601,
+  "green gram": 76,
+  "paddy": 3
+ },
+ "crop_type_weak_declared": {
+  "bb": 0.8962852897473997,
+  "bb_balanced_acc": 0.6127238073758281,
+  "cl": 0.8817236255572065,
+  "cl_balanced_acc": 0.4018833099885959,
+  "combined": 0.9283803863298663,
+  "combined_balanced_acc": 0.5910098135959816,
+  "disagree_rate": 0.17384843982169396,
+  "acc_when_agree": 0.9737410071942446,
+  "acc_when_disagree": 0.7128205128205128,
+  "majority_baseline": 0.7979197622585439,
+  "n": 3365,
+  "classes": [
+   "cotton",
+   "green gram",
+   "paddy",
+   "pearl millet"
+  ],
+  "per_class_recall": {
+   "cotton": 0.9631284916201117,
+   "green gram": 0.5789473684210527,
+   "paddy": 0.0,
+   "pearl millet": 0.8219633943427621
+  },
+  "per_class_precision": {
+   "cotton": 0.9524861878453039,
+   "green gram": 0.6111111111111112,
+   "paddy": 0.0,
+   "pearl millet": 0.8576388888888888
+  },
+  "per_class_n": {
+   "cotton": 2685,
+   "green gram": 76,
+   "paddy": 3,
+   "pearl millet": 601
+  }
+ }
+}
