@@ -13,6 +13,8 @@ from PIL import Image
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 MODEL_PATH = os.path.join(HERE, "models", "digits_cnn.npz")
+CELL_MODEL_PATH = os.path.join(HERE, "models", "cells_cnn.npz")
+CELL_VALUES = ["EMPTY"] + [str(v) for v in range(0, 101, 5)] + ["OTHER"]
 # classes: 0-9 digits, 10 '.', 11 '%'/slash/other trailing mark, 12 junk
 CLASSES = list("0123456789") + [".", "%", "#"]
 NCLS = len(CLASSES)
@@ -247,3 +249,56 @@ def read_number(img, *, max_digits=3, allow_decimal=True, min_conf=0.4):
     if val == int(val):
         val = float(int(val))
     return dict(value=val if conf >= min_conf else None, text=text, conf=conf, n_components=n)
+
+
+# ----------------------------------------------------------------- whole-cell classifier
+_CELL = None
+
+
+def cell_image(img, w=192, h=64):
+    """cell crop -> 64x192 uint8 line-removed ink mask (input of the whole-cell CNN)."""
+    g = to_gray(img)
+    if g.shape[0] < 8 or g.shape[1] < 8:
+        return np.zeros((h, w), np.uint8)
+    b, _ = ink_mask(g, h)
+    return cv2.resize(b, (w, h), interpolation=cv2.INTER_AREA)
+
+
+def _conv3_cols(x, w, b):
+    """x (C,H,W) -> (O,H,W), same-padded 3x3 via im2col + matmul."""
+    c, hh, ww = x.shape
+    xp = np.pad(x, ((0, 0), (1, 1), (1, 1)))
+    win = np.lib.stride_tricks.sliding_window_view(xp, (3, 3), axis=(1, 2))        # C,H,W,3,3
+    cols = win.transpose(1, 2, 0, 3, 4).reshape(hh * ww, c * 9)
+    return (cols @ w.reshape(w.shape[0], -1).T + b).T.reshape(-1, hh, ww)
+
+
+def cell_proba(cell_u8):
+    global _CELL
+    if _CELL is None:
+        z = np.load(CELL_MODEL_PATH)
+        _CELL = {k: z[k].astype(np.float32) for k in z.files}
+    m = _CELL
+    x = (cell_u8.astype(np.float32) / 255)[None]
+    for n in ("c1", "c2", "c3", "c4"):
+        x = np.maximum(_conv3_cols(x, m[n + "w"], m[n + "b"]), 0)
+        c, hh, ww = x.shape
+        x = x.reshape(c, hh // 2, 2, ww // 2, 2).max(axis=(2, 4))
+    x = np.maximum(x.reshape(-1) @ m["f1w"].T + m["f1b"], 0)
+    z = x @ m["f2w"].T + m["f2b"]
+    z -= z.max()
+    e = np.exp(z)
+    return e / e.sum()
+
+
+def read_cell(img, gate=0.6):
+    """whole-cell reading -> dict(value, text, conf, n_components, cls, probs_top)."""
+    p = cell_proba(cell_image(img))
+    k = int(p.argmax())
+    name = CELL_VALUES[k]
+    conf = float(p[k])
+    if name == "EMPTY":
+        return dict(value=None, text="", conf=conf, n_components=0, cls="EMPTY")
+    if name == "OTHER":
+        return dict(value=None, text="?", conf=conf, n_components=-1, cls="OTHER")
+    return dict(value=float(name) if conf >= gate else None, text=name, conf=conf, n_components=-1, cls=name)
