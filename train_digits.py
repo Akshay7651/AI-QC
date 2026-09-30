@@ -36,7 +36,17 @@ CACHE = os.path.join(HERE, "data", "digits_cache")
 MIN_AGREE = {0: 11, 1: 13, 2: 14}
 
 
+def _eval_dockets():
+    p = os.path.join(HERE, "data", "eval", "cells.csv")
+    return set(pd.read_csv(p, dtype=str)["docket"]) if os.path.exists(p) else set()
+
+
+EVAL = _eval_dockets()
+
+
 def is_test_form(docket):
+    if docket in EVAL:
+        return True  # hand-labelled forms are never trained on
     return int(hashlib.md5(str(docket).encode()).hexdigest(), 16) % 5 == 0
 
 
@@ -71,6 +81,7 @@ def _cache_one(path):
         cc = L.cell_crops(img)
         strip = L.po_strip(t)
         np.savez_compressed(out, ok=np.array(1), strip=strip, area=np.asarray(cc["area"]), loss=np.asarray(cc["loss"]),
+                            r2_area=np.asarray(cc["r2_area"]), r2_loss=np.asarray(cc["r2_loss"]),
                             t_area=np.asarray(cc.get("t_area", np.zeros((1, 1), np.uint8))),
                             t_loss=np.asarray(cc.get("t_loss", np.zeros((1, 1), np.uint8))),
                             has_total=np.array(int("t_area" in cc)))
@@ -84,7 +95,7 @@ def build_cache(max_forms=None, procs=4):
     os.makedirs(CACHE, exist_ok=True)
     fs = sorted(glob.glob(os.path.join(HERE, "data", "forms", "*.jpg")))
     if max_forms:
-        fs = fs[:max_forms]
+        fs = [f for f in fs if os.path.basename(f)[:-4] not in EVAL][:max_forms] + [f for f in fs if os.path.basename(f)[:-4] in EVAL]
     todo = [f for f in fs if not os.path.exists(os.path.join(CACHE, os.path.basename(f)[:-4] + ".npz"))]
     if todo:
         t0 = time.time()
