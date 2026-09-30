@@ -85,3 +85,9 @@ Requirements still to implement/verify (in priority order):
 6. Privacy: pipeline is offline; never upload farmer names/phones; dashboard serves on 127.0.0.1 by default.
 7. The system sends unclear cases to "manual check" - a small human review team remains necessary for those; the goal is to shrink the
    manual workload, not to claim 100% automation.
+
+
+### Acceptance-test data rules (user request): test ONLY on data the models have never seen
+- Exclude every docket in `data/forms/` (6,027 training forms), every docket with files in `data/photos/` (8,204 training photos) and every docket in `data/eval/*.csv` (hand labels).
+- Test A: 100 random unseen rows. Test B: +50 unseen rows from surveyors/districts that are under-represented in the training sample (generalisation to new handwriting/cameras).
+- If the user meant "different columns" literally (other Excel layouts / field names), also run a differently-formatted export through `ingestion.load` and the pipeline.
