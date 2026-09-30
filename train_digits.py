@@ -188,11 +188,11 @@ def augment(x, strong=True):
     return x.clamp(0, 1)
 
 
-def train_net(Xm, ym, Xr, yr, epochs, seed=0, real_w=6, log=True):
+def train_net(Xm, ym, Xr, yr, epochs, seed=0, real_w=6, log=True, steps_per=600, threads=3):
     import torch
     import torch.nn as nn
     torch.manual_seed(seed); np.random.seed(seed)
-    torch.set_num_threads(4)
+    torch.set_num_threads(threads)
     rng = np.random.default_rng(seed)
     # MNIST digits: resize like norm28 would (digit occupies 20px box, centred by COM) -> already ~that
     Xs_m = synth_shapes(6000, rng, "mark"); Xs_j = synth_shapes(6000, rng, "junk")
@@ -205,7 +205,6 @@ def train_net(Xm, ym, Xr, yr, epochs, seed=0, real_w=6, log=True):
     p = torch.tensor(w / w.sum())
     net = make_net()
     opt = torch.optim.AdamW(net.parameters(), 2e-3, weight_decay=1e-4)
-    steps_per = 600
     sched = torch.optim.lr_scheduler.OneCycleLR(opt, 4e-3, total_steps=epochs * steps_per)
     lossf = nn.CrossEntropyLoss(label_smoothing=0.05)
     net.train()
