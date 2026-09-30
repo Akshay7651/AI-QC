@@ -18,11 +18,12 @@ WL = "0123456789.:-LatitudeLongGPSAcrcyDmPM()/ "
 _CFG = f"--psm 6 -c tessedit_char_whitelist={WL} -c load_system_dawg=0 -c load_freq_dawg=0"
 
 
-def _mask(g, thr=235, frac=(0.80, 1.0, 0.0, 0.66), scale=2.0):
+def _mask(g, thr=215, frac=(0.86, 0.99, 0.0, 0.42), scale=2.0):
+    """Near-white text -> black-on-white image. Upscale first (cubic) so thin strokes survive the threshold."""
     h, w = g.shape
     c = g[int(frac[0] * h):int(frac[1] * h), int(frac[2] * w):int(frac[3] * w)]
+    c = cv2.resize(c, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
     m = (c >= thr).astype(np.uint8) * 255
-    m = cv2.resize(m, None, fx=scale, fy=scale, interpolation=cv2.INTER_LINEAR)
     return 255 - cv2.GaussianBlur(m, (3, 3), 0)
 
 
@@ -122,6 +123,47 @@ def _split_blocks(txt):
     return blocks
 
 
+VARIANTS = ((235, 3.0, (0.84, 1.0, 0, 0.55)), (200, 2.5, (0.82, 1.0, 0, 0.6)), (225, 3.5, (0.85, 0.995, 0, 0.5)))
+
+
+def _close(a, b, tol_m=8.0):
+    from common import haversine_m
+    return a["lat"] is not None and b["lat"] is not None and haversine_m(a["lat"], a["lng"], b["lat"], b["lng"]) <= tol_m
+
+
+def verify(gray, first, ref, max_m):
+    """If the first read is further than max_m from ref (app lat/lng) re-read with other binarisations.
+    A far reading is 'confirmed' only when a second independent read agrees (<=8 m). If another variant lands within
+    max_m of ref it is preferred (the first was an OCR digit slip). Returns (best_read, confirmed_far: bool|None)."""
+    from common import haversine_m
+    if ref is None or ref[0] is None or ref[1] is None or not _ok(first):
+        return first, None
+    if haversine_m(ref[0], ref[1], first["lat"], first["lng"]) <= max_m:
+        return first, False
+    reads = [first]
+    for thr, sc, fr in VARIANTS:
+        try:
+            p = parse_block(_ocr(_mask(gray, thr, fr, sc)))
+        except Exception:
+            continue
+        if not _ok(p):
+            continue
+        p["rot"] = first.get("rot", 0)
+        reads.append(p)
+        if haversine_m(ref[0], ref[1], p["lat"], p["lng"]) <= max_m:
+            for k in ("date", "time", "acc"):
+                p[k] = p[k] or first[k]
+            p["stamp_ok"] = True
+            return p, False
+        if len(reads) >= 3 and any(_close(reads[i], reads[j]) for i in range(len(reads)) for j in range(i + 1, len(reads))):
+            break
+    agree = [r for i, r in enumerate(reads) for j, q in enumerate(reads) if i < j and _close(r, q)]
+    if agree:
+        best = agree[0]; best["stamp_ok"] = True
+        return best, True
+    return first, None     # far but unconfirmed (readings disagree)
+
+
 def read_stamps(grays):
     """grays: list of 2-D uint8 arrays (full-res photos). -> list of dicts (+ 'rot' = degrees needed, 'stamp_ok')."""
     n = len(grays)
@@ -141,7 +183,7 @@ def read_stamps(grays):
             continue
         best = res[i]
         # retries: other thresholds / crops, per photo
-        for thr, sc, fr in ((215, 2.5, (0.80, 1.0, 0, 0.66)), (245, 2.0, (0.78, 1.0, 0, 0.75)), (200, 3.0, (0.75, 1.0, 0, 0.7))):
+        for thr, sc, fr in ((235, 3.0, (0.80, 1.0, 0, 0.66)), (200, 2.5, (0.78, 1.0, 0, 0.75)), (225, 3.5, (0.75, 1.0, 0, 0.7))):
             try:
                 p = parse_block(_ocr(_mask(grays[i], thr, fr, sc)))
             except Exception:

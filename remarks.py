@@ -42,6 +42,10 @@ COUNTER_OF = {
     "Form link missing": "missing_form_link",
     "Photo link missing": "missing_photo_link",
     "Photo is form image": "photo_is_form",
+    "No crop in photo": "no_crop_in_photo",
+    "Crop mismatch": "crop_mismatch",
+    "Flooding seen": "flooded",
+    "Photo not of the field": "photo_not_field",
     "Photo GPS mismatch": "gps_mismatch",
     "Signature missing": "signature_missing",
     "Form vs app mismatch": "mismatch",
@@ -106,7 +110,10 @@ def _readable(form, value, *names):
     if value is None:
         return False
     c = _fconf(form, *names)
-    return c is None or c >= LOW_FIELD_CONF
+    if c is None:  # no per-field confidence: fall back to the overall form confidence
+        oc = _num((form or {}).get("confidence"))
+        return oc is None or oc >= C.LOW_CONFIDENCE_THRESHOLD
+    return c >= LOW_FIELD_CONF
 
 
 # ---------------------------------------------------------------- core
@@ -124,7 +131,8 @@ def evaluate(row, form=None, photos=None, gps=None, data_flags="", risk=None):
 
     def flag(text, level, headline_text=None):
         flags.append(text)
-        severity[level].append(text)
+        if level:  # level None = informational tag only (no effect on the verdict)
+            severity[level].append(text)
         if headline_text:
             headline.append(headline_text)
 
@@ -250,7 +258,8 @@ def evaluate(row, form=None, photos=None, gps=None, data_flags="", risk=None):
     else:
         n = int(_num(photos.get("_n_photos")) or _num(photos.get("n_photos")) or 0)
         n_form = int(_num(photos.get("n_form_photos")) or 0)
-        is_form = bool(photos.get("photo_is_form"))
+        scene = photos.get("scene_type")
+        is_form = bool(photos.get("photo_is_form")) or scene == "paper form"
         field_photo = photos.get("field_photo")
         if is_form:
             d = _parse_date(photos.get("stamp_date") or photos.get("photo_date"))
@@ -276,9 +285,39 @@ def evaluate(row, form=None, photos=None, gps=None, data_flags="", risk=None):
             label = {"no crop": "no crop visible", "cut & spread": "cut & spread crop", "crop mismatch": "crop does not match",
                      "standing crop": "standing crop"}.get(field_photo, field_photo)
             s = f"{n or 'Photos'} photo(s) analysed" if n else "Photos analysed"
+            if scene:
+                s += f"; scene: {scene}"
+            cs, cconf = photos.get("crop_seen"), _num(photos.get("crop_seen_conf"))
+            declared = row.get("crop_name")
+            if cs:
+                lowc = cconf is not None and cconf < LOW_FIELD_CONF
+                s += f"; crop seen: {cs}" + (" (low confidence)" if lowc else "")
+                if photos.get("crop_matches_declared") is False and not lowc:
+                    s += f" - does NOT match declared crop{'' if _blank(declared) else ' ' + str(declared)}"
+                    flag("Crop mismatch", "review", "crop in the photo differs from the declared crop")
+                elif photos.get("crop_matches_declared") is True:
+                    s += " (matches declared crop)"
+            if photos.get("flooded"):
+                wf = _num(photos.get("water_frac"))
+                s += "; flooding/waterlogging seen" + (f" (~{wf * 100:.0f}% of the frame)" if wf else "")
+                flag("Flooding seen", None)
+            if photos.get("damage_state"):
+                s += f"; damage state: {photos['damage_state']}"
             if label:
                 s += f"; field state: {label} (heuristic)"
             parts_photo.append(s + ".")
+            crop_absent = photos.get("crop_present") is False or (photos.get("crop_present") is None and field_photo == "no crop")
+            if crop_absent and scene in (None, "field"):
+                parts_photo.append("No crop visible in the photo.")
+                low_claim = app_loss is not None and app_loss <= 50
+                flag("No crop in photo", "review" if low_claim else None,
+                     f"no crop visible but reported loss is only {_fmt(app_loss)}%" if low_claim else None)
+            if scene in ("person-only", "house-road-sky-other"):
+                parts_photo.append(f"Photo does not show the field (scene: {scene}).")
+                flag("Photo not of the field", "review", "photo does not show the field")
+            elif scene == "blurry-dark-irrelevant":
+                parts_photo.append("Photo too blurry/dark/irrelevant to judge.")
+                flag("Photo not of the field", "manual", "photos unusable (blurry/dark/irrelevant)")
         # duplicates / rotation
         nd = int(_num(photos.get("n_duplicates")) or 0)
         if nd:
@@ -310,7 +349,15 @@ def evaluate(row, form=None, photos=None, gps=None, data_flags="", risk=None):
                 parts_photo.append(f"Photo date {pd_:%d-%m-%Y}.")
         # field state vs reported loss
         est = _num(photos.get("photo_loss"))
-        if not is_form and app_loss is not None:
+        dstate = photos.get("damage_state")
+        if not is_form and app_loss is not None and dstate:
+            if dstate == "healthy" and app_loss >= 50:
+                parts_photo.append(f"Photo shows a healthy crop but reported crop loss is {_fmt(app_loss)}%.")
+                flag("Field state vs reported loss", "review")
+            elif dstate in ("lodged", "submerged", "dried-burnt", "cut & spread", "partly damaged") and app_loss <= 10 and (app_area or 0) <= 10:
+                parts_photo.append(f"Photo shows damage ({dstate}) but reported crop loss is only {_fmt(app_loss)}%.")
+                flag("Field state vs reported loss", "review")
+        if not is_form and app_loss is not None and not dstate:
             if field_photo == "standing crop" and app_loss >= 50 and (est is None or est < app_loss - C.PHOTO_LOSS_DIFF_FLAG_PCT):
                 parts_photo.append(f"Field looks like standing crop but reported crop loss is {_fmt(app_loss)}%.")
                 flag("Field state vs reported loss", "review")

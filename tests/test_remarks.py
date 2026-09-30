@@ -160,3 +160,36 @@ def test_build_remark_matches_evaluate_and_handles_garbage():
     assert isinstance(R.build_remark({}, None, None), str)
     e = R.evaluate({"affected_area_pct": float("nan")}, form(), photos(stamp_dist_m=float("nan")), {"Nearby_Same_Surveyor_25m": float("nan")}, None, {"Risk_Score": float("nan")})
     assert e["verdict"] in R.VERDICTS
+
+
+def test_crop_scene_flood_damage_fields():
+    p = photos(scene_type="field", crop_present=True, crop_seen="maize", crop_seen_conf=0.8, crop_matches_declared=False,
+               flooded=True, water_frac=0.3, damage_state="submerged")
+    e = ev(r=row(crop_name="Paddy", crop_loss_pct=60, affected_area_pct=60), f=form(form_area=60.0, form_loss=60.0), p=p)
+    t = e["remark"]
+    assert "crop seen: maize - does NOT match declared crop Paddy" in t and "flooding/waterlogging seen (~30% of the frame)" in t
+    assert "damage state: submerged" in t and "scene: field" in t
+    assert e["verdict"] == "Review" and {"crop_mismatch", "flooded"} <= set(e["counters"])
+    # low-confidence crop id never produces a mismatch flag
+    e = ev(p=photos(crop_seen="maize", crop_seen_conf=0.3, crop_matches_declared=False))
+    assert "crop_mismatch" not in e["counters"] and "(low confidence)" in e["remark"] and e["verdict"] == "OK"
+
+
+def test_no_crop_only_flags_when_reported_loss_is_low():
+    e = ev(p=photos(crop_present=False, field_photo="no crop"))                       # loss 0 -> inconsistent
+    assert e["verdict"] == "Review" and "no_crop_in_photo" in e["counters"]
+    e = ev(r=row(crop_loss_pct=90, affected_area_pct=90), f=form(form_area=90.0, form_loss=90.0, row_area=90.0, row_loss=90.0), p=photos(crop_present=False, field_photo="no crop"))
+    assert e["verdict"] == "OK" and "no_crop_in_photo" in e["counters"]              # consistent with a total loss: counted, not a flag
+
+
+def test_scene_types():
+    assert ev(p=photos(scene_type="paper form", photo_is_form=False, n_form_photos=3, _n_photos=3))["verdict"] == "Reject-evidence"
+    assert ev(p=photos(scene_type="house-road-sky-other"))["verdict"] == "Review"
+    e = ev(p=photos(scene_type="blurry-dark-irrelevant"))
+    assert e["verdict"] == "Manual-check" and "photo_not_field" in e["counters"]
+
+
+def test_damage_state_vs_reported_loss():
+    e = ev(r=row(crop_loss_pct=80, affected_area_pct=80), f=form(form_area=80.0, form_loss=80.0, row_area=80.0, row_loss=80.0), p=photos(damage_state="healthy"))
+    assert e["verdict"] == "Review" and "healthy crop but reported crop loss is 80%" in e["remark"]
+    assert ev(p=photos(damage_state="lodged"))["verdict"] == "Review"      # app loss 0 vs visible damage

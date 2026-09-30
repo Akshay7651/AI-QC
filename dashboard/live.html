@@ -117,7 +117,7 @@ var $=function(id){return document.getElementById(id)};
 var SRC=(new URLSearchParams(location.search)).get("src")||"progress.json";
 var COUNTERS=[["form_not_found","Form not found",1],["missing_form_link","Missing form link",1],["missing_photo_link","Missing photo link",1],
  ["photo_is_form","Photo is the form",1],["gps_mismatch","Photo GPS mismatch",1],["signature_missing","Signature missing",1],
- ["mismatch","Form vs app mismatch",1],["overwrite","Overwriting",1],["duplicate_photos","Duplicate photos",0],
+ ["mismatch","Form vs app mismatch",1],["overwrite","Overwriting",1],["no_crop_in_photo","No crop in photo",1],["crop_mismatch","Crop mismatch",1],["flooded","Flooding seen",0],["photo_not_field","Photo not of the field",1],["duplicate_photos","Duplicate photos",0],
  ["form_unreadable","Form not readable",0],["not_proforma3","Not Proforma-3",0],["po_id_mismatch","PO ID mismatch",0],["gps_cluster","GPS cluster",0]];
 var VERD=[["OK","OK","ok"],["Review","Review","review"],["Reject-evidence","Reject evidence","reject"],["Manual-check","Manual check","manual"]];
 var lastOK=0,fails=0,openEv={},lastEvKey="";

@@ -4,7 +4,7 @@ Behaviour is keyed on the LAST digit of the docket:
   9 -> engine raises          8 -> worker process dies the first time (marker file in $FAKE_MARK_DIR), then works
   7 -> not a Proforma-3       6 -> block officer signature missing        5 -> all photos are the form image
   4 -> worker process dies EVERY time                                     others -> clean
-Env FAKE_SLEEP (seconds) slows every call (autosave / Ctrl-C tests).
+Env FAKE_DEATH=1 enables the worker-death behaviours (never use in-process). Env FAKE_SLEEP (seconds) slows every call (autosave / Ctrl-C tests).
 """
 import os
 import time
@@ -24,9 +24,10 @@ def read_form(path, docket=None):
     d = str(docket)[-1:]
     if d == "9":
         raise RuntimeError("fake engine exploded")
-    if d == "4":
+    death = bool(os.environ.get("FAKE_DEATH"))
+    if d == "4" and death:
         os._exit(3)
-    if d == "8":
+    if d == "8" and death:
         m = os.path.join(os.environ.get("FAKE_MARK_DIR", "."), f"died_{docket}")
         if not os.path.exists(m):
             open(m, "w").close()

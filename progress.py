@@ -15,7 +15,8 @@ from pathlib import Path
 
 COUNTER_KEYS = ["form_not_found", "missing_form_link", "missing_photo_link", "photo_is_form", "gps_mismatch",
                 "signature_missing", "mismatch", "overwrite", "duplicate_photos", "form_unreadable",
-                "not_proforma3", "gps_cluster", "po_id_mismatch"]
+                "not_proforma3", "gps_cluster", "po_id_mismatch", "flooded", "no_crop_in_photo", "crop_mismatch",
+                "photo_not_field"]
 VERDICT_KEYS = ["OK", "Review", "Reject-evidence", "Manual-check"]
 SCHEMA_VERSION = 1
 
@@ -211,6 +212,8 @@ class Progress:
                 try:
                     if p in ("/", "/live.html", "/index.html"):
                         self._send(Path(prog.html_path).read_bytes(), "text/html; charset=utf-8")
+                    elif p == "/favicon.ico":
+                        self._send(b"", "image/x-icon", 204)
                     elif p == "/progress.json":
                         self._send(json.dumps(prog.snapshot(), ensure_ascii=False).encode("utf-8"), "application/json; charset=utf-8")
                     else:

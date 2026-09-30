@@ -83,7 +83,7 @@ def _cell_value(v):
     return str(v)
 
 
-def write_xlsx(df: pd.DataFrame, path: str, remarks_col="Any Other Remarks"):
+def write_xlsx_slow(df: pd.DataFrame, path: str, remarks_col="Any Other Remarks"):
     """One sheet, frozen header + docket column, widths, wrapped remarks, colour rules. xlsxwriter (constant memory) if present,
     else openpyxl write-only. Returns the writer name."""
     cols = [str(c) for c in df.columns]
@@ -201,3 +201,162 @@ class ExcelTarget:
                     os.remove(tmp)
             except OSError:
                 pass
+
+
+# ---- fast direct-XML writer (about 10x faster than xlsxwriter for 40k x 80 cells) -------------------------------
+import re as _re
+import zipfile as _zip
+from xml.sax.saxutils import escape as _esc
+
+_CTRL = _re.compile("[\x00-\x08\x0b\x0c\x0e-\x1f\ud800-\udfff\ufffe\uffff]")
+
+
+def _col_letters(n):
+    s = ""
+    n += 1
+    while n:
+        n, r = divmod(n - 1, 26)
+        s = chr(65 + r) + s
+    return s
+
+
+_DXF = {"red": "F8BBD0", "amber": "FFE0B2", "yellow": "FFF9C4", "green": "C8E6C9"}
+
+
+def write_xlsx(df: pd.DataFrame, path: str, remarks_col="Any Other Remarks"):
+    """One sheet 'QC': frozen header+first id column, widths, wrapped remarks, colour rules, autofilter. Streams XML straight
+    into the zip (no per-cell library overhead). Falls back to xlsxwriter/openpyxl if anything goes wrong."""
+    try:
+        return _write_fast(df, path, remarks_col)
+    except Exception:
+        return write_xlsx_slow(df, path, remarks_col)
+
+
+def _write_fast(df, path, remarks_col):
+    cols = [str(c) for c in df.columns]
+    nc, nr = len(cols), len(df)
+    L = [_col_letters(j) for j in range(nc)]
+    sample = df.head(300)
+    widths = []
+    for c in cols:
+        s = sample[c].astype(str).str.len() if nr else pd.Series([0])
+        widths.append(max(8, min(60, max(len(c) * 0.9, float(s.quantile(0.9)) if len(s) else 8) + 2)))
+    rem_j = cols.index(remarks_col) if remarks_col in cols else -1
+    colxml = "".join(f'<col min="{j + 1}" max="{j + 1}" width="{110 if j == rem_j else widths[j]:.1f}" customWidth="1"'
+                     + (' style="2"' if j == rem_j else "") + "/>" for j in range(nc))
+    # conditional formats: (column index, value, dxf id)
+    dxf_ids = {k: i for i, k in enumerate(_DXF)}
+    rules = []
+
+    def cf(c, val, colour):
+        if c in cols:
+            rules.append((cols.index(c), val, dxf_ids[colour]))
+    for k, colour in {"Reject-evidence": "red", "Manual-check": "amber", "Review": "yellow", "OK": "green"}.items():
+        cf("QC Verdict", k, colour)
+    for k, colour in {"Low": "red", "Medium": "yellow", "High": "green"}.items():
+        cf("AI_Confidence", k, colour)
+    for c in cols:
+        if c.startswith("Match/Mismatch") or c.startswith("Form vs App"):
+            cf(c, "Mismatch", "red")
+            cf(c, "Match", "green")
+        elif "Signature (Yes/No)" in c or c.startswith("PO ID matches"):
+            cf(c, "No", "red")
+        elif c.startswith("Photo is form image"):
+            cf(c, "Yes", "red")
+        elif c.startswith("Form Status"):
+            cf(c, "overwrite", "red")
+            cf(c, "incomplete", "yellow")
+    last = nr + 1
+    cfxml, prio = [], 1
+    for j, val, d in rules:
+        cfxml.append(f'<conditionalFormatting sqref="{L[j]}2:{L[j]}{max(last, 2)}"><cfRule type="cellIs" dxfId="{d}" priority="{prio}" '
+                     f'operator="equal"><formula>"{_esc(val)}"</formula></cfRule></conditionalFormatting>')
+        prio += 1
+    xsplit = 1 if cols and cols[0].lower().startswith(("docket", "application")) else 0
+    pane = (f'<pane xSplit="{xsplit}" ySplit="1" topLeftCell="{"B" if xsplit else "A"}2" activePane="{"bottomRight" if xsplit else "bottomLeft"}" state="frozen"/>')
+    head = ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
+            f'<sheetViews><sheetView workbookViewId="0">{pane}</sheetView></sheetViews><sheetFormatPr defaultRowHeight="15"/>'
+            f'<cols>{colxml}</cols><sheetData>')
+    styles = ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
+              '<fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><color rgb="FFFFFFFF"/><name val="Calibri"/></font></fonts>'
+              '<fills count="3"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill>'
+              '<fill><patternFill patternType="solid"><fgColor rgb="FF1F3A5F"/><bgColor indexed="64"/></patternFill></fill></fills>'
+              '<borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>'
+              '<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>'
+              '<cellXfs count="3"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>'
+              '<xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1" applyAlignment="1"><alignment vertical="top" wrapText="1"/></xf>'
+              '<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0" applyAlignment="1"><alignment vertical="top" wrapText="1"/></xf></cellXfs>'
+              '<cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>'
+              f'<dxfs count="{len(_DXF)}">' + "".join(f'<dxf><fill><patternFill patternType="solid"><fgColor rgb="FF{v}"/><bgColor rgb="FF{v}"/></patternFill></fill></dxf>'
+                                                    for v in _DXF.values()) + '</dxfs></styleSheet>')
+    wbxml = ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" '
+             'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="QC" sheetId="1" r:id="rId1"/></sheets></workbook>')
+    rels = ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+            '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>')
+    wbrels = ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+              '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>'
+              '<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>')
+    ctypes = ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
+              '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/>'
+              '<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>'
+              '<Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>'
+              '<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>')
+    esc, ctrl = _esc, _CTRL
+
+    def rows():
+        yield head
+        yield '<row r="1" ht="45" customHeight="1">' + "".join(
+            f'<c r="{L[j]}1" s="1" t="inlineStr"><is><t>{esc(c)}</t></is></c>' for j, c in enumerate(cols)) + "</row>"
+        arr = df.astype(object).to_numpy()
+        buf = []
+        for r in range(nr):
+            rn = r + 2
+            cells = []
+            row = arr[r]
+            for j in range(nc):
+                v = row[j]
+                if v is None:
+                    continue
+                t = type(v)
+                if t is str:
+                    if not v:
+                        continue
+                    if ctrl.search(v):
+                        v = ctrl.sub("", v)
+                    if len(v) > 32000:
+                        v = v[:32000]
+                    cells.append(f'<c r="{L[j]}{rn}" t="inlineStr"><is><t xml:space="preserve">{esc(v)}</t></is></c>')
+                elif t is bool:
+                    cells.append(f'<c r="{L[j]}{rn}" t="b"><v>{int(v)}</v></c>')
+                elif t is int or t is float:
+                    if v != v or v in (float("inf"), float("-inf")):
+                        continue
+                    cells.append(f'<c r="{L[j]}{rn}"><v>{v!r}</v></c>')
+                else:
+                    v = _cell_value(v)
+                    if v is None:
+                        continue
+                    if isinstance(v, bool):
+                        cells.append(f'<c r="{L[j]}{rn}" t="b"><v>{int(v)}</v></c>')
+                    elif isinstance(v, (int, float)):
+                        cells.append(f'<c r="{L[j]}{rn}"><v>{v!r}</v></c>')
+                    else:
+                        cells.append(f'<c r="{L[j]}{rn}" t="inlineStr"><is><t xml:space="preserve">{esc(str(v))}</t></is></c>')
+            buf.append(f'<row r="{rn}">' + "".join(cells) + "</row>")
+            if len(buf) >= 2000:
+                yield "".join(buf)
+                buf = []
+        if buf:
+            yield "".join(buf)
+        yield ("</sheetData>" + (f'<autoFilter ref="A1:{L[-1]}{max(last, 2)}"/>' if nc else "") + "".join(cfxml) + "</worksheet>")
+
+    with _zip.ZipFile(path, "w", _zip.ZIP_DEFLATED, compresslevel=3) as z:
+        z.writestr("[Content_Types].xml", ctypes)
+        z.writestr("_rels/.rels", rels)
+        z.writestr("xl/workbook.xml", wbxml)
+        z.writestr("xl/_rels/workbook.xml.rels", wbrels)
+        z.writestr("xl/styles.xml", styles)
+        with z.open("xl/worksheets/sheet1.xml", "w", force_zip64=True) as f:
+            for chunk in rows():
+                f.write(chunk.encode("utf-8"))
+    return "fastxml"

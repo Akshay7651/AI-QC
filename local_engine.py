@@ -63,9 +63,10 @@ def _fallback_form(path, docket=None):
     return {"is_proforma3": None, "quality": None, "form_no": None, "po_id": None, "po_id_matches": None,
             "form_area": r.get("form_area"), "form_loss": r.get("form_loss"), "row_area": None, "row_loss": None,
             "total_row_blank": None, "loss_date": r.get("survey_date"),
-            "farmer_signed": r.get("farmer_signed"), "company_signed": r.get("surveyor_signed"),
-            "worker_signed": None, "officer_signed": r.get("govt_signed"), "officer_stamp_only": False,
-            "overwrite_suspected": False, "confidence": r.get("pdf_confidence"), "field_conf": {},
+            "farmer_signed": None, "company_signed": None, "worker_signed": None, "officer_signed": None,
+            "officer_stamp_only": False, "overwrite_suspected": False,
+            # the generic reader cannot read this handwriting/layout reliably: never report it as confident
+            "confidence": min(float(r.get("pdf_confidence") or 0.0), 0.5), "field_conf": {},
             "notes": ["generic OCR fallback (form_reader not installed)"], "engine": "local-ocr"}
 
 

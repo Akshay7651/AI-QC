@@ -8,7 +8,7 @@ from scipy.spatial import cKDTree
 import config as C
 
 OUT = ["Nearby_Same_Surveyor_25m", "Nearby_Any_Surveyor_25m", "Records_On_Same_Field",
-       "Group_ID", "Cluster_Size", "Suggested_Remark", "Suggest_%"]
+       "Group_ID", "Cluster_Size", "Suggested_Remark", "Suggest_%", "Same_Location_Remark"]
 
 
 def run(df: pd.DataFrame, radius_m: float = C.GPS_PROXIMITY_RADIUS_M) -> pd.DataFrame:
@@ -19,6 +19,7 @@ def run(df: pd.DataFrame, radius_m: float = C.GPS_PROXIMITY_RADIUS_M) -> pd.Data
     any_surv = np.zeros(n, int)
     group = np.full(n, -1)
     csize = np.ones(n, int)
+    examples = {}  # row position -> up to 3 neighbouring row positions (for the reviewer)
 
     vi = np.flatnonzero(valid)
     if len(vi):
@@ -26,7 +27,14 @@ def run(df: pd.DataFrame, radius_m: float = C.GPS_PROXIMITY_RADIUS_M) -> pd.Data
         lng = df["longitude"].to_numpy(float)[vi]
         # local equirectangular projection to metres
         xy = np.column_stack([lat * 111_320.0, lng * 111_320.0 * np.cos(np.radians(lat.mean()))])
-        pairs = cKDTree(xy).query_pairs(radius_m, output_type="ndarray")
+        tree = cKDTree(xy)
+        pairs = tree.query_pairs(radius_m, output_type="ndarray")
+        dist, nn = tree.query(xy, k=min(6, len(xy)), distance_upper_bound=radius_m)  # up to 5 nearest (self filtered out below)
+        dist, nn = dist.reshape(len(xy), -1), nn.reshape(len(xy), -1)
+        for r_ in range(len(xy)):
+            js = [int(vi[j_]) for d_, j_ in zip(dist[r_], nn[r_]) if np.isfinite(d_) and j_ != r_][:3]
+            if js:
+                examples[int(vi[r_])] = js
         sname = df["surveyor_name"].fillna("").astype(str).str.strip().str.lower()
         codes = pd.factorize(sname)[0]
         blank = (sname == "").to_numpy()  # unknown surveyor identity is never treated as 'same surveyor'
@@ -72,6 +80,27 @@ def run(df: pd.DataFrame, radius_m: float = C.GPS_PROXIMITY_RADIUS_M) -> pd.Data
     for i in range(n):
         if valid[i] and gsize[i] > 1:
             gid[i] = first.setdefault(group[i], f"G-{len(first) + 1:03d}")
+    dock = df["docket_id"].astype(str).to_numpy()
+    txt = np.full(n, "", dtype=object)
+    for i in range(n):
+        parts = []
+        oth = any_surv[i] - same_surv[i]
+        if any_surv[i] > 0:
+            p = (f"MULTIPLE SURVEYS AT SAME LOCATION: {any_surv[i]} other record(s) within {radius_m:g} m "
+                 f"({same_surv[i]} by the same surveyor, {oth} by other surveyors)")
+            if remark[i] == "Same Location - QC Required":
+                p += " - repeated surveys by one surveyor with damage reported: QC required"
+            elif remark[i] == "Same Location - Low Damage":
+                p += " - repeated surveys by one surveyor with low/no damage: likely same spot reused"
+            parts.append(p)
+        if on_field[i] > 1:
+            parts.append(f"{on_field[i]} records share the same survey no. in this village/patwar circle")
+        if gid[i]:
+            parts.append(f"cluster {gid[i]} of {csize[i]} points")
+        if i in examples:
+            parts.append("e.g. dockets " + ", ".join(dock[j] for j in examples[i]))
+        txt[i] = "; ".join(parts)
+    out["Same_Location_Remark"] = txt
     out["Nearby_Same_Surveyor_25m"] = same_surv
     out["Nearby_Any_Surveyor_25m"] = any_surv
     out["Records_On_Same_Field"] = on_field

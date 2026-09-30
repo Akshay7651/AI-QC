@@ -99,11 +99,11 @@ function busy(on){$('loadov').style.display=on?'flex':'none'}
 // A QC field = a column that is blank in nearly every data row (i.e. an input column, not data)
 // Columns written by the AI QC pipeline (run_qc.py). AI_COLS are shown/read-only; EXTRA_COLS are
 // derived columns (recomputed here, except Suggested_Remark / Suggest_% which the file's own values win over).
-const AI_COLS=['AI_Confidence','AI_Flags','Data_QC_Flags'];
+const AI_COLS=['QC Verdict','AI_Confidence','AI_Flags','Data_QC_Flags'];
 const EXTRA_COLS=['Records_On_Same_Field','Nearby_Same_Surveyor_25m','Group_ID','Suggested_Remark','Suggest_%'];
 const SPECIAL=new Set([...AI_COLS,...EXTRA_COLS]);
 // QC columns by name, so AI-prefilled ones are still treated as QC fields even when mostly non-blank
-const KNOWN_QC=/\(Form\)|Match\/Mismatch|^Field photo|Signature \(|^Form Status|^Survey remarks on form|^Farmer Photo|^Loss as per Photo|^Any Other Remarks|^Date of survey \(as per|^Done By$|^QC Done$|^Date & Time of QC$/i;
+const KNOWN_QC=/^Form No$|^PO ID matches|^Form (Row|Total|Quality|Confidence|vs App|Stamp)|^Officer Stamp|^Primary Worker|^Photo (is form|scene|GPS distance|s rotated)|^Photos (analysed|rotated)|^Form-image|^Duplicate photos|^Crop (present|seen|matches|damage)|^Flooding|^AI Engine$|\(Form\)|Match\/Mismatch|^Field photo|Signature \(|^Form Status|^Survey remarks on form|^Farmer Photo|^Loss as per Photo|^Any Other Remarks|^Date of survey \(as per|^Done By$|^QC Done$|^Date & Time of QC$/i;
 let aiCols=[];
 function classifyColumns(H,body){
   idCol=find(H,/docket.*id/i)||H[0];

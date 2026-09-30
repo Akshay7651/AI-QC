@@ -150,7 +150,7 @@ def normalise(rgb):
     info["rot"] = best[1] * 90
     r = best[2]
     # second, finer deskew pass on the upright image
-    for _ in range(2):
+    for _ in range(1):
         a2 = refine_skew(_resize_w(_gray(r), GW))
         if abs(a2) >= 0.15:
             r = rotate_small(r, a2)
@@ -192,23 +192,24 @@ def line_masks(g):
 
 
 def refine_skew(g):
-    """small residual skew (deg) from long horizontal ruled lines of an already roughly upright 1000 px gray image"""
+    """residual skew (deg) of an already roughly upright 1000 px gray image: projection-profile search on the
+    ruled-line mask (sharpest row histogram wins)."""
     _, hl, _ = line_masks(g)
-    ls = cv2.HoughLinesP(hl, 1, np.pi / 1440, 120, minLineLength=int(0.25 * g.shape[1]), maxLineGap=15)
-    if ls is None:
-        return 0.0
-    ang, wt = [], []
-    for x1, y1, x2, y2 in ls.reshape(-1, 4):
-        a = np.degrees(np.arctan2(y2 - y1, x2 - x1))
-        if abs(a) < 8:
-            ang.append(a)
-            wt.append(np.hypot(x2 - x1, y2 - y1))
-    if not ang:
-        return 0.0
-    o = np.argsort(ang)
-    ang, wt = np.array(ang)[o], np.array(wt)[o]
-    c = np.cumsum(wt)
-    return float(ang[np.searchsorted(c, c[-1] / 2)])
+    sm = cv2.resize(hl, (500, int(hl.shape[0] * 0.5)), interpolation=cv2.INTER_AREA)
+    h, w = sm.shape
+
+    def score(a):
+        M = cv2.getRotationMatrix2D((w / 2, h / 2), a, 1.0)
+        r = cv2.warpAffine(sm, M, (w, h), flags=cv2.INTER_LINEAR).astype(np.float32)
+        prof = r.sum(1)
+        return float((prof ** 2).sum())
+
+    angs = np.arange(-4.0, 4.01, 0.5)
+    sc = [score(a) for a in angs]
+    a0 = angs[int(np.argmax(sc))]
+    angs2 = np.arange(a0 - 0.5, a0 + 0.51, 0.1)
+    sc2 = [score(a) for a in angs2]
+    return float(angs2[int(np.argmax(sc2))])
 
 
 def hlines(hl, x0=0, x1=None, thr_frac=0.3):
@@ -378,3 +379,169 @@ def cell_boxes(tab, vl, scale):
             padv = 0.08 * (yb - ya)
             out[f"{cname}_{name}"] = tuple(int(round(v * scale)) for v in (xs[i0], ya - padv, xs[i1], yb + padv))
     return out
+
+
+GRID_H = 11.6       # grid height in row pitches (template constant)
+GRID_GAP = 6.8      # header-top of table to grid bottom, in pitches
+
+
+def grid_lines(hl, tab, W):
+    """Upper field grid (fields 1-15). Returns dict(lines(top->bottom), B, detected) in g coords; falls back to nominal."""
+    L, R, p = tab["L"], tab["R"], tab["p"]
+    w = R - L
+    ls = hlines(hl, int(L - 0.03 * w), int(R + 0.03 * w), thr_frac=0.1)
+    cand = [y for y, s in ls if s >= 0.7 * w and y < tab["ytop"] - 0.9 * p]
+    cand.sort(reverse=True)
+    nomB = tab["ytop"] - GRID_GAP * p
+    for i, B in enumerate(cand):
+        if abs(B - nomB) > 1.6 * p:
+            continue
+        chain = [B]
+        for y in cand[i + 1:]:
+            d = chain[-1] - y
+            if d < 0.8 * p:
+                continue
+            if d > 2.6 * p:
+                break
+            chain.append(y)
+        if len(chain) >= 4:
+            return {"lines": chain[::-1], "B": B, "detected": True}
+    return {"lines": [nomB], "B": nomB, "detected": False}
+
+
+def grid_bands(gr, tab):
+    """rows 11/12, 13/14, 15 of the grid as (ya, yb) + grid top T"""
+    p = tab["p"]
+    ln = gr["lines"]
+    B = gr["B"]
+    out = {}
+    nom = {"r15": 1.16, "r1314": 1.94, "r1112": 1.14}
+    cur = B
+    for nm in ("r15", "r1314", "r1112"):
+        exp = cur - nom[nm] * p
+        j = [y for y in ln if abs(y - exp) < 0.32 * p]
+        nxt = min(j, key=lambda y: abs(y - exp)) if j else exp
+        out[nm] = (nxt, cur)
+        cur = nxt
+    Tn = B - GRID_H * p
+    j = [y for y in ln if abs(y - Tn) < 0.6 * p]
+    out["T"] = min(j, key=lambda y: abs(y - Tn)) if j else Tn
+    out["detected"] = gr["detected"]
+    return out
+
+
+class Layout(dict):
+    """dict with: ok, rgb (normalised hi-res image), scale, tab, boxes{name:(x0,y0,x1,y1) in hi px}, notes"""
+
+
+def analyse_layout(src_rgb):
+    """Full geometric analysis of one photographed page. Returns Layout (ok False when the ruled table is not found)."""
+    lay = Layout(ok=False, notes=[])
+    r, info = normalise(src_rgb)
+    lay.update(rgb=r, info=info)
+    g = _resize_w(_gray(r), GW)
+    sc = r.shape[1] / GW
+    lay["scale"] = sc
+    lay["g"] = g
+    if not info["lines"]:
+        lay["notes"].append("no ruled lines found")
+        return lay
+    _, hl, vl = line_masks(g)
+    lay["hl"], lay["vl"] = hl, vl
+    tab = locate_table(g, hl, vl)
+    if tab is None:
+        lay["notes"].append("table not located")
+        return lay
+    lay["tab"] = tab
+    lay["ok"] = True
+    p, w, L, R = tab["p"], tab["R"] - tab["L"], tab["L"], tab["R"]
+    H = g.shape[0]
+    B = {}
+    # table cells
+    B.update(cell_boxes(tab, vl, sc))
+    # upper grid -> dates, PO ID
+    gr = grid_lines(hl, tab, GW)
+    lay["grid"] = gr
+    if gr is not None:
+        gb = grid_bands(gr, tab)
+        if not gb["detected"]:
+            lay["notes"].append("upper grid lines not detected (nominal layout used)")
+        lay["gb"] = gb
+        for nm, (a, b) in (("r1112", gb["r1112"]), ("r1314", gb["r1314"])):
+            xs, _ = snap_cols(vl, [L + f * w for f in (GRID_L[0], GRID_L[1], GRID_R[0], 1.0)], a + 0.15 * p, b - 0.15 * p, w)
+            padv = 0.06 * (b - a)
+            B[f"{'sow' if nm == 'r1112' else 'intim'}_date"] = tuple(int(round(v * sc)) for v in (xs[0] + 2, a - padv, xs[1] - 2, b + padv))
+            B[f"{'loss' if nm == 'r1112' else 'insp'}_date"] = tuple(int(round(v * sc)) for v in (xs[2] + 2, a - padv, xs[3] + 0.02 * w, b + padv))
+        T = gb["T"]
+        B["po_id"] = tuple(int(round(v * sc)) for v in (L + 0.58 * w, T - 2.3 * p, R + 0.02 * w, T + 0.1 * p))
+        B["formno_win"] = tuple(int(round(v * sc)) for v in (R - 0.34 * w, T - 5.6 * p, R + 0.04 * w, T - 2.4 * p))
+    else:
+        lay["notes"].append("upper grid not located")
+    # signatures
+    yt = tab["ytot"]
+    fr = [(0.0, 0.235), (0.232, 0.49), (0.494, 0.745), (0.748, 1.0)]
+    for nm, (a, b) in zip(("farmer", "company", "worker", "officer"), fr):
+        B[f"sig_{nm}"] = tuple(int(round(v * sc)) for v in (L + a * w, yt + 1.5 * p, L + b * w, yt + 3.55 * p))
+        B[f"lab_{nm}"] = tuple(int(round(v * sc)) for v in (L + a * w, yt + 3.35 * p, L + b * w, yt + 4.6 * p))
+    lay["boxes"] = B
+    return lay
+
+
+def crop(rgb, box, pad=0):
+    h, w = rgb.shape[:2]
+    x0, y0, x1, y1 = box
+    x0, y0, x1, y1 = int(max(0, x0 - pad)), int(max(0, y0 - pad)), int(min(w, x1 + pad)), int(min(h, y1 + pad))
+    return rgb[y0:y1, x0:x1]
+
+
+_BD = None
+
+
+def find_barcode_quad(r, lay):
+    """Barcode quad (4x2 float array, order BL,TL,TR,BR) in hi-res coords using OpenCV's detector inside the
+    window above the upper grid; None when not found."""
+    global _BD
+    if _BD is None:
+        _BD = cv2.barcode.BarcodeDetector()
+    B = lay["boxes"]
+    if "formno_win" not in B:
+        return None
+    x0, y0, x1, y1 = B["formno_win"]
+    p = lay["tab"]["p"] * lay["scale"]
+    wx0, wx1 = int(max(0, x0 - 0.1 * (x1 - x0))), int(min(r.shape[1], x1 + 0.15 * (x1 - x0)))
+    wy0, wy1 = int(max(0, y0 - 1.2 * p)), int(min(r.shape[0], y1 + 3.5 * p))
+    g = cv2.cvtColor(r[wy0:wy1, wx0:wx1], cv2.COLOR_RGB2GRAY)
+    try:
+        res = _BD.detectAndDecodeWithType(g)
+    except Exception:
+        return None
+    pts = res[3]
+    if pts is None or len(pts) == 0:
+        return None
+    best = None
+    for q in np.asarray(pts).reshape(-1, 4, 2):
+        w = np.linalg.norm(q[3] - q[0])
+        h = np.linalg.norm(q[0] - q[1])
+        if w < 0.12 * r.shape[1] or h < 8 or w / h < 3:
+            continue
+        if best is None or w > best[0]:
+            best = (w, q)
+    if best is None:
+        return None
+    q = best[1] + np.array([wx0, wy0], np.float32)
+    return q
+
+
+def formno_strip(r, q, scale=3.0, lo=0.04, hi=0.95):
+    """rectified strip under the barcode quad: gray uint8"""
+    p0, p1, p2, p3 = q
+    d = (p0 - p1)             # down vector, length = barcode height
+    top_l, top_r = p0 + lo * d, p3 + lo * d
+    bot_l, bot_r = p0 + hi * d, p3 + hi * d
+    bw = np.linalg.norm(p3 - p0)
+    bh = np.linalg.norm(d)
+    wd, hd = int(bw * scale), int(bh * (hi - lo) * scale)
+    src = np.float32([top_l, top_r, bot_r, bot_l])
+    dst = np.float32([[0, 0], [wd, 0], [wd, hd], [0, hd]])
+    M = cv2.getPerspectiveTransform(src, dst)
+    return cv2.warpPerspective(cv2.cvtColor(r, cv2.COLOR_RGB2GRAY), M, (wd, hd), flags=cv2.INTER_CUBIC, borderMode=cv2.BORDER_REPLICATE)

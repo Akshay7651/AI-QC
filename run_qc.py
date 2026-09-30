@@ -255,6 +255,8 @@ QC_BLOCK = [
     C.COL_FORM_STATUS, "Form Quality", "Form Confidence", C.COL_FORM_REMARKS,
     C.COL_PHOTO_DATE, C.COL_FIELD_PHOTO, "Field photo type", "Photo is form image (Yes/No)", "Form-image photos (n)",
     "Duplicate photos (n)", "Photos rotated (Yes/No)", "Photo GPS distance (m)", "Photos analysed (n)",
+    "Photo scene type", "Crop present in photo", "Crop seen in photo", "Crop matches declared", "Flooding/waterlogging seen",
+    "Crop damage state",
     C.COL_FARMER_PHOTO, C.COL_PHOTO_LOSS, "AI_Flags", C.COL_OTHER_REMARKS, "AI Engine",
 ]
 _AI_PREFIX = ("OK:", "REJECT-EVIDENCE:", "MANUAL-CHECK:", "REVIEW:", "FORM:", "PHOTOS:", "GPS:", "DATA:", "RISK ")
@@ -337,6 +339,12 @@ def assemble_local(df, results, keys):
             d = _nn(p.get("stamp_dist_m"))
             put("Photo GPS distance (m)", None if d is None else round(float(d), 1))
             put("Photos analysed (n)", r.get("n_photos"))
+            put("Photo scene type", p.get("scene_type"))
+            put("Crop present in photo", _yn(p.get("crop_present")))
+            put("Crop seen in photo", p.get("crop_seen"))
+            put("Crop matches declared", _yn(p.get("crop_matches_declared")))
+            put("Flooding/waterlogging seen", _yn(p.get("flooded")))
+            put("Crop damage state", p.get("damage_state"))
             put(C.COL_FARMER_PHOTO, _yn(p.get("farmer_photo")) if p.get("farmer_photo") is not None else None)
             put(C.COL_PHOTO_LOSS, p.get("photo_loss"))
     out = df.copy()

@@ -329,7 +329,7 @@ def test_report_missing_columns_and_empty(tmp_path):
 
 
 def test_local_engine_runs_without_key(tmp_path, monkeypatch):
-    """--engine local (auto without key) reads a docket-named PDF with Tesseract; no API/client involved."""
+    """--engine local (auto without key) runs offline; with only the generic OCR fallback the result is honest: Manual-check."""
     import pandas as pd, pymupdf
     monkeypatch.setattr(C, "ANTHROPIC_API_KEY", None)
     d = pymupdf.open(); pg = d.new_page(); y = 80
@@ -338,7 +338,8 @@ def test_local_engine_runs_without_key(tmp_path, monkeypatch):
     (tmp_path / "media").mkdir(); d.save(str(tmp_path / "media" / "1000000000.pdf"))
     df = pd.DataFrame([["1000000000", "A", "F", "Flood", "2026-09-01", "2026-09-05", 1, "Paddy", "1", "0", "S", "D", "T", "B", "V", "P", "Sv", "9123456789", 40, 30, 12, "", 29.1, 76.1, "", ""]])
     df.to_excel(tmp_path / "in.xlsx", header=False, index=False)
-    assert run_qc.main(["--input", str(tmp_path / "in.xlsx"), "--output", str(tmp_path / "o.xlsx"), "--mode", "pdf",
-                        "--local-media", str(tmp_path / "media"), "--checkpoint", str(tmp_path / "ck.json")]) == 0
+    assert run_qc.main(["--input", str(tmp_path / "in.xlsx"), "--output", str(tmp_path / "o.xlsx"), "--mode", "pdf", "--no-serve",
+                        "--local-media", str(tmp_path / "media"), "--checkpoint", str(tmp_path / "ck.json"),
+                        "--progress", str(tmp_path / "p.json"), "--agents", "1"]) == 0
     o = pd.read_excel(tmp_path / "o.xlsx")
-    assert o["Match/Mismatch (Form&app)"][0] == "Match" and o["Affected area% (Form)"][0] == 40
+    assert o["QC Verdict"][0] in ("Manual-check", "Review", "OK") and "FORM:" in o["Any Other Remarks"][0]

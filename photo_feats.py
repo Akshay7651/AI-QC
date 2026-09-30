@@ -134,3 +134,25 @@ def orient_features(c):
     tex = gx + gy
     out.append(float(tex[:21].mean() - tex[43:].mean())); out.append(float(tex[:, :16].mean() - tex[:, 32:].mean()))
     return np.array(out, np.float32)
+
+
+def phash(c, size=8):
+    """64-bit DCT perceptual hash of the content area (BGR) -> np.uint8 bits (size*size)."""
+    g = cv2.cvtColor(cv2.resize(c, (32, 32), interpolation=cv2.INTER_AREA), cv2.COLOR_BGR2GRAY).astype(np.float32)
+    d = cv2.dct(g)[:size, :size]
+    med = np.median(d.ravel()[1:])
+    return (d.ravel() > med).astype(np.uint8)
+
+
+def small_gray(c, n=48):
+    return cv2.resize(cv2.cvtColor(c, cv2.COLOR_BGR2GRAY), (n, n), interpolation=cv2.INTER_AREA).astype(np.float32)
+
+
+def ssim(a, b):
+    """global-window SSIM on small grayscale arrays (8x8 blocks, mean)."""
+    C1, C2 = 6.5025, 58.5225
+    k = (7, 7)
+    mu1, mu2 = cv2.blur(a, k), cv2.blur(b, k)
+    s11 = cv2.blur(a * a, k) - mu1 ** 2; s22 = cv2.blur(b * b, k) - mu2 ** 2; s12 = cv2.blur(a * b, k) - mu1 * mu2
+    m = ((2 * mu1 * mu2 + C1) * (2 * s12 + C2)) / ((mu1 ** 2 + mu2 ** 2 + C1) * (s11 + s22 + C2))
+    return float(m.mean())
