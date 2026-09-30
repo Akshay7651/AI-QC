@@ -28,6 +28,9 @@ th{position:sticky;top:0;background:#d4e8d4;cursor:pointer;user-select:none;posi
 #bulk label{display:block;font-size:11px;color:#555;margin-top:6px}#bulk input,#bulk select,#bulk textarea{width:100%}#map{position:relative}
 .cellon{background:#fff8dc}
 #loadov{position:fixed;inset:0;background:#fffc;z-index:9999;display:none;align-items:center;justify-content:center;font-size:16px;color:#333}
+#legend{position:absolute;z-index:900;left:10px;bottom:24px;background:#fffffff2;border-radius:6px;box-shadow:0 1px 6px #0005;padding:6px 10px;font-size:11px;display:none}
+#legend div{margin:2px 0;white-space:nowrap}#legend .dot{width:11px;height:11px;border:1px solid #0006;vertical-align:-1px}
+.pqc{max-height:190px;overflow:auto;margin-top:3px}
 #empty{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#888;font-size:14px;z-index:5;pointer-events:none}
 </style></head><body>
 <div id="top"><div id="side">
@@ -58,6 +61,7 @@ th{position:sticky;top:0;background:#d4e8d4;cursor:pointer;user-select:none;posi
   <div style="position:relative;flex:1;min-height:0;display:flex">
     <div id="map"></div>
     <div id="empty">Choose an Excel file above to load survey data</div>
+    <div id="legend"></div>
     <div id="bulk">
       <b id="selN"></b>
       <div id="qcgrid"></div>
@@ -93,13 +97,23 @@ function busy(on){$('loadov').style.display=on?'flex':'none'}
 
 // ---- figure out which columns are "raw data" vs "QC fields to fill" ----
 // A QC field = a column that is blank in nearly every data row (i.e. an input column, not data)
+// Columns written by the AI QC pipeline (run_qc.py). AI_COLS are shown/read-only; EXTRA_COLS are
+// derived columns (recomputed here, except Suggested_Remark / Suggest_% which the file's own values win over).
+const AI_COLS=['AI_Confidence','AI_Flags','Data_QC_Flags'];
+const EXTRA_COLS=['Records_On_Same_Field','Nearby_Same_Surveyor_25m','Group_ID','Suggested_Remark','Suggest_%'];
+const SPECIAL=new Set([...AI_COLS,...EXTRA_COLS]);
+// QC columns by name, so AI-prefilled ones are still treated as QC fields even when mostly non-blank
+const KNOWN_QC=/\(Form\)|Match\/Mismatch|^Field photo|Signature \(|^Form Status|^Survey remarks on form|^Farmer Photo|^Loss as per Photo|^Any Other Remarks|^Date of survey \(as per|^Done By$|^QC Done$|^Date & Time of QC$/i;
+let aiCols=[];
 function classifyColumns(H,body){
   idCol=find(H,/docket.*id/i)||H[0];
   latCol=find(H,/^lat/i);lngCol=find(H,/^lon/i);
+  aiCols=AI_COLS.filter(h=>H.includes(h));
   const n=body.length,blank={};H.forEach((h,j)=>{if(!h)return;let c=0;for(let i=0;i<n;i++){if(!clean(body[i][j]))c++}blank[h]=n?c/n:1});
-  rawCols=H.filter(h=>h&&blank[h]<0.95);
-  qcCols=H.filter(h=>h&&blank[h]>=0.95);
-  if(!qcCols.length){qcCols=H.slice(-8).filter(Boolean);rawCols=H.filter(h=>h&&!qcCols.includes(h))}
+  const HH=H.filter(h=>h&&!SPECIAL.has(h));
+  rawCols=HH.filter(h=>blank[h]<0.95&&!KNOWN_QC.test(h));
+  qcCols=HH.filter(h=>blank[h]>=0.95||KNOWN_QC.test(h));
+  if(!qcCols.length){qcCols=HH.slice(-8);rawCols=HH.filter(h=>!qcCols.includes(h))}
   qcMeta={};
   qcCols.forEach(h=>{
     const m=h.match(/\(([^)]+)\)/);let type='text',opts=[];
@@ -119,9 +133,10 @@ function doLoad(data){
   if(hi<0)hi=0;
   const H=data[hi].map(clean);const body=data.slice(hi+1).filter(r=>r.some(x=>x!=null&&x!==''));
   classifyColumns(H,body);
-  headers=[...rawCols,...qcCols,'Records_On_Same_Field','Nearby_Same_Surveyor_25m','Group_ID','Suggested_Remark','Suggest_%'];
+  headers=[...rawCols,...qcCols,...aiCols,...EXTRA_COLS];
   const latJ=H.indexOf(latCol),lngJ=H.indexOf(lngCol),dcCol=find(rawCols,/total.*damage/i),dcJ=H.indexOf(dcCol);
   rows=body.map((r,i)=>{const o={_i:i};for(let j=0;j<H.length;j++){const h=H[j];if(h)o[h]=clean(r[j])}
+    o._fileSR=o.Suggested_Remark||'';o._fileSP=o['Suggest_%']||'';
     o.lat=latJ>=0?+r[latJ]:NaN;o.lng=lngJ>=0?+r[lngJ]:NaN;
     o.dmg=dcJ>=0?(parseFloat(r[dcJ])||0):NaN;
     o.dmgBand=isNaN(o.dmg)?'':o.dmg===0?'No damage':o.dmg<25?'Low (<25%)':o.dmg<50?'Medium (25-49%)':'High (≥50%)';
@@ -141,12 +156,23 @@ function buildFilters(){
   $('dynFilters').querySelectorAll('select').forEach(s=>{const h=s.dataset.fc;const u=[...new Set(rows.map(r=>r[h]))].filter(x=>x).sort();s.innerHTML=`<option value="">All ${h}</option>`+u.map(x=>`<option>${x}</option>`).join('');s.onchange=()=>render(false)})}
 function buildColorBy(){
   const surCol=find(rawCols,/surveyor.*name/i);
-  const opts=[];if(surCol)opts.push([surCol,'Surveyor']);opts.push(['Records_On_Same_Field','Points on field']);
+  const opts=[];opts.push(['Suggested_Remark','Suggested remark']);if(aiCols.includes('AI_Confidence'))opts.push(['AI_Confidence','AI confidence']);
+  if(surCol)opts.push([surCol,'Surveyor']);opts.push(['Records_On_Same_Field','Points on field']);
   if(find(rawCols,/total.*damage/i))opts.push(['dmgBand','Damage band']);
   const dc=find(rawCols,/district/i);if(dc)opts.push([dc,'District']);
   qcCols.forEach(h=>opts.push([h,'QC: '+h]));
   $('colorBy').innerHTML=opts.map(([v,l])=>`<option value="${v}">${l}</option>`).join('');
+  $('colorBy').value='Suggested_Remark';
   $('colorBy').onchange=()=>render(false)}
+// Marker colour by Suggested_Remark: OK green, Review yellow, Same Location - QC Required red, Low Damage orange
+function remarkKind(t){t=String(t||'').toLowerCase();
+  if(!t)return'none';if(/qc required/.test(t))return'req';if(/low damage/.test(t))return'low';if(/review/.test(t))return'rev';if(/^ok\b/.test(t))return'ok';if(/same location/.test(t))return'req';return'other'}
+const REM={ok:['#3cb44b','#f0fff0','#1a7a1a','OK'],rev:['#ffe119','#fffbe0','#8a6d00','Review'],req:['#e6194b','#fff0f0','#c00','Same Location - QC Required'],low:['#f58231','#fff3e6','#c25a00','Low Damage'],other:['#aaa','#f3e5f5','#6a1b9a',''],none:['#aaa','#f4f4f4','#666','']};
+const confColor={high:'#3cb44b',medium:'#ffe119',low:'#e6194b'};
+function legend(key){const L=$('legend');let items=[];
+  if(key=='Suggested_Remark')items=[['ok','OK'],['rev','Review'],['req','Same Location - QC Required'],['low','Low Damage']].map(([k,l])=>[REM[k][0],l]);
+  else if(key=='AI_Confidence')items=[['High','#3cb44b'],['Medium','#ffe119'],['Low','#e6194b']].map(([l,c])=>[c,l]);
+  L.innerHTML=items.map(([c,l])=>`<div><span class="dot" style="background:${c}"></span>${l}</div>`).join('');L.style.display=items.length?'block':'none'}
 
 // spatial-hash based proximity check — O(rows), safe up to 100k+ rows.
 // Any single grid cell holding more than CAP points is summarised per-surveyor instead of
@@ -177,7 +203,7 @@ function nearCalc(){
     else if(o.nS>3&&!(o.dmg>15)){s='Same Location - Low Damage';c=75}
     else if(o.nS<=3&&records>3){s='Review - Multiple Records';c=65}
     else{s='OK';c=55}
-    o.Suggested_Remark=s;o['Suggest_%']=c})}
+    o.Suggested_Remark=o._fileSR||s;o['Suggest_%']=o._fileSP!==''?o._fileSP:c})}
 
 function qcFilled(o){return qcCols.some(h=>o[h])}
 function filtered(){
@@ -193,6 +219,8 @@ function filtered(){
 
 const dmgBandColor={'No damage':'#3cb44b','Low (<25%)':'#ffe119','Medium (25-49%)':'#f58231','High (≥50%)':'#e6194b'};
 function colorOf(o,key,cm){
+  if(key=='Suggested_Remark')return REM[remarkKind(o.Suggested_Remark)][0];
+  if(key=='AI_Confidence')return confColor[String(o.AI_Confidence).toLowerCase()]||'#aaa';
   if(key=='Records_On_Same_Field')return['#3cb44b','#ffe119','#f58231','#e6194b','#800000'][Math.min(o.Records_On_Same_Field,5)-1];
   if(key=='dmgBand')return dmgBandColor[o.dmgBand]||'#aaa';
   if(qcCols.includes(key))return o[key]?'#3cb44b':'#e6194b';
@@ -200,14 +228,14 @@ function colorOf(o,key,cm){
 
 function render(fit){
   if(+$('rad').value!==lastRad)nearCalc();
-  shown=filtered();const key=$('colorBy').value;
+  shown=filtered();const key=$('colorBy').value;legend(key);
   const vals=[...new Set(rows.map(r=>r[key]))].sort();const cm={};vals.forEach((v,i)=>cm[v]=pal[i%pal.length]);
   layer.clearLayers();const pts=[];
   const cap=+$('mapCap').value;
   const onMap=shown.length>cap?shown.filter(o=>sel.has(o._i)).concat(shown.filter(o=>!sel.has(o._i)).slice(0,cap)):shown;
   onMap.forEach(o=>{if(!o.lat||!o.lng)return;const c=colorOf(o,key,cm);
     const S=sel.has(o._i);const mk=L.circleMarker([o.lat,o.lng],{radius:S?9:6,color:S?'#00e5ff':'#000',weight:S?4:1,fillColor:c,fillOpacity:sel.size&&!S?.35:.95,opacity:sel.size&&!S?.5:1});
-    mk.bindPopup(()=>popup(o),{autoPan:true,autoPanPadding:[20,20],maxWidth:270,minWidth:240});layer.addLayer(mk);pts.push([o.lat,o.lng]);o._m=mk});
+    mk.bindPopup(()=>popup(o),{autoPan:true,autoPanPadding:[20,20],maxWidth:290,minWidth:260});layer.addLayer(mk);pts.push([o.lat,o.lng]);o._m=mk});
   map.invalidateSize();onMap.forEach(o=>{if(o._m&&sel.has(o._i))o._m.bringToFront()});
   if(fit&&pts.length)map.fitBounds(pts,{padding:[30,30],maxZoom:16});
   $('empty').style.display=rows.length?'none':'flex';
@@ -215,8 +243,7 @@ function render(fit){
 
 function popup(o){
   const surCol=find(rawCols,/surveyor.*name/i),farCol=find(rawCols,/farmer.*name/i),cropCol=find(rawCols,/crop.*name/i),remCol=find(rawCols,/surveyor.*remark/i);
-  const sugBg=o.Suggested_Remark==='Same Location - QC Required'?'#fff0f0':o.Suggested_Remark==='Same Location - Low Damage'?'#fff8e1':o.Suggested_Remark==='Review - Multiple Records'?'#f3e5f5':'#f0fff0';
-  const sugColor=o.Suggested_Remark==='Same Location - QC Required'?'#c00':o.Suggested_Remark==='Same Location - Low Damage'?'#e07000':o.Suggested_Remark==='Review - Multiple Records'?'#6a1b9a':'#1a7a1a';
+  const rk=REM[remarkKind(o.Suggested_Remark)],sugBg=rk[1],sugColor=rk[2];
   const chip=(txt,bg,col)=>`<span style="background:${bg};color:${col};padding:1px 7px;border-radius:10px;font-size:11px;font-weight:bold">${txt}</span>`;
   return `<div style="font:11px system-ui,sans-serif;width:250px">
   <div style="background:linear-gradient(135deg,#2a7a3b,#4363d8);color:#fff;padding:6px 8px;border-radius:4px 4px 0 0;margin:-1px -1px 0">
@@ -233,9 +260,10 @@ function popup(o){
     </div>
     ${remCol&&o[remCol]&&o[remCol]!='-'?`<div style="background:#fffde7;border-left:3px solid #f9a825;padding:3px 6px;font-size:10px;margin-bottom:4px"><i>"${o[remCol]}"</i></div>`:''}
     <div style="background:${sugBg};border:1px solid ${sugColor}33;border-radius:4px;padding:3px 7px;display:flex;justify-content:space-between">
-      <span style="color:${sugColor};font-weight:bold;font-size:11px">${o.Suggested_Remark}</span><span style="color:#888;font-size:10px">${o['Suggest_%']}%</span>
+      <span style="color:${sugColor};font-weight:bold;font-size:11px">${o.Suggested_Remark}</span><span style="color:#888;font-size:10px">${String(o['Suggest_%']).replace(/%$/,'')}%</span>
     </div>
-    ${qcCols.filter(h=>o[h]).map(h=>`<div style="margin-top:3px;background:#e8f5e9;border-radius:4px;padding:2px 7px;font-size:10px"><span style="color:#888">${h}:</span> <b style="color:#1a6b1a">${o[h]}</b></div>`).join('')}
+    ${aiCols.length?`<div class="pqc" style="max-height:none;overflow:visible">${aiCols.map(h=>{const v=o[h]||'';const cc=h=='AI_Confidence'?(confColor[v.toLowerCase()]||'#ccc'):'#ede9fe';return `<div style="margin-top:3px;background:${h=='AI_Confidence'?cc+'55':'#f3edff'};border-radius:4px;padding:2px 7px;font-size:10px;white-space:normal"><span style="color:#6d28d9">${h}:</span> <b>${v||'—'}</b></div>`}).join('')}</div>`:''}
+    <div class="pqc">${qcCols.map(h=>`<div style="margin-top:3px;background:${o[h]?'#e8f5e9':'#f4f4f4'};border-radius:4px;padding:2px 7px;font-size:10px;white-space:normal"><span style="color:#888">${h}:</span> <b style="color:${o[h]?'#1a6b1a':'#aaa'}">${o[h]||'—'}</b></div>`).join('')}</div>
     <div style="margin-top:5px;font-size:10px;color:#aaa;text-align:right">${o.lat?.toFixed(5)}, ${o.lng?.toFixed(5)} · <a target=_blank href="https://www.google.com/maps/@${o.lat},${o.lng},19z/data=!3m1!1e3" style="color:#4363d8">Maps ↗</a></div>
   </div></div>`}
 

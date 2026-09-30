@@ -27,7 +27,11 @@ def run(df: pd.DataFrame, radius_m: float = C.GPS_PROXIMITY_RADIUS_M) -> pd.Data
         # local equirectangular projection to metres
         xy = np.column_stack([lat * 111_320.0, lng * 111_320.0 * np.cos(np.radians(lat.mean()))])
         pairs = cKDTree(xy).query_pairs(radius_m, output_type="ndarray")
-        surv = pd.factorize(df["surveyor_name"].fillna("").astype(str).str.strip().str.lower())[0][vi]
+        sname = df["surveyor_name"].fillna("").astype(str).str.strip().str.lower()
+        codes = pd.factorize(sname)[0]
+        blank = (sname == "").to_numpy()  # unknown surveyor identity is never treated as 'same surveyor'
+        codes = np.where(blank, codes.max(initial=-1) + 1 + np.arange(n), codes)
+        surv = codes[vi]
         m = len(vi)
         if len(pairs):
             a, b = pairs[:, 0], pairs[:, 1]

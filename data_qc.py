@@ -3,6 +3,7 @@ import numpy as np
 import pandas as pd
 
 import config as C
+from common import parse_dates
 
 REQUIRED = ["docket_id", "farmer_name", "crop_name", "khasra_number",
             "latitude", "longitude", "affected_area_pct", "crop_loss_pct"]
@@ -36,8 +37,8 @@ def run(df: pd.DataFrame) -> pd.Series:
     add(has_gps & ~(lat.between(C.INDIA_LAT_MIN, C.INDIA_LAT_MAX) & lng.between(C.INDIA_LNG_MIN, C.INDIA_LNG_MAX)),
         "GPS out of India bounds")
 
-    start = pd.to_datetime(df["survey_start_date"], errors="coerce", dayfirst=True, format="mixed")
-    end = pd.to_datetime(df["survey_end_date"], errors="coerce", dayfirst=True, format="mixed")
+    start = parse_dates(df["survey_start_date"])
+    end = parse_dates(df["survey_end_date"])
     add(~_blank(df["survey_start_date"]) & start.isna(), "Unparseable survey_start_date")
     add(~_blank(df["survey_end_date"]) & end.isna(), "Unparseable survey_end_date")
     add(start.notna() & end.notna() & (start > end), "Start date after end date")

@@ -14,14 +14,17 @@ def build(df: pd.DataFrame, path: str):
         flagged |= df["Data_QC_Flags"].fillna("").ne("")
     m = df[C.COL_MATCH] if C.COL_MATCH in df else pd.Series("NA", index=df.index)
     done = _truthy(df[C.COL_QC_DONE]) if C.COL_QC_DONE in df else pd.Series(False, index=df.index)
-    t = pd.DataFrame({"District": df["district"].fillna("Unknown"), "QC Done": done, "Match": m.eq("Match"),
+    blank = pd.Series("Unknown", index=df.index)
+    dist = df["district"].fillna("Unknown") if "district" in df else blank
+    surv_name = df["surveyor_name"].fillna("Unknown") if "surveyor_name" in df else blank
+    t = pd.DataFrame({"District": dist, "QC Done": done, "Match": m.eq("Match"),
                       "Mismatch": m.eq("Mismatch"), "Flagged": flagged})
     t["Total"] = 1
     d = t.groupby("District").sum().reset_index()
     d["Match%"] = (100 * d["Match"] / (d["Match"] + d["Mismatch"]).replace(0, float("nan"))).round(1)
     district = d[["District", "Total", "QC Done", "Match", "Mismatch", "Flagged", "Match%"]]
 
-    s = pd.DataFrame({"Surveyor": df["surveyor_name"].fillna("Unknown"),
+    s = pd.DataFrame({"Surveyor": surv_name,
                       "Same_Location_Flags": df.get("Suggested_Remark", pd.Series("", index=df.index)).fillna("").str.startswith("Same Location"),
                       "Mismatch_Count": m.eq("Mismatch")})
     s["Records"] = 1

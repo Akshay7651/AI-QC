@@ -4,9 +4,10 @@ import re
 from datetime import datetime
 
 import httpx
+import pandas as pd
 
 import config as C
-from common import Unavailable, call_claude, fetch, haversine_m, image_media_type, num
+from common import Unavailable, call_claude, fetch, haversine_m, image_media_type, num, parse_dates
 
 PROMPT = """These are geo-tagged field photos from a PMFBY crop loss survey for crop: {crop}, reported loss: {loss}%.
 
@@ -48,7 +49,7 @@ async def process(row: dict, client, http: httpx.AsyncClient, tracker) -> dict:
     for u in [*local, *urls]:
         try:
             b = u.read_bytes() if not isinstance(u, str) else (await fetch(http, u, C.PHOTO_CACHE_DIR, C.PHOTO_TIMEOUT_SEC)).read_bytes()
-        except (Unavailable, OSError):
+        except (Unavailable, OSError, httpx.HTTPError, httpx.InvalidURL):
             continue
         mt = image_media_type(b)
         if mt and len(b) <= C.MAX_IMAGE_BYTES:
@@ -65,17 +66,18 @@ async def process(row: dict, client, http: httpx.AsyncClient, tracker) -> dict:
     except Exception as e:
         return {"photo_status": "Error", "photo_error": f"{type(e).__name__}: {e}"[:200]}
 
-    flags = [str(f) for f in (d.get("flags") or [])]
+    raw_flags = d.get("flags") or []
+    flags = [str(f) for f in ([raw_flags] if isinstance(raw_flags, str) else raw_flags)]
     est = num(d.get("estimated_loss_pct"))
-    gps = d.get("photo_gps") or {}
+    gps = d.get("photo_gps")
+    gps = gps if isinstance(gps, dict) else {}
     lat, lng = num(row.get("latitude")), num(row.get("longitude"))
     if num(gps.get("lat")) is not None and num(gps.get("lng")) is not None and lat is not None and lng is not None:
         if haversine_m(lat, lng, num(gps["lat"]), num(gps["lng"])) > C.GPS_PHOTO_MAX_DISTANCE_M:
             flags.append("GPS mismatch > 200m")
     pd_ = _parse_date(d.get("photo_date"))
     if pd_:
-        import pandas as pd
-        dates = [x for x in (pd.to_datetime(row.get(k), errors="coerce", dayfirst=True) for k in ("survey_start_date", "survey_end_date")) if pd.notna(x)]
+        dates = [x for x in (parse_dates([row.get(k)])[0] for k in ("survey_start_date", "survey_end_date")) if pd.notna(x)]
         if dates and not any((x.year, x.month) == (pd_.year, pd_.month) for x in dates):
             flags.append("Photo date outside survey period")
     if est is not None and loss is not None and abs(est - loss) > C.PHOTO_LOSS_DIFF_FLAG_PCT:

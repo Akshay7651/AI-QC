@@ -44,7 +44,7 @@ async def fetch(http: httpx.AsyncClient, url: str, cache_dir: str, timeout: floa
             last = f"HTTP {r.status_code}"
             if r.status_code not in (401, 403):
                 break
-        except httpx.HTTPError as e:
+        except (httpx.HTTPError, httpx.InvalidURL, OSError) as e:
             last = type(e).__name__
     raise Unavailable(last or "unavailable")
 
@@ -76,7 +76,10 @@ async def call_claude(client, tracker: CostTracker, model: str, content: list, r
             resp = await client.messages.create(model=model, max_tokens=max_tokens,
                                                 messages=[{"role": "user", "content": content}])
             tracker.add(model, resp.usage)
-            return parse_json("".join(b.text for b in resp.content if b.type == "text"))
+            d = parse_json("".join(b.text for b in resp.content if b.type == "text"))
+            if not isinstance(d, dict):  # a bare list/number would crash callers doing d.get(...)
+                raise json.JSONDecodeError("expected a JSON object", "", 0)
+            return d
         except json.JSONDecodeError:
             if attempt == retries - 1:
                 raise
@@ -85,6 +88,20 @@ async def call_claude(client, tracker: CostTracker, model: str, content: list, r
             if attempt == retries - 1 or status in (400, 401, 403):
                 raise
             await asyncio.sleep(2 ** (attempt + 1))
+
+
+def parse_dates(s):
+    """Parse mixed date strings: ISO (YYYY-MM-DD...) as-is, everything else day-first (Indian DD/MM/YYYY).
+
+    pandas' dayfirst=True would otherwise swap month/day of ISO strings (2026-09-01 -> 9 Jan).
+    """
+    import pandas as pd
+    s = pd.Series(s) if not isinstance(s, pd.Series) else s
+    txt = s.astype(object).where(s.notna(), None).map(lambda v: None if v is None else str(v).strip())
+    iso = txt.fillna("").str.match(r"^\d{4}[-/.]\d{1,2}[-/.]\d{1,2}")
+    a = pd.to_datetime(txt.where(iso), errors="coerce", format="mixed")
+    b = pd.to_datetime(txt.where(~iso), errors="coerce", dayfirst=True, format="mixed")
+    return a.fillna(b)
 
 
 def haversine_m(lat1, lng1, lat2, lng2) -> float:

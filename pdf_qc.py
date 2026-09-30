@@ -31,12 +31,12 @@ def _render(path) -> list[bytes]:
 
 
 async def process(row: dict, client, http: httpx.AsyncClient, tracker) -> dict:
-    url = row.get("pdf_url")
+    url = str(row.get("pdf_url") or "").replace("_x000D_", "").strip()
     local = row.get("_local_pdfs") or []
-    if not local and (not url or not str(url).startswith("http")):
+    if not local and not url.startswith("http"):
         return {"pdf_status": "Unavailable", "pdf_error": "no url"}
     try:
-        path = local[0] if local else await fetch(http, str(url).replace("_x000D_", "").strip(), C.PDF_CACHE_DIR, C.PDF_TIMEOUT_SEC)
+        path = local[0] if local else await fetch(http, url, C.PDF_CACHE_DIR, C.PDF_TIMEOUT_SEC)
         pages = _render(path)
     except Unavailable as e:
         return {"pdf_status": "Unavailable", "pdf_error": str(e)}
@@ -49,7 +49,7 @@ async def process(row: dict, client, http: httpx.AsyncClient, tracker) -> dict:
         d = await call_claude(client, tracker, C.CLAUDE_MODEL_PDF, content)
     except Exception as e:
         return {"pdf_status": "Error", "pdf_error": f"{type(e).__name__}: {e}"[:200]}
-    conf = num(d.get("confidence")) or 0.0
+    conf = min(max(num(d.get("confidence")) or 0.0, 0.0), 1.0)
     fa, fl = num(d.get("affected_area_percent")), num(d.get("crop_loss_percent"))
     res = {"pdf_status": "OK", "form_area": fa, "form_loss": fl, "survey_date": d.get("survey_date"),
            "surveyor_signed": bool(d.get("surveyor_signed")), "farmer_signed": bool(d.get("farmer_signed")),

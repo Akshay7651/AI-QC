@@ -41,6 +41,8 @@ def has_header(first_row) -> bool:
         return False
     if len(map_columns(cells)) >= 3:
         return True
+    if any(re.fullmatch(r"-?\d+(\.\d+)?", c) for c in cells):
+        return False  # header cells are never plain numbers; data rows usually are
     first = cells[0]
     if re.fullmatch(r"\d{10,}", first) or first.lower().startswith(("http://", "https://")):
         return False
@@ -48,6 +50,8 @@ def has_header(first_row) -> bool:
 
 
 def _to_canonical(raw: pd.DataFrame) -> pd.DataFrame:
+    if raw.empty:
+        return pd.DataFrame(columns=DEFAULT_ORDER)
     if has_header(raw.iloc[0]):
         headers = [str(h).strip() if pd.notna(h) else "" for h in raw.iloc[0]]
         body = raw.iloc[1:].reset_index(drop=True)
@@ -78,6 +82,8 @@ def load(src: str) -> pd.DataFrame:
     else:
         df = _to_canonical(_read_raw(src))
     df = df.dropna(how="all").reset_index(drop=True)
+    if "docket_id" in df:  # numeric cells read as text can carry a trailing '.0'
+        df["docket_id"] = df["docket_id"].map(lambda v: re.sub(r"\.0+$", "", v.strip()) if isinstance(v, str) else v)
     for c in DEFAULT_ORDER:
         if c not in df.columns:
             df[c] = pd.NA

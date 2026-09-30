@@ -2,13 +2,16 @@
 """CLAP Survey AI QC - orchestrator."""
 import argparse
 import asyncio
+import hashlib
 import json
 import os
+import re
 import sys
 import time
 from datetime import datetime
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 from tqdm import tqdm
 
@@ -44,31 +47,71 @@ def parse_args(argv=None):
     a = p.parse_args(argv)
     a.workers = max(1, min(a.workers, 20))
     if not a.output:
-        a.output = str(Path(a.input).with_suffix("")) + "_QC.xlsx"
+        a.output = "output/qc_output.xlsx" if a.input.startswith(("http://", "https://")) \
+            else str(Path(a.input).with_suffix("")) + "_QC.xlsx"
     return a
 
 
 def load_checkpoint(path):
     try:
-        return json.loads(Path(path).read_text())
-    except (OSError, ValueError):
+        ck = json.loads(Path(path).read_text())
+        if not isinstance(ck, dict) or not isinstance(ck.get("results"), dict):
+            raise ValueError("bad checkpoint")
+        ck["cost"] = float(ck.get("cost") or 0.0)
+        return ck
+    except (OSError, ValueError, TypeError):
         return {"results": {}, "cost": 0.0}
 
 
 def save_checkpoint(path, ck):
     Path(path).parent.mkdir(parents=True, exist_ok=True)
+    path = str(path)
     tmp = path + ".tmp"
     Path(tmp).write_text(json.dumps(ck, default=str))
     os.replace(tmp, path)
 
 
-def row_key(i, row):
-    return f"{i}|{row.get('docket_id')}"
+def _blank(v):
+    return v is None or (isinstance(v, float) and v != v) or str(v).strip() == ""
 
 
-async def run_ai(kind, fn, df, todo, ck, tracker, args, api_key):
+def make_keys(df):
+    """Stable per-row checkpoint keys that survive --filter-* changes and re-ordering.
+
+    Keyed on docket_id (later duplicates of a docket get '#2', '#3', ...). Rows with no docket
+    fall back to a hash of identifying fields. Positional indices are deliberately not used.
+    """
+    seen, keys = {}, []
+    cols = [c for c in ("application_no", "farmer_name", "khasra_number", "division_number", "village",
+                        "latitude", "longitude", "pdf_url", "media_urls") if c in df]
+    for pos, rec in enumerate(df[["docket_id"] + cols].to_dict("records")):
+        d = rec["docket_id"]
+        if _blank(d):
+            base = "nodocket-" + hashlib.sha1("|".join(str(rec[c]) for c in cols).encode()).hexdigest()[:16]
+        else:
+            base = str(d).strip()
+        seen[base] = seen.get(base, 0) + 1
+        keys.append(base if seen[base] == 1 else f"{base}#{seen[base]}")
+    return keys
+
+
+def _lookup(ck, key, pos, docket):
+    """Result dict for a row; falls back to legacy '<position>|<docket>' keys from old checkpoints."""
+    res = ck["results"]
+    if key in res:
+        return res[key]
+    return res.get(f"{pos}|{docket}", {})
+
+
+def _truthy_done(series):
+    return series.astype(str).str.strip().str.upper().isin(["TRUE", "YES", "Y", "1"])
+
+
+async def run_ai(kind, fn, df, todo, ck, tracker, args, api_key, keys=None):
     import anthropic
     import httpx
+    keys = keys or make_keys(df)
+    records = df.to_dict("records")
     client = anthropic.AsyncAnthropic(api_key=api_key)
     sem = asyncio.Semaphore(args.workers)
     bar = tqdm(total=len(todo), desc=f"{kind.upper():5s}", unit="row")
@@ -80,11 +123,14 @@ async def run_ai(kind, fn, df, todo, ck, tracker, args, api_key):
             async with sem:
                 if tracker.exceeded:
                     return
-                row = df.loc[i].to_dict()
+                row = dict(records[i])
                 lm = LOCAL.get(str(row.get("docket_id")).strip(), {})
                 row["_local_pdfs"], row["_local_photos"] = lm.get("pdfs", []), lm.get("images", [])
-                res = await fn(row, client, http, tracker)
-                ck["results"].setdefault(row_key(i, row), {}).update(res)
+                try:
+                    res = await fn(row, client, http, tracker)
+                except Exception as e:  # one bad row must never lose the whole run
+                    res = {f"{kind}_status": "Error", f"{kind}_error": f"{type(e).__name__}: {e}"[:200]}
+                ck["results"].setdefault(keys[i], {}).update(res)
                 bar.update(1)
                 bar.set_postfix(cost=f"${tracker.spent:.2f}")
                 done_since += 1
@@ -92,17 +138,21 @@ async def run_ai(kind, fn, df, todo, ck, tracker, args, api_key):
                     done_since = 0
                     ck["cost"] = tracker.spent
                     save_checkpoint(args.checkpoint, ck)
-        await asyncio.gather(*(one(i) for i in todo))
-    bar.close()
-    ck["cost"] = tracker.spent
-    save_checkpoint(args.checkpoint, ck)
+        try:
+            await asyncio.gather(*(one(i) for i in todo))
+        finally:  # also on Ctrl-C / cancellation: keep everything done so far
+            bar.close()
+            ck["cost"] = tracker.spent
+            save_checkpoint(args.checkpoint, ck)
     if tracker.exceeded:
         print(f"!! Cost cap ${tracker.cap:.2f} reached during {kind}; re-run with --resume to continue.")
 
 
-def assemble(df, ck, ran_ai):
+def assemble(df, ck, ran_ai, keys=None):
     """Merge checkpointed AI results into the output columns."""
-    R = [ck["results"].get(row_key(i, r), {}) for i, r in enumerate(df.to_dict("records"))]
+    keys = keys or make_keys(df)
+    dockets = df["docket_id"].tolist()
+    R = [_lookup(ck, k, i, dockets[i]) for i, k in enumerate(keys)]
     yn = lambda v: None if v is None else ("Yes" if v else "No")
     g = lambda k: [r.get(k) for r in R]
     out = df.copy()
@@ -161,13 +211,17 @@ def assemble(df, ck, ran_ai):
     if ran_ai:
         put(C.COL_QC_DONE, [d or None for d in done])
         put(C.COL_OTHER_REMARKS, [n or None for n in notes])
-        out["AI_Confidence"] = conf
-        out["AI_Flags"] = flags
+        has = pd.Series(attempted, index=out.index)
+        for col, vals in (("AI_Confidence", conf), ("AI_Flags", flags)):
+            new = pd.Series(vals, index=out.index, dtype=object)
+            # rows with no fresh result (skipped on --resume / input already QC'd) keep their old value
+            out[col] = new.where(has, out[col].astype(object) if col in out else None)
     return out
 
 
 def main(argv=None):
     args = parse_args(argv)
+    LOCAL.clear()  # module-level state must not leak between invocations
     print("CLAP QC System v1.0")
     df = ingestion.load(args.input)
     if args.filter_state:
@@ -181,18 +235,23 @@ def main(argv=None):
     ai_phases = [m for m in modes if m in ("pdf", "photo")]
     ck = load_checkpoint(args.checkpoint) if args.resume else {"results": {}, "cost": 0.0}
 
-    prior_done = df[C.COL_QC_DONE].astype(str).str.upper().eq("TRUE") if (args.resume and C.COL_QC_DONE in df) else pd.Series(False, index=df.index)
+    keys = make_keys(df)
+    prior_done = _truthy_done(df[C.COL_QC_DONE]) if (args.resume and C.COL_QC_DONE in df) else pd.Series(False, index=df.index)
     if args.local_media:
         LOCAL.update(local_media.index(args.local_media, df))
         print(f"Local media: matched {len(LOCAL):,} dockets "
               f"({sum(bool(v['pdfs']) for v in LOCAL.values()):,} with PDF, {sum(bool(v['images']) for v in LOCAL.values()):,} with photos)")
     plan = {}
+    dockets = df["docket_id"].astype(str).str.strip()
     for kind in ai_phases:
         col, doneflag = ("pdf_url", "pdf_status") if kind == "pdf" else ("media_urls", "photo_status")
         lkey = "pdfs" if kind == "pdf" else "images"
-        plan[kind] = [i for i in df.index
-                      if (df.at[i, col] or LOCAL.get(str(df.at[i, "docket_id"]).strip(), {}).get(lkey)) and not prior_done[i]
-                      and ck["results"].get(row_key(i, df.loc[i].to_dict()), {}).get(doneflag) in (None, "Error")]
+        has_remote = df[col].fillna("").astype(str).str.contains("http", regex=False)
+        has_local = dockets.map(lambda d: bool(LOCAL.get(d, {}).get(lkey)))
+        cand = (has_remote | has_local) & ~prior_done
+        docket_list = df["docket_id"].tolist()
+        plan[kind] = [i for i in np.flatnonzero(cand.to_numpy()).tolist()
+                      if _lookup(ck, keys[i], i, docket_list[i]).get(doneflag) in (None, "Error")]
 
     if args.dry_run:
         calls = sum(len(v) for v in plan.values())
@@ -203,6 +262,9 @@ def main(argv=None):
               f"   est. time: {calls * EST_SEC_PER_CALL / args.workers / 60:.0f} min ({args.workers} workers)")
         return 0
 
+    api_key = args.api_key or C.ANTHROPIC_API_KEY
+    if ai_phases and not api_key:  # fail fast, before any phase runs
+        sys.exit("ANTHROPIC_API_KEY not set (use --api-key or .env). GPS/data modes work without it.")
     n_phase = len(modes)
     for step, m in enumerate(modes, 1):
         print(f"Phase {step}/{n_phase}: {m}")
@@ -214,17 +276,18 @@ def main(argv=None):
             for c in g.columns:
                 df[c] = g[c]
         else:
-            api_key = args.api_key or C.ANTHROPIC_API_KEY
-            if not api_key:
-                sys.exit("ANTHROPIC_API_KEY not set (use --api-key or .env). GPS/data modes work without it.")
             tracker = CostTracker(args.cost_cap, ck.get("cost", 0.0))
             fn = pdf_qc.process if m == "pdf" else photo_qc.process
-            asyncio.run(run_ai(m, fn, df, plan[m], ck, tracker, args, api_key))
+            asyncio.run(run_ai(m, fn, df, plan[m], ck, tracker, args, api_key, keys))
         print(f"  done in {time.time() - t0:.1f}s")
 
-    out = assemble(df, ck, bool(ai_phases))
+    out = assemble(df, ck, bool(ai_phases), keys)
     Path(args.output).parent.mkdir(parents=True, exist_ok=True)
-    out.to_excel(args.output, index=False)
+    from openpyxl.cell.cell import ILLEGAL_CHARACTERS_RE  # AI text may contain control chars Excel rejects
+    clean = out.copy()
+    for c in clean.columns[clean.dtypes == object]:
+        clean[c] = clean[c].map(lambda v: ILLEGAL_CHARACTERS_RE.sub("", v) if isinstance(v, str) else v)
+    clean.to_excel(args.output, index=False)
     summary = str(Path(args.output).with_name("summary_report.xlsx"))
     report.build(out, summary)
     flagged = int((out.get("Suggested_Remark", pd.Series("OK", index=out.index)) != "OK").sum())

@@ -49,6 +49,44 @@
   .tb-filters select{height:30px;padding:0 6px;border:1px solid #c5d0c5;border-radius:6px;font-size:13px;background:#fff;color:var(--text);max-width:170px;}
   #topbar .tb-filters input[type=search]{height:30px;padding:0 10px;border:1px solid #c5d0c5;border-radius:6px;font-size:13px;min-width:230px;}
 
+
+  /* ===== AI review mode ===== */
+  .tb-ai{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+  .ai-seg{display:inline-flex;border:1px solid #c5d0c5;border-radius:6px;overflow:hidden;}
+  #topbar .tb-group .ai-seg button{border-radius:0;border:none;background:#fff;color:#1f3322;height:32px;}
+  #topbar .tb-group .ai-seg button.on{background:#6d28d9;color:#fff;}
+  #topbar .tb-group .ai-seg button:disabled{opacity:.55;}
+  #ai-flag-lbl{display:none;align-items:center;gap:4px;font-size:12px;font-weight:600;color:#56665a;white-space:nowrap;}
+  #ai-info{display:none;font-size:12px;color:#4c1d95;background:#ede9fe;border-radius:999px;padding:3px 10px;white-space:nowrap;}
+  body.ai-on #ai-flag-lbl{display:inline-flex;} body.ai-on #ai-info{display:inline-block;}
+  .cell.aic-High input[type=text],.cell.aic-Medium input[type=text],.cell.aic-Low input[type=text]{width:calc(100% - 14px);height:22px;margin:0 7px;border-radius:999px;text-align:center;font-weight:700;font-size:12px;}
+  .cell.aic-High input[type=text]{background:#c6efce;color:#146c2e;}
+  .cell.aic-Medium input[type=text]{background:#ffeb9c;color:#7a5b00;}
+  .cell.aic-Low input[type=text]{background:#ffc7ce;color:#9c1c1c;}
+  .cell.ai-cell{background:#f3edff;box-shadow:inset 0 -2px 0 #a78bfa;}
+  .cell.ai-cell input[type=text],.cell.ai-cell select{color:#4c1d95;}
+  .aib{display:inline-block;padding:2px 10px;border-radius:999px;font-size:12px;font-weight:700;}
+  .aib.High{background:#c6efce;color:#146c2e;} .aib.Medium{background:#ffeb9c;color:#7a5b00;} .aib.Low{background:#ffc7ce;color:#9c1c1c;} .aib.none{background:#e5e7eb;color:#555;}
+  #ai-content .aip-head{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:8px;}
+  #ai-content .aip-head b{font-size:14px;}
+  #ai-content .aip-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;}
+  #ai-content .aip-card{border:1px solid var(--border);border-radius:8px;background:#fff;overflow:hidden;}
+  #ai-content .aip-card h4{margin:0;padding:6px 10px;font-size:12.5px;background:#eef3ee;border-bottom:1px solid var(--border);}
+  #ai-content .aip-card.app h4{background:#e0ecff;} #ai-content .aip-card.form h4{background:#e6f4e6;} #ai-content .aip-card.photo h4{background:#f3e8ff;}
+  #ai-content .aip-kv{display:flex;justify-content:space-between;gap:8px;padding:4px 10px;font-size:12.5px;border-bottom:1px dashed #e3e8e3;}
+  #ai-content .aip-kv span:first-child{color:#667;} #ai-content .aip-kv span:last-child{font-weight:600;text-align:right;word-break:break-word;}
+  #ai-content .aip-kv.diff{background:#fff1f0;} #ai-content .aip-kv.diff span:last-child{color:#b3261e;}
+  #ai-content .aip-kv.empty span:last-child{color:#aaa;font-weight:400;}
+  #ai-content .aip-flags{margin:8px 0;display:flex;flex-wrap:wrap;gap:6px;}
+  #ai-content .aip-flag{background:#fff7e0;border:1px solid #e6cf7a;color:#6b5900;border-radius:6px;padding:2px 8px;font-size:12px;}
+  #ai-content .aip-flag.data{background:#fdecea;border-color:#f0c2bd;color:#9c1c1c;}
+  #ai-content .aip-thumbs{display:grid;grid-template-columns:repeat(2,1fr);gap:6px;padding:8px;}
+  #ai-content .aip-thumbs .media-tile{aspect-ratio:4/3;}
+  #ai-content .aip-actions{margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;}
+  #ai-content .aip-actions button{height:32px;background:var(--green);color:#fff;border:none;border-radius:6px;padding:0 14px;font-weight:600;cursor:pointer;}
+  #ai-content .aip-actions button.sec{background:#fff;color:#1f3322;border:1px solid #c5d0c5;}
+  #ai-content .aip-actions button:disabled{opacity:.5;cursor:default;}
+
   #fallback-banner{display:none;background:#fff8e1;border-bottom:1px solid #e6cf7a;color:#6b5900;font-size:12.5px;padding:6px 14px;}
   #fallback-banner.show{display:block;}
 
@@ -583,6 +621,17 @@
       </div>
       <span id="filter-info"><span id="filter-info-txt"></span><button id="btn-clear-all-filters" type="button">Clear all</button></span>
     </div>
+  <div class="tb-tools tb-ai-row" style="padding-top:0">
+    <div class="tb-group tb-ai">
+        <span class="ai-seg" id="ai-seg">
+          <button id="btn-mode-manual" class="on" type="button" title="Manual QC: fill every QC column yourself">Manual QC</button>
+          <button id="btn-mode-ai" type="button" title="AI Review: AI-filled QC columns are pre-filled, you only validate / edit">AI Review</button>
+        </span>
+        <button id="btn-import-ai" class="secondary" title="Import an Excel produced by the AI QC pipeline (run_qc.py)">🤖 Import AI Excel</button>
+        <label id="ai-flag-lbl"><input type="checkbox" id="ai-flagged-only" checked> Flagged only</label>
+        <span id="ai-info"></span>
+      </div>
+  </div>
   </div>
   <div id="fallback-banner"></div>
 
@@ -611,6 +660,7 @@
       <div id="tabs">
         <button data-tab="doc" class="active">Document</button>
         <button data-tab="media">Media</button>
+        <button data-tab="ai" id="tab-ai" style="display:none;">AI Compare</button>
         <button data-tab="gdrive">Google Drive</button>
       </div>
       <div id="doc-content" class="tab-content active">
@@ -618,6 +668,9 @@
       </div>
       <div id="media-content" class="tab-content">
         <div class="placeholder">Select a row to view its media.</div>
+      </div>
+      <div id="ai-content" class="tab-content">
+        <div class="placeholder">Select a row to compare App vs Form vs Photo.</div>
       </div>
       <div id="gdrive-content" class="tab-content" style="display:none;flex-direction:column;height:100%;padding:0;overflow:auto;">
 
@@ -671,6 +724,7 @@
   </div>
 
   <input type="file" id="fallback-file-input" accept=".xlsx" style="display:none;">
+  <input type="file" id="ai-file-input" accept=".xlsx,.xls" style="display:none;">
 
   <div id="lightbox">
     <button id="lightbox-close">&times;</button>
@@ -928,7 +982,8 @@
     }
   }
 
-  function loadWorkbookFromArrayBuffer(buf, displayName){
+  function loadWorkbookFromArrayBuffer(buf, displayName, opts){
+    opts = opts || {};
     var wb = XLSX.read(buf, {type:"array", cellDates:false});
     var sheetName = wb.SheetNames[0];
     var ws = wb.Sheets[sheetName];
@@ -1039,14 +1094,23 @@
     // Clear stale auto-computed Match/Mismatch values so they recompute correctly
     (function(){
       var mmIdx2 = headers.indexOf(AUTO_MATCH_COL);
-      if(mmIdx2!==-1){ for(var ri2=0;ri2<rows.length;ri2++) rows[ri2][mmIdx2]=""; }
+      // (AI-processed files keep their AI-computed Match/Mismatch for the reviewer to validate)
+      if(mmIdx2!==-1 && headers.indexOf(AI_CONF_COL)===-1){ for(var ri2=0;ri2<rows.length;ri2++) rows[ri2][mmIdx2]=""; }
     })();
+
+    // AI mode: automatically on when the file carries AI_Confidence; default queue = flagged rows only
+    state.hasAI = headers.indexOf(AI_CONF_COL) !== -1;
+    state.aiMode = state.hasAI;
+    state.aiFlaggedOnly = state.hasAI;
+    aiSnapshot();
 
     // Default view: first 50 pending rows + all done rows
     (function(){
       var qcI = headers.indexOf("QC Done");
       var pending2=[], done2=[];
+      var aiIx = aiIdx();
       for(var ri3=0;ri3<rows.length;ri3++){
+        if(state.aiMode && state.aiFlaggedOnly && !aiIsFlagged(rows[ri3], aiIx)) continue;
         if(qcI!==-1 && parseBool(rows[ri3][qcI])) done2.push(ri3);
         else pending2.push(ri3);
       }
@@ -1064,6 +1128,7 @@
       }
     }
 
+    aiApplyColumnVisibility();
     computeColumnMeta();
     renderHeader();
     $("empty-state").style.display = "none";
@@ -1071,8 +1136,12 @@
     renderAll();
     refreshDocPanel();
     refreshMediaPanel();
+    updateAiUi();
+    if (state.aiMode) switchTab("ai");
+    else if ($("ai-content").classList.contains("active")) switchTab("doc");
 
     $("file-label").textContent = displayName + " · " + rows.length + " row" + (rows.length===1?"":"s");
+    if (opts.forceAI && !state.hasAI) setStatus("No AI_Confidence column found — loaded as a normal QC file.", "error");
   }
 
   // SheetJS writes weakly-compressed zips (≈3× the original size); re-zip with fflate so saved files stay small
@@ -1252,11 +1321,20 @@
       rn.title = "Right-click to fill row colour";
       rowDiv.appendChild(rn);
 
+      var aiOrigRow = state.aiMode && state.aiOrig ? state.aiOrig[globalRow] : null;
       for (var c=0; c<state.headers.length; c++){
         if (state.hiddenCols[c]) continue; // skip hidden columns
         var colName = state.headers[c];
         var cellDiv = document.createElement("div");
         cellDiv.className = "cell";
+        if (state.aiMode){
+          if (colName === AI_CONF_COL){
+            var cv = String(rowData[c]||"").trim().toLowerCase();
+            if (cv==="high"||cv==="medium"||cv==="low") cellDiv.className += " aic-" + cv.charAt(0).toUpperCase()+cv.slice(1);
+          } else if (aiOrigRow && aiOrigRow.hasOwnProperty(c) && aiOrigRow[c] !== "" && String(rowData[c]) === aiOrigRow[c]){
+            cellDiv.className += " ai-cell"; // AI-filled and not yet edited by the reviewer
+          }
+        }
         cellDiv.style.width = state.colWidths[c+1] + "px";
 
         if (c === qcIdx){
@@ -1742,6 +1820,178 @@
     renderVisible();
     refreshDocPanel();
     refreshMediaPanel();
+    refreshAiPanel();
+  }
+
+
+  // ==========================================================================
+  // AI REVIEW MODE (works on Excel produced by run_qc.py)
+  // ==========================================================================
+  var AI_CONF_COL = "AI_Confidence";
+  var AI_FLAGS_COL = "AI_Flags", DATA_FLAGS_COL = "Data_QC_Flags";
+  var AI_EXTRA_COLS = ["AI_Confidence","AI_Flags","Data_QC_Flags","Suggested_Remark","Suggest_%","Records_On_Same_Field","Nearby_Same_Surveyor_25m","Group_ID"];
+  var QC_INPUT_COLS = [
+    "Affected area% (Form)","Crop Loss% (Form)","Match/Mismatch (Form&app)","Date of survey (as per Geo Tagged Image)",
+    "Field photo (no crop / cut & spread / crop mismatch / standing crop)","Surveyor Signature (Yes/No)","Farmer Signature (Yes/No)",
+    "Government Signature (Yes/No)","Form Status (correct / incomplete/ overwrite)","Survey remarks on form","Farmer Photo (Yes/No)",
+    "Loss as per Photo (Yes/No)","Any Other Remarks"
+  ];
+  function aiIdx(){ return { conf: colIndex(AI_CONF_COL), flags: colIndex(AI_FLAGS_COL), data: colIndex(DATA_FLAGS_COL), mm: colIndex(AUTO_MATCH_COL) }; }
+  function aiHasText(v){
+    var t = String(v==null?"":v).trim().toLowerCase();
+    return t !== "" && ["-","none","nan","null","[]","n/a","na","ok"].indexOf(t) === -1;
+  }
+  // Flagged = Low/Medium confidence, Mismatch, or any AI/Data QC flag text
+  function aiIsFlagged(row, ix){
+    if (ix.conf !== -1){ var c = String(row[ix.conf]||"").trim().toLowerCase(); if (c==="low" || c==="medium") return true; }
+    if (ix.mm !== -1 && String(row[ix.mm]||"").trim().toLowerCase() === "mismatch") return true;
+    if (ix.flags !== -1 && aiHasText(row[ix.flags])) return true;
+    if (ix.data !== -1 && aiHasText(row[ix.data])) return true;
+    return false;
+  }
+  // Remember what the AI filled so unedited AI cells can be tinted
+  function aiSnapshot(){
+    state.aiOrig = {};
+    if (!state.hasAI) return;
+    var idxs = [];
+    QC_INPUT_COLS.forEach(function(n){ var i = state.headers.indexOf(n); if (i !== -1) idxs.push(i); });
+    for (var r=0;r<state.rows.length;r++){
+      var o = null;
+      for (var k=0;k<idxs.length;k++){
+        var v = state.rows[r][idxs[k]];
+        if (v !== "" && v != null){ (o = o || {})[idxs[k]] = String(v); }
+      }
+      if (o) state.aiOrig[r] = o;
+    }
+  }
+  // Manual mode hides the AI-only columns; AI mode shows them
+  function aiApplyColumnVisibility(){
+    state.hiddenCols = {};
+    if (state.hasAI && !state.aiMode){
+      AI_EXTRA_COLS.forEach(function(n){ var i = state.headers.indexOf(n); if (i !== -1) state.hiddenCols[i] = true; });
+    }
+  }
+  function updateAiUi(){
+    var on = !!state.aiMode;
+    document.body.classList.toggle("ai-on", on);
+    $("btn-mode-ai").classList.toggle("on", on);
+    $("btn-mode-manual").classList.toggle("on", !on);
+    $("ai-flagged-only").checked = !!state.aiFlaggedOnly;
+    $("tab-ai").style.display = on ? "" : "none";
+    if (!on && $("ai-content").classList.contains("active")) switchTab("doc");
+    var el = $("ai-info");
+    if (!state.hasAI){ el.textContent = ""; return; }
+    var ix = aiIdx(), f = 0, cnt = {High:0, Medium:0, Low:0};
+    for (var i=0;i<state.rows.length;i++){
+      var r = state.rows[i];
+      if (aiIsFlagged(r, ix)) f++;
+      var c = String(r[ix.conf]||"").trim().toLowerCase();
+      if (c) { c = c.charAt(0).toUpperCase()+c.slice(1); if (cnt.hasOwnProperty(c)) cnt[c]++; }
+    }
+    el.textContent = "🤖 " + f + " flagged / " + state.rows.length + " · High " + cnt.High + " · Med " + cnt.Medium + " · Low " + cnt.Low;
+  }
+  function setAiMode(on){
+    if (on && !state.hasAI){
+      setStatus("This file has no AI_Confidence column — use “Import AI Excel” to load an AI-processed file.", "error");
+      return;
+    }
+    if (!state.headers.length){ setStatus("Open a file first.", "error"); return; }
+    state.aiMode = on;
+    if (on) state.aiFlaggedOnly = true;
+    aiApplyColumnVisibility();
+    computeColumnMeta(); renderHeader();
+    applyFilter($("search-box").value);
+    state.lastRange = null; renderVisible(true);
+    updateAiUi();
+    if (on) switchTab("ai");
+    refreshAiPanel();
+  }
+  function aiSplitFlags(v){
+    return String(v==null?"":v).split(/[;\n|]+|,\s(?=[A-Z])/).map(function(x){ return x.trim(); }).filter(aiHasText);
+  }
+  function hdrLike(re){ for (var i=0;i<state.headers.length;i++) if (re.test(state.headers[i])) return i; return -1; }
+  function acceptAiRow(row){
+    var qcIdx = colIndex("QC Done");
+    if (qcIdx === -1 || parseBool(state.rows[row][qcIdx])) return;
+    // onCheckboxChange ends with a Drive auto-save hook that can throw when no Drive file is open; the row update itself is already done by then
+    try { onCheckboxChange({ target: { dataset: { row: String(row), col: String(qcIdx) }, checked: true } }); }
+    catch(e){ if (!(e instanceof ReferenceError)) throw e; }
+  }
+  function refreshAiPanel(){
+    var box = $("ai-content");
+    if (!box) return;
+    if (!state.aiMode){ return; }
+    var r = state.currentRow;
+    if (r < 0 || !state.rows[r]){ box.innerHTML = '<div class="placeholder">Select a row to compare App vs Form vs Photo.</div>'; return; }
+    var row = state.rows[r];
+    function g(i){ return i === -1 ? "" : cellStr(row[i]).trim(); }
+    function gn(n){ return g(colIndex(n)); }
+    function kv(label, val, diff){
+      var e = val === "";
+      return '<div class="aip-kv'+(diff?' diff':'')+(e?' empty':'')+'"><span>'+escapeHtml(label)+'</span><span>'+(e?'—':escapeHtml(val))+'</span></div>';
+    }
+    function num(v){ var n = parseFloat(v); return isNaN(n) ? 0 : n; }
+    var appArea = g(findCol(APP_AREA_COLS)), appLoss = g(findCol(APP_LOSS_COLS));
+    var appTotal = g(hdrLike(/total.*damage/i));
+    var formArea = gn("Affected area% (Form)"), formLoss = gn("Crop Loss% (Form)");
+    var mm = gn(AUTO_MATCH_COL);
+    var haveForm = formArea !== "" || formLoss !== "";
+    var areaDiff = haveForm && num(formArea) !== num(appArea), lossDiff = haveForm && num(formLoss) !== num(appLoss);
+    var conf = gn(AI_CONF_COL), confCls = /^(high|medium|low)$/i.test(conf) ? conf.charAt(0).toUpperCase()+conf.slice(1).toLowerCase() : "none";
+    var sug = gn("Suggested_Remark"), sugPct = gn("Suggest_%");
+    var docket = g(colIndex("docketID")) || g(hdrLike(/docket/i));
+    var farmer = g(hdrLike(/farmer.*name/i));
+    var html = '<div class="aip-head"><b>'+escapeHtml(docket)+'</b><span>'+escapeHtml(farmer)+'</span>'
+      + '<span class="aib '+confCls+'">AI: '+escapeHtml(conf||"no confidence")+'</span>'
+      + (mm ? '<span class="aib '+(mm==="Mismatch"?"Low":mm==="Match"?"High":"none")+'">'+escapeHtml(mm)+'</span>' : '')
+      + (sug ? '<span class="aib none">'+escapeHtml(sug)+(sugPct?' · '+escapeHtml(sugPct)+'%':'')+'</span>' : '')
+      + '</div>';
+    var aiFl = aiSplitFlags(gn(AI_FLAGS_COL)), dFl = aiSplitFlags(gn(DATA_FLAGS_COL));
+    if (aiFl.length || dFl.length){
+      html += '<div class="aip-flags">' + aiFl.map(function(f){ return '<span class="aip-flag">AI: '+escapeHtml(f)+'</span>'; }).join("")
+            + dFl.map(function(f){ return '<span class="aip-flag data">Data: '+escapeHtml(f)+'</span>'; }).join("") + '</div>';
+    }
+    // App card
+    var appCard = '<div class="aip-card app"><h4>App values (surveyor)</h4>'
+      + kv("Affected area %", appArea, areaDiff) + kv("Crop loss %", appLoss, lossDiff) + kv("Total damage %", appTotal, false)
+      + kv("Crop", g(hdrLike(/^crop.*name|^cropName/i)), false) + kv("Surveyor", g(hdrLike(/surveyor.*name/i)), false)
+      + kv("Latitude", g(hdrLike(/^lat/i)), false) + kv("Longitude", g(hdrLike(/^lon/i)), false)
+      + kv("Surveyor remark", g(hdrLike(/surveyor.*remark/i)), false) + '</div>';
+    // Form card
+    var formCard = '<div class="aip-card form"><h4>Form values (signed copy)</h4>'
+      + kv("Affected area % (Form)", formArea, areaDiff) + kv("Crop loss % (Form)", formLoss, lossDiff)
+      + kv("Match / Mismatch", mm, mm === "Mismatch")
+      + kv("Surveyor signature", gn("Surveyor Signature (Yes/No)"), false) + kv("Farmer signature", gn("Farmer Signature (Yes/No)"), false)
+      + kv("Government signature", gn("Government Signature (Yes/No)"), false)
+      + kv("Form status", gn("Form Status (correct / incomplete/ overwrite)"), false) + kv("Remarks on form", gn("Survey remarks on form"), false) + '</div>';
+    // Photo card
+    var mIdx = colIndex(MEDIA_URL_COLUMN), urls = mIdx === -1 ? [] : splitMediaUrls(row[mIdx]);
+    state.mediaUrls = urls;
+    var dIdx = colIndex(DOC_URL_COLUMN), docUrl = dIdx === -1 ? "" : String(row[dIdx]||"").trim();
+    var photoCard = '<div class="aip-card photo"><h4>Photo evidence</h4>'
+      + kv("Field photo", gn("Field photo (no crop / cut & spread / crop mismatch / standing crop)"), false)
+      + kv("Farmer photo", gn("Farmer Photo (Yes/No)"), false) + kv("Loss as per photo", gn("Loss as per Photo (Yes/No)"), false)
+      + kv("Survey date (geo-tag)", gn("Date of survey (as per Geo Tagged Image)"), false)
+      + (urls.length ? '<div class="aip-thumbs">' + urls.slice(0,4).map(function(u,i){ return '<div class="media-tile" data-idx="'+i+'"><img src="'+escapeHtml(u)+'" loading="lazy"></div>'; }).join("") + '</div>'
+                     + (urls.length>4 ? '<div class="aip-kv"><span>+'+(urls.length-4)+' more</span><span><a href="#" data-aiact="media">see all</a></span></div>' : '')
+                     : '<div class="aip-kv empty"><span>Photos</span><span>none</span></div>')
+      + (docUrl ? '<div class="aip-kv"><span>Signed copy</span><span><a href="'+escapeHtml(docUrl)+'" target="_blank" rel="noopener noreferrer">open ↗</a> · <a href="#" data-aiact="doc">view</a></span></div>' : '')
+      + '</div>';
+    html += '<div class="aip-grid">' + appCard + formCard + photoCard + '</div>';
+    var qcIdx = colIndex("QC Done"), done = qcIdx !== -1 && parseBool(row[qcIdx]);
+    html += '<div class="aip-actions"><button id="ai-accept" '+(done?'disabled':'')+'>'+(done?'QC done ✔':'✔ Validate AI values & mark QC done')+'</button>'
+          + '<span style="font-size:12px;color:#667">Edit any purple AI-filled cell in the table first if you disagree.</span></div>';
+    box.innerHTML = html;
+    box.querySelectorAll(".media-tile").forEach(function(tile){
+      var img = tile.querySelector("img");
+      img.addEventListener("error", function(){ tile.classList.add("broken"); });
+      tile.addEventListener("click", function(){ openLightbox(parseInt(tile.dataset.idx,10)); });
+    });
+    box.querySelectorAll("[data-aiact]").forEach(function(a){
+      a.addEventListener("click", function(ev){ ev.preventDefault(); switchTab(a.dataset.aiact); });
+    });
+    var btn = $("ai-accept");
+    if (btn) btn.addEventListener("click", function(){ acceptAiRow(state.currentRow); refreshAiPanel(); });
   }
 
   // ==========================================================================
@@ -1785,7 +2035,9 @@
       // No filter — reset to first 50 pending + all done
       var qcI2 = colIndex("QC Done");
       var p2=[], d2=[];
+      var aiIx2 = aiIdx();
       for(var i2=0;i2<state.rows.length;i2++){
+        if(state.aiMode && state.aiFlaggedOnly && !aiIsFlagged(state.rows[i2], aiIx2)) continue;
         if(qcI2!==-1 && parseBool(state.rows[i2][qcI2])) d2.push(i2);
         else p2.push(i2);
       }
@@ -1798,8 +2050,10 @@
       return;
     }
     var pending = [], done = [];
+    var aiIx = aiIdx();
     for (var i=0;i<state.rows.length;i++){
       var row = state.rows[i];
+      if (state.aiMode && state.aiFlaggedOnly && !aiIsFlagged(row, aiIx)) continue;
       if (userFilter && donByIdx !== -1 && String(row[donByIdx]||"").trim() !== userFilter) continue;
       if (fDist && distIdx !== -1 && String(row[distIdx]||"").trim() !== fDist) continue;
       if (fSurv && survIdx !== -1 && String(row[survIdx]||"").trim() !== fSurv) continue;
@@ -2021,12 +2275,15 @@
   }
 
   function updateFilterInfo(){
+    updateAiUi();
     var el = $("filter-info");
     if (!el) return;
     var n = Object.keys(state.colFilters).length;
     ["flt-district","flt-surveyor","flt-qc"].forEach(function(id){ if ($(id) && $(id).value) n++; });
-    if (!n && !state.sort){ el.classList.remove("show"); return; }
+    var aiLimit = state.aiMode && state.aiFlaggedOnly;
+    if (!n && !state.sort && !aiLimit){ el.classList.remove("show"); return; }
     var parts = [];
+    if (aiLimit) parts.push("AI flagged only");
     if (n) parts.push(n + " filter" + (n > 1 ? "s" : ""));
     if (state.sort) parts.push("sorted by " + state.headers[state.sort.col]);
     var qcIdx3 = colIndex("QC Done");
@@ -3491,6 +3748,19 @@
 
     $("btn-open").addEventListener("click", openFile);
     $("btn-download").addEventListener("click", downloadCopy);
+    $("btn-mode-manual").addEventListener("click", function(){ if (state.aiMode) setAiMode(false); });
+    $("btn-mode-ai").addEventListener("click", function(){ if (!state.aiMode) setAiMode(true); });
+    $("ai-flagged-only").addEventListener("change", function(e){ state.aiFlaggedOnly = e.target.checked; applyFilter($("search-box").value); });
+    $("btn-import-ai").addEventListener("click", function(){ $("ai-file-input").value = ""; $("ai-file-input").click(); });
+    $("ai-file-input").addEventListener("change", function(e){
+      var f = e.target.files && e.target.files[0]; if (!f) return;
+      f.arrayBuffer().then(function(buf){
+        state.fileHandle = null;
+        loadWorkbookFromArrayBuffer(buf, f.name, {forceAI:true});
+        setSaveMode("manual", f.name);
+        if (state.hasAI) setStatus("AI file loaded — showing flagged rows only. Untick “Flagged only” to see all.", "saved");
+      }).catch(function(err){ alert("Could not read the file: " + err.message); });
+    });
     $("btn-save-drive").addEventListener("click", gdSaveToDrive);
     $("btn-add-col").addEventListener("click", addColumn);
     $("search-box").addEventListener("input", function(e){ applyFilter(e.target.value); });
@@ -3961,6 +4231,7 @@
       state.headers = []; state.rows = []; state.viewIndices = []; state.currentRow = -1; state.dirty = false;
       state.colFilters = {}; state.hiddenCols = {}; state.rowColors = {}; state.sort = null; state.selCols = {};
       state.fileHandle = null; state.saveMode = null; state.lastRange = null;
+      state.hasAI = false; state.aiMode = false; state.aiFlaggedOnly = false; state.aiOrig = {}; updateAiUi();
       clearInterval(periodicSaveTimer);
       ["flt-district","flt-surveyor","flt-qc"].forEach(function(id){ $(id).innerHTML = id === "flt-qc" ? '<option value="">All</option><option value="done">Done</option><option value="pending">Pending</option>' : '<option value="">All</option>'; });
       $("search-box").value = "";
