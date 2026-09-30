@@ -33,7 +33,7 @@ import digits_locate as L
 HERE = os.path.dirname(os.path.abspath(__file__))
 MN = os.path.join(HERE, "data", "mnist")
 CACHE = os.path.join(HERE, "data", "digits_cache")
-MIN_AGREE = {0: 11, 1: 13, 2: 14}
+MIN_AGREE = {1: 6, 2: 9, 3: 12}
 
 
 def _eval_dockets():
@@ -332,36 +332,31 @@ def harvest(forms, man, rnd, log=True):
                         continue
                     n_cells += 1
                     pr = D.classify_components(comps)
-                    digs = [ch for ch in lab if ch.isdigit()]
                     if "." in lab:
-                        continue  # decimals handled by rule; skip weak labelling
-                    need = len(digs)
-                    pred = pr.argmax(1)
-                    # row of a value '0' may be written '0' or '00'
+                        continue  # decimals: skip weak labelling
+                    digs = [int(ch) for ch in lab]
+                    top3 = np.argsort(-pr, axis=1)[:, :3]
                     if lab == "0":
-                        cand = [i for i, c in enumerate(comps) if pred[i] == 0 and pr[i, 0] > 0.5]
-                        if cand and cand[0] == 0 and len(comps) <= 4:
-                            tgt = [(0, 0)]
-                            if len(comps) > 1 and pred[1] == 0 and pr[1, 0] > 0.5:
-                                tgt.append((1, 0))
-                            rest = [i for i in range(len(comps)) if i not in [t[0] for t in tgt]]
-                        else:
+                        tgt = [0]
+                        if len(comps) > 1 and 0 in top3[1] and (comps[1]["y1"] - comps[1]["y0"]) > 0.3 * H:
+                            tgt.append(1)
+                        if 0 not in top3[0] or len(comps) > 5:
                             continue
+                        labs = [0] * len(tgt)
                     else:
-                        if len(comps) < need:
+                        if len(comps) < len(digs) or len(comps) > len(digs) + 3:
                             continue
-                        ok = all(pred[i] == int(digs[i]) and pr[i, int(digs[i])] > 0.3 for i in range(need))
-                        if not ok:
+                        if not all(digs[i] in top3[i] for i in range(len(digs))):
                             continue
-                        tgt = [(i, int(digs[i])) for i in range(need)]
-                        rest = list(range(need, len(comps)))
+                        tgt = list(range(len(digs))); labs = digs
                     n_cells_ok += 1
-                    for i, cl in tgt:
+                    for i, cl in zip(tgt, labs):
                         Xs.append((D.norm28(comps[i]) * 255).astype(np.uint8)); ys.append(cl); meta.append((dk, "cell"))
-                    for i in rest:  # trailing comps: '%' / slash / pen marks
+                    for i in range(len(comps)):
+                        if i in tgt:
+                            continue
                         h = comps[i]["y1"] - comps[i]["y0"]
-                        if h > 0.3 * H:
-                            Xs.append((D.norm28(comps[i]) * 255).astype(np.uint8)); ys.append(11); meta.append((dk, "cell"))
+                        Xs.append((D.norm28(comps[i]) * 255).astype(np.uint8)); ys.append(11 if h > 0.3 * H else 12); meta.append((dk, "cell"))
     if log:
         print(f"  harvest round {rnd}: PO strips accepted {n_po_ok}/{n_po}; cells accepted {n_cells_ok}/{n_cells}; comps {len(Xs)}", flush=True)
     return (np.stack(Xs) if Xs else np.zeros((0, 28, 28), np.uint8)), np.array(ys, np.int64), meta
