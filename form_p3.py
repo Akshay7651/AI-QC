@@ -134,6 +134,7 @@ def normalise(rgb):
     base = rotate_small(rgb, d)
     cands = [0, 2] if horiz else [1, 3]
     best = None
+    scores = []
     for k in cands:
         r = np.ascontiguousarray(np.rot90(base, k))
         gg = _resize_w(_gray(r), GW)
@@ -144,9 +145,11 @@ def normalise(rgb):
             bw, bh = bb[2] - bb[0], bb[3] - bb[1]
             if not (0.08 * W < bw < 0.4 * W and bh < 0.12 * W):
                 s *= 0.3
+        scores.append(s)
         if best is None or s > best[0]:
             best = (s, k, r)
     info["barcode_score"] = best[0]
+    info["barcode_scores"] = scores
     info["rot"] = best[1] * 90
     r = best[2]
     # second, finer deskew pass on the upright image
@@ -266,23 +269,51 @@ def fit_row_chain(lines, W):
 
 
 def _col_fit(xs_strength, W):
-    """choose (L,R) among vertical-line x candidates maximising matches to COL_FR. -> (L,R,matches) or None"""
+    """fit (L, R) of the template column grid to the detected vertical lines: any two peaks may be assigned to any two
+    template columns. -> (L, R, n_matched) or None"""
     xs = np.array([x for x, _ in xs_strength])
-    if len(xs) < 4:
+    if len(xs) < 3:
         return None
     best = None
+    fr = COL_FR
     for i in range(len(xs)):
-        for j in range(i + 3, len(xs)):
-            L, R = xs[i], xs[j]
-            w = R - L
-            if not (0.55 * W < w < 0.98 * W):
-                continue
-            pred = L + COL_FR * w
-            tol = 0.012 * w
-            m = sum(1 for q in pred if np.min(np.abs(xs - q)) < tol)
-            if best is None or m > best[2] or (m == best[2] and w > best[1] - best[0]):
-                best = (float(L), float(R), m)
-    return best
+        for j in range(i + 1, len(xs)):
+            for a in range(len(fr)):
+                for b in range(a + 1, len(fr)):
+                    w = (xs[j] - xs[i]) / (fr[b] - fr[a])
+                    if not (0.55 * W < w < 0.98 * W):
+                        continue
+                    L = xs[i] - fr[a] * w
+                    pred = L + fr * w
+                    tol = 0.02 * w
+                    err = np.array([np.min(np.abs(xs - q)) for q in pred])
+                    m = int((err < tol).sum())
+                    sc_ = m - 0.5 * float(np.minimum(err, tol).mean()) / tol
+                    if best is None or sc_ > best[3]:
+                        best = (float(L), float(L + w), m, sc_)
+    return best[:3] if best else None
+
+
+def line_extent(hl, y, gap):
+    """(x0, x1) of the longest horizontal run (gaps <= gap px bridged) of the ruled-line mask around row y, or None"""
+    H, W = hl.shape
+    y0, y1 = int(max(0, round(y) - 3)), int(min(H, round(y) + 4))
+    if y1 <= y0:
+        return None
+    row = (hl[y0:y1] > 0).any(0)
+    xs = np.where(row)[0]
+    if len(xs) == 0:
+        return None
+    best, start, prev = None, xs[0], xs[0]
+    for x in xs[1:]:
+        if x - prev > gap:
+            if best is None or prev - start > best[1] - best[0]:
+                best = (start, prev)
+            start = x
+        prev = x
+    if best is None or prev - start > best[1] - best[0]:
+        best = (start, prev)
+    return (float(best[0]), float(best[1]))
 
 
 def locate_table(g, hl, vl):
@@ -317,10 +348,39 @@ def locate_table(g, hl, vl):
     vprof = (vl[ya:yb, :] > 0).sum(0).astype(float)
     vprof = vprof + np.r_[vprof[1:], 0] + np.r_[0, vprof[:-1]]
     vx = _peaks1d(vprof, 0.25 * (yb - ya), 3)
+    vxa = np.array([x for x, _ in vx]) if vx else np.zeros(0)
+
+    def nmatch(L_, R_):
+        w_ = R_ - L_
+        if w_ <= 0:
+            return 0
+        pred = L_ + COL_FR * w_
+        return sum(1 for q in pred if len(vxa) and np.min(np.abs(vxa - q)) < 0.02 * w_)
+
+    cands = []
     cf = _col_fit(vx, W)
-    if cf is None:
+    if cf is not None:
+        cands.append((cf[0], cf[1], cf[2], "vlines"))
+    # extents of the full-width horizontal lines (header top, row-10 bottom, total bottom)
+    ext = []
+    for yy in (y0 - 1.93 * p, y0 + 10 * p, y0 + 10.77 * p):
+        seg = line_extent(hl, yy, 0.012 * W)
+        if seg is not None and seg[1] - seg[0] > 0.5 * W:
+            ext.append(seg)
+    if len(ext) >= 1:
+        Le = float(np.median([e[0] for e in ext]))
+        Re = float(np.median([e[1] for e in ext]))
+        cands.append((Le, Re, nmatch(Le, Re), "extent"))
+        if len(ext) >= 2:
+            # also the widest line alone (others may be partial)
+            e = max(ext, key=lambda t: t[1] - t[0])
+            cands.append((e[0], e[1], nmatch(e[0], e[1]), "widest"))
+    if not cands:
         return None
-    L, R, m = cf
+    cands.sort(key=lambda c: (c[2], c[3] == "extent"), reverse=True)
+    L, R, m, how = cands[0]
+    if m < 4:
+        return None
     w = R - L
     xs = L + COL_FR * w
     ytop = y0 - 1.93 * p
@@ -338,7 +398,7 @@ def locate_table(g, hl, vl):
     if ytot - ybot < 0.45 * p:
         ytot = ybot + 0.77 * p
     return {"y0": float(y0), "p": float(p), "ytop": float(ytop), "ybot": float(ybot), "ytot": float(ytot), "xs": xs.tolist(),
-            "L": L, "R": R, "n_cols": int(m), "n_rowlines": int(ch["n_hit"])}
+            "L": L, "R": R, "n_cols": int(m), "n_rowlines": int(ch["n_hit"]), "col_src": how}
 
 
 def snap_cols(vl, xs, y0, y1, w):
@@ -390,7 +450,7 @@ def grid_lines(hl, tab, W):
     L, R, p = tab["L"], tab["R"], tab["p"]
     w = R - L
     ls = hlines(hl, int(L - 0.03 * w), int(R + 0.03 * w), thr_frac=0.1)
-    cand = [y for y, s in ls if s >= 0.7 * w and y < tab["ytop"] - 0.9 * p]
+    cand = [y for y, s in ls if s >= 0.3 * w and y < tab["ytop"] - 0.9 * p]
     cand.sort(reverse=True)
     nomB = tab["ytop"] - GRID_GAP * p
     for i, B in enumerate(cand):
@@ -434,10 +494,8 @@ class Layout(dict):
     """dict with: ok, rgb (normalised hi-res image), scale, tab, boxes{name:(x0,y0,x1,y1) in hi px}, notes"""
 
 
-def analyse_layout(src_rgb):
-    """Full geometric analysis of one photographed page. Returns Layout (ok False when the ruled table is not found)."""
+def _layout(r, info):
     lay = Layout(ok=False, notes=[])
-    r, info = normalise(src_rgb)
     lay.update(rgb=r, info=info)
     g = _resize_w(_gray(r), GW)
     sc = r.shape[1] / GW
@@ -484,6 +542,32 @@ def analyse_layout(src_rgb):
         B[f"sig_{nm}"] = tuple(int(round(v * sc)) for v in (L + a * w, yt + 1.5 * p, L + b * w, yt + 3.55 * p))
         B[f"lab_{nm}"] = tuple(int(round(v * sc)) for v in (L + a * w, yt + 3.35 * p, L + b * w, yt + 4.6 * p))
     lay["boxes"] = B
+    return lay
+
+
+def analyse_layout(src_rgb):
+    """Full geometric analysis of one photographed page. Returns Layout (ok False when the ruled table is not found)."""
+    r, info = normalise(src_rgb)
+    lay = _layout(r, info)
+    sc = info.get("barcode_scores") or []
+    sure = len(sc) == 2 and max(sc) >= 40 and max(sc) >= 2.0 * max(1e-6, min(sc)) and lay["ok"]
+    if info.get("lines") and not sure and len(sc) == 2:
+        # orientation is ambiguous (barcode not conclusive): also try the page turned by 180 degrees and keep the
+        # reading in which the ruled table has the upper field grid above it
+        r2 = np.ascontiguousarray(r[::-1, ::-1])
+        info2 = dict(info, rot=(info["rot"] + 180) % 360)
+        lay2 = _layout(r2, info2)
+
+        def score(l):
+            if not l["ok"]:
+                return -1
+            g = l.get("grid")
+            return 10 * bool(g and g.get("detected")) + l["tab"]["n_cols"] + 0.1 * l["tab"]["n_rowlines"]
+        def pos(l):         # table should sit in the lower half of an upright page
+            return 0.0 if not l["ok"] else (1.0 if l["tab"]["y0"] > 0.42 * l["g"].shape[0] else -1.0)
+        if (score(lay2) + 3 * pos(lay2)) > (score(lay) + 3 * pos(lay)) + 0.5:
+            lay = lay2
+            lay["notes"].append("orientation decided by table/grid structure")
     return lay
 
 
