@@ -545,3 +545,33 @@ def formno_strip(r, q, scale=3.0, lo=0.04, hi=0.95):
     dst = np.float32([[0, 0], [wd, 0], [wd, hd], [0, hd]])
     M = cv2.getPerspectiveTransform(src, dst)
     return cv2.warpPerspective(cv2.cvtColor(r, cv2.COLOR_RGB2GRAY), M, (wd, hd), flags=cv2.INTER_CUBIC, borderMode=cv2.BORDER_REPLICATE)
+
+
+# ----------------------------------------------------------------------------------------- ink measurements
+def ink_mask(rgb_or_gray, min_len_frac=0.3, contrast=18):
+    """binary handwriting-like ink mask (uint8 0/255): pixels darker than their local background, straight ruled
+    lines removed. Works on gray or RGB crops."""
+    a = np.asarray(rgb_or_gray)
+    g = _gray(a) if a.ndim == 3 else a
+    if g.size == 0:
+        return np.zeros((1, 1), np.uint8)
+    h, w = g.shape
+    k = max(3, (min(h, w) // 2) | 1)
+    bg = cv2.morphologyEx(g, cv2.MORPH_CLOSE, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (k, k)))
+    bg = cv2.GaussianBlur(bg, (0, 0), 2)
+    d = bg.astype(np.int16) - g.astype(np.int16)
+    b = (d > contrast).astype(np.uint8) * 255
+    hl = cv2.morphologyEx(b, cv2.MORPH_OPEN, cv2.getStructuringElement(cv2.MORPH_RECT, (max(15, int(w * min_len_frac)), 1)))
+    vl = cv2.morphologyEx(b, cv2.MORPH_OPEN, cv2.getStructuringElement(cv2.MORPH_RECT, (1, max(15, int(h * 0.6)))))
+    hl = cv2.dilate(hl, np.ones((3, 1), np.uint8))
+    vl = cv2.dilate(vl, np.ones((1, 3), np.uint8))
+    return cv2.subtract(b, cv2.bitwise_or(hl, vl))
+
+
+def ink_frac(crop, inset=0.06):
+    """fraction of ink pixels in the crop (borders inset to ignore ruled-line remains)"""
+    m = ink_mask(crop)
+    h, w = m.shape
+    dy, dx = int(h * inset), int(w * inset)
+    m = m[dy: h - dy, dx: w - dx]
+    return float((m > 0).mean()) if m.size else 0.0
