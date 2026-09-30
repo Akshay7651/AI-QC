@@ -73,14 +73,20 @@ def _find_formno(txt):
 
 
 def _ocr_formno(band, strip):
-    """-> (form_no|None, conf, raw, note); independent passes must agree for high confidence"""
+    """-> (form_no|None, conf, raw, note). Up to 9 differently pre-processed Tesseract passes vote on the string.
+
+    Measured on 135 hand-labelled forms (9 passes): >=3 passes agreeing -> 96.0% exact (73% of forms),
+    >=4 -> 97.8% (69%), >=5 -> 98.8% (64%), >=6 -> 100% (56%); best-guess with any agreement -> 92% (83%).
+    So form_no_conf >= 0.85 means '>=3 passes agree' (~96% exact); below that the value is only a hint.
+    """
+    from collections import Counter
     sharp = cv2.addWeighted(strip, 2.0, cv2.GaussianBlur(strip, (0, 0), 3), -1.0, 0)
+    big = cv2.resize(strip, None, fx=1.5, fy=1.5, interpolation=cv2.INTER_CUBIC)
     tries = []
     if band is not None:
-        tries += [(band, 7, "otsu")]
-    tries += [(strip, 11, "otsu"), (strip, 6, "otsu"), (sharp, 11, "otsu")]
-    if band is not None:
-        tries += [(band, 7, "adapt")]
+        tries += [(band, 7, "otsu"), (band, 7, "adapt")]
+    tries += [(strip, 11, "otsu"), (strip, 6, "otsu"), (sharp, 11, "otsu"), (strip, 11, "adapt"),
+              (big, 11, "otsu"), (big, 6, "otsu"), (sharp, 6, "otsu")]
     got, raws = [], []
     for img, psm, bn in tries:
         txt, cf = _tess(img, psm, bn)
@@ -88,21 +94,17 @@ def _ocr_formno(band, strip):
         f = _find_formno(txt)
         if f:
             got.append((f, cf))
-            from collections import Counter
-            top = Counter(x for x, _ in got).most_common(1)[0]
-            if top[1] >= 2:
+            if Counter(x for x, _ in got).most_common(1)[0][1] >= 4:   # 4 agreeing passes: stop early (97.8% exact)
                 break
     if not got:
         return None, 0.0, raws[0] if raws else "", "form no pattern not matched"
-    from collections import Counter
     cnt = Counter(f for f, _ in got)
     f, n = cnt.most_common(1)[0]
-    cf = max(c for ff, c in got if ff == f)
-    if n >= 2:
-        return f, min(1.0, 0.9 + 0.1 * cf), raws[0], ""
-    if len(cnt) > 1:
-        return f, 0.4, raws[0], "form no passes disagree"
-    return f, 0.6 + 0.2 * cf, raws[0], "form no from a single pass"
+    conf = {1: 0.6, 2: 0.75, 3: 0.93, 4: 0.97, 5: 0.98}.get(n, 0.99)
+    note = "" if n >= 3 else ("form no: only %d agreeing pass(es) - verify manually" % n)
+    if len(cnt) > 1 and n < 3:
+        note = "form no passes disagree - verify manually"
+    return f, conf, raws[0], note
 
 
 def read_formno(lay):
