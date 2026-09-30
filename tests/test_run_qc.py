@@ -33,7 +33,7 @@ def test_row_keys_stable_under_filter_and_duplicates():
     assert k[:3] == ["A", "B", "A#2"] and k[3].startswith("nodocket-")
     sub = df[df["docket_id"] == "B"].reset_index(drop=True)
     assert run_qc.make_keys(sub) == ["B"]
-    assert run_qc.make_keys(df.iloc[::-1].reset_index(drop=True))[1] == "B"
+    assert run_qc.make_keys(df.iloc[::-1].reset_index(drop=True))[2] == "B"
 
 
 def test_checkpoint_roundtrip_and_corruption(tmp_path):
