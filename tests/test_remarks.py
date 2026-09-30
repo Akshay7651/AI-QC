@@ -38,14 +38,14 @@ def test_clean_row_is_ok_high():
 
 
 def test_the_brief_example_shape():
-    f = form(worker_signed=False, officer_signed=False, total_row_blank=True, form_area=0.0, form_loss=0.0)
+    f = form(worker_signed=False, officer_signed=False, company_signed=False, total_row_blank=True, form_area=0.0, form_loss=0.0)
     p = photos(photo_is_form=True, n_form_photos=5, _n_photos=5, stamp_date="27092026", stamp_dist_m=6.0)
     gps = {"Suggested_Remark": "Same Location - QC Required", "Nearby_Same_Surveyor_25m": 308}
     risk = {"Risk_Score": 72, "Risk_Reasons": "surveyor averages 185 records/day"}
     e = R.evaluate(row(), f, p, gps, "", risk)
     t = e["remark"]
     assert e["verdict"] == "Reject-evidence"
-    assert "primary worker NO, block officer NO" in t and "Total row blank on form." in t
+    assert "company NO, primary worker NO, block officer NO" in t and "Total row blank on form." in t
     assert "all 5 uploaded photos are pictures of the paper form - no field photograph uploaded" in t
     assert "photo date 27-09-2026, 12 days after inspection" in t
     assert "GPS stamp 6 m from app" in t
@@ -211,3 +211,10 @@ def test_uncertain_photo_claims_are_not_asserted():
     assert "does NOT match declared crop" not in e["remark"]
     assert "Crop mismatch" not in e["flags"] and "No crop in photo" not in e["flags"]
     assert "Field state vs reported loss" not in e["flags"]
+
+
+def test_worker_and_officer_absence_is_informational_only():
+    e = ev(f=form(worker_signed=False, officer_signed=False))
+    assert "Signature missing" not in e["flags"] and e["verdict"] == "OK"
+    e = ev(f=form(farmer_signed=False))
+    assert "Signature missing" in e["flags"]

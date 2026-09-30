@@ -517,7 +517,8 @@ def read_form(path_or_pil, docket=None, debug=False):
     # ---- PO ID
     if "po_id" in B and P.crop(r, B["po_id"]).size:
         po, pcf, pm, pinfo = read_po_id(P.crop(r, B["po_id"]), docket)
-        out["po_id"], out["po_id_matches"] = po, pm
+        # PO-ID handwriting reading does not work yet (0 of 337 forms read fully): never assert a match or a mismatch.
+        out["po_id"], out["po_id_matches"] = None, None
         fc["po_id"] = round(float(pcf), 3)
         if pinfo.get("blank"):
             notes.append("PO ID field appears blank")

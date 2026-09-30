@@ -227,8 +227,11 @@ def evaluate(row, form=None, photos=None, gps=None, data_flags="", risk=None):
                     if not v:
                         missing.append(name)
             parts_form.append("Signatures: " + ", ".join(bits) + ".")
-            if missing:
-                flag("Signature missing", "review", "signature missing: " + ", ".join(missing))
+            # The primary worker and the block officer almost never sign (officer: 0 of 149 labelled forms; worker: ~17%), so their
+            # absence is informational only. A missing FARMER or COMPANY signature is what needs a review.
+            core_missing = [m for m in missing if m in ("farmer", "company")]
+            if core_missing:
+                flag("Signature missing", "review", "signature missing: " + ", ".join(core_missing))
             if form.get("officer_stamp_only"):
                 parts_form.append("Block officer block has a rubber stamp only (not a signature).")
                 flag("Officer stamp only", "review")
@@ -330,7 +333,7 @@ def evaluate(row, form=None, photos=None, gps=None, data_flags="", risk=None):
         nd = int(_num(photos.get("n_duplicates")) or 0)
         if nd:
             parts_photo.append(f"{nd} duplicate photo(s) in this record.")
-            flag("Duplicate photos", "review")
+            flag("Duplicate photos", None)   # usually the same scene re-shot, not fraud: informational
         if photos.get("rotated"):
             parts_photo.append("Photo(s) are rotated 90 degrees.")
             flag("Photos rotated", "review")
@@ -389,7 +392,10 @@ def evaluate(row, form=None, photos=None, gps=None, data_flags="", risk=None):
     onf = int(_num(gps.get("Records_On_Same_Field")) or 0)
     dmg = _num(row.get("total_damage_pct"))
     if same_txt:
-        flag("Same location", "review", "multiple surveys at the same location")
+        if g_rem.startswith("Same Location"):
+            flag("Same location", "review", "multiple surveys at the same location")
+        else:
+            flag("Same location", None)       # a neighbour within 25 m is common; only repeated same-surveyor hot-spots need review
     if g_rem.startswith("Same Location"):
         if same_txt:
             pass
