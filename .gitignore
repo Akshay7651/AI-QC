@@ -1,0 +1,9 @@
+.env
+__pycache__/
+cache/pdfs/*
+cache/photos/*
+output/*
+!cache/*/.gitkeep
+!output/.gitkeep
+*.xlsx
+!tests/*.xlsx
