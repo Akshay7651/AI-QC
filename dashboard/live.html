@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CLAP AI QC - Live Run</title>
+<style>
+:root{
+  --bg:#f4f6fa; --card:#fff; --ink:#1b2430; --mute:#6b7785; --line:#e1e6ee; --accent:#1f5fbf;
+  --ok:#2e9e5b; --review:#d9a400; --reject:#d6336c; --manual:#e8590c; --busy:#1f8f55; --idle:#9aa5b1; --err:#d6336c; --start:#d9a400;
+  --bar:#e6ebf3; --chip:#eef2f8;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#0f141b; --card:#18202b; --ink:#e7edf5; --mute:#8d9aa9; --line:#2a3544; --accent:#5b9dff;
+  --ok:#47c97e; --review:#f2c230; --reject:#f06595; --manual:#ff922b; --busy:#3fcf82; --idle:#6f7c8a; --err:#f06595; --start:#f2c230;
+  --bar:#263141; --chip:#212c3a;}}
+:root[data-theme="dark"]{
+  --bg:#0f141b; --card:#18202b; --ink:#e7edf5; --mute:#8d9aa9; --line:#2a3544; --accent:#5b9dff;
+  --ok:#47c97e; --review:#f2c230; --reject:#f06595; --manual:#ff922b; --busy:#3fcf82; --idle:#6f7c8a; --err:#f06595; --start:#f2c230;
+  --bar:#263141; --chip:#212c3a;}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+.wrap{max-width:1200px;margin:0 auto;padding:12px 16px 40px}
+header{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin:6px 0 12px}
+h1{font-size:20px;margin:0;flex:1 1 auto}
+.pill{display:inline-flex;align-items:center;gap:7px;padding:4px 12px;border-radius:999px;font-weight:600;font-size:14px;color:#fff;background:var(--idle)}
+.pill.Running{background:var(--busy)} .pill.Paused{background:var(--review);color:#222} .pill.Done{background:var(--accent)} .pill.Stopped{background:var(--err)} .pill.Offline{background:var(--idle)}
+.pill .dot{width:8px;height:8px;border-radius:50%;background:#fff}
+.pill.Running .dot{animation:pulse 1.2s infinite}
+@keyframes pulse{50%{opacity:.25}}
+.upd{color:var(--mute);font-size:13px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px}
+.prog{margin-bottom:12px}
+.bar{height:22px;background:var(--bar);border-radius:11px;overflow:hidden;position:relative}
+.bar>i{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--accent),var(--ok));transition:width .6s}
+.bar>span{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;text-shadow:0 0 3px var(--card)}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin-top:12px}
+.stat b{display:block;font-size:22px;line-height:1.15}
+.stat small,.lbl{color:var(--mute);font-size:12px;text-transform:uppercase;letter-spacing:.04em}
+h2{font-size:15px;margin:18px 0 8px;color:var(--mute);text-transform:uppercase;letter-spacing:.05em}
+.tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
+.tile{padding:10px 12px;border-radius:10px;background:var(--card);border:1px solid var(--line);border-left:5px solid var(--idle)}
+.tile b{font-size:22px;display:block}
+.tile.hot{border-left-color:var(--reject)} .tile.ok{border-left-color:var(--ok)} .tile.review{border-left-color:var(--review)} .tile.reject{border-left-color:var(--reject)} .tile.manual{border-left-color:var(--manual)}
+.agents{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:10px}
+.agent{padding:10px 12px;border-radius:10px;background:var(--card);border:1px solid var(--line);border-top:4px solid var(--idle)}
+.agent.busy{border-top-color:var(--busy)} .agent.idle{border-top-color:var(--idle)} .agent.error,.agent.dead{border-top-color:var(--err)} .agent.starting{border-top-color:var(--start)}
+.agent .role{font-weight:700;display:flex;justify-content:space-between;gap:6px}
+.agent .st{font-size:12px;font-weight:700;text-transform:uppercase}
+.agent.busy .st{color:var(--busy)} .agent.error .st,.agent.dead .st{color:var(--err)} .agent.starting .st{color:var(--start)} .agent.idle .st{color:var(--mute)}
+.agent .doc{font-family:ui-monospace,Consolas,monospace;font-size:13px;min-height:1.3em;color:var(--ink);word-break:break-all}
+.agent .meta{color:var(--mute);font-size:12px;display:flex;justify-content:space-between;margin-top:4px}
+.feed{max-height:420px;overflow:auto;padding:0}
+.ev{padding:9px 12px;border-bottom:1px solid var(--line);cursor:pointer}
+.ev:last-child{border-bottom:0}
+.ev .h{display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:13px;color:var(--mute)}
+.ev .h code{color:var(--ink);font-size:13px}
+.badge{font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px;color:#fff;background:var(--idle)}
+.badge.OK{background:var(--ok)} .badge.Review{background:var(--review);color:#222} .badge.Reject-evidence{background:var(--reject)} .badge.Manual-check{background:var(--manual)}
+.ev .t{margin-top:3px;font-size:13.5px;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.ev.open .t{-webkit-line-clamp:unset;display:block}
+.out code{word-break:break-all}
+.err{color:var(--err);font-size:13px;margin:2px 0}
+.note{color:var(--mute);font-size:13px}
+.banner{display:none;margin:0 0 12px;padding:10px 12px;border-radius:10px;background:var(--review);color:#222;font-weight:600}
+@media (max-width:520px){h1{font-size:17px}.stat b{font-size:19px}.agents{grid-template-columns:repeat(auto-fill,minmax(150px,1fr))}.agent .role{font-size:13px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1 id="title">CLAP AI QC - live run</h1>
+    <span class="pill Offline" id="pill"><span class="dot"></span><span id="status">Connecting</span></span>
+    <span class="upd" id="upd"></span>
+  </header>
+  <div class="banner" id="banner"></div>
+
+  <section class="card prog">
+    <div class="bar"><i id="barfill"></i><span id="barlbl">0%</span></div>
+    <div class="stats">
+      <div class="stat"><b id="rows">0 / 0</b><small>rows done</small></div>
+      <div class="stat"><b id="rpm">0</b><small>rows / min</small></div>
+      <div class="stat"><b id="eta">-</b><small>time left (ETA)</small></div>
+      <div class="stat"><b id="elapsed">0s</b><small>elapsed</small></div>
+      <div class="stat"><b id="cost">$0.00</b><small>API cost (offline = 0)</small></div>
+      <div class="stat"><b id="errs">0</b><small>agent errors</small></div>
+    </div>
+  </section>
+
+  <h2>Verdicts so far</h2>
+  <div class="tiles" id="verdicts"></div>
+
+  <h2>Issues found (counters)</h2>
+  <div class="tiles" id="counters"></div>
+
+  <h2>Agents <span class="note" id="agentnote"></span></h2>
+  <div class="agents" id="agents"></div>
+
+  <h2>Latest remarks</h2>
+  <div class="card feed" id="feed"><div class="ev note">Waiting for the first row...</div></div>
+
+  <h2>Output file</h2>
+  <div class="card out">
+    <div class="lbl">Saved to</div><div><code id="outpath">-</code></div>
+    <div class="lbl" style="margin-top:8px">Last autosave</div><div id="outsaved">-</div>
+    <div class="err" id="outnote"></div>
+  </div>
+
+  <div id="errbox" style="display:none"><h2>Recent agent errors</h2><div class="card" id="errlist"></div></div>
+  <p class="note" id="foot"></p>
+</div>
+<script>
+(function(){
+"use strict";
+var $=function(id){return document.getElementById(id)};
+var SRC=(new URLSearchParams(location.search)).get("src")||"progress.json";
+var COUNTERS=[["form_not_found","Form not found",1],["missing_form_link","Missing form link",1],["missing_photo_link","Missing photo link",1],
+ ["photo_is_form","Photo is the form",1],["gps_mismatch","Photo GPS mismatch",1],["signature_missing","Signature missing",1],
+ ["mismatch","Form vs app mismatch",1],["overwrite","Overwriting",1],["duplicate_photos","Duplicate photos",0],
+ ["form_unreadable","Form not readable",0],["not_proforma3","Not Proforma-3",0],["po_id_mismatch","PO ID mismatch",0],["gps_cluster","GPS cluster",0]];
+var VERD=[["OK","OK","ok"],["Review","Review","review"],["Reject-evidence","Reject evidence","reject"],["Manual-check","Manual check","manual"]];
+var lastOK=0,fails=0,openEv={},lastEvKey="";
+
+function esc(s){return String(s==null?"":s).replace(/[&<>"']/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]})}
+function dur(s){if(s==null)return "-";s=Math.round(s);var h=Math.floor(s/3600),m=Math.floor(s%3600/60),x=s%60;
+  return h?h+"h "+m+"m":m?m+"m "+x+"s":x+"s"}
+function num(n){return Number(n||0).toLocaleString()}
+
+function render(d){
+  $("title").textContent=d.title||"CLAP AI QC - live run";
+  document.title=(d.status||"")+" "+Math.round(d.percent||0)+"% - CLAP AI QC";
+  var st=d.status||"Running";
+  if(st==="Running"&&d.done>=d.total&&d.total>0)st="Running";
+  var p=$("pill");p.className="pill "+st;$("status").textContent=st;
+  $("upd").textContent="updated "+(d.updated_at||"").slice(11);
+  var pct=Math.max(0,Math.min(100,d.percent||0));
+  $("barfill").style.width=pct+"%";$("barlbl").textContent=pct.toFixed(1)+"%";
+  $("rows").textContent=num(d.done)+" / "+num(d.total);
+  $("rpm").textContent=(d.rows_per_min||0).toFixed(1);
+  $("eta").textContent=st==="Done"?"finished":d.eta_sec==null?"calculating":dur(d.eta_sec);
+  $("elapsed").textContent=dur(d.elapsed_sec);
+  $("cost").textContent="$"+(d.cost||0).toFixed(2);
+  $("errs").textContent=num(d.error_count);
+  var c=d.counters||{},v=d.verdicts||{};
+  $("verdicts").innerHTML=VERD.map(function(x){return '<div class="tile '+x[2]+'"><b>'+num(v[x[0]])+'</b>'+x[1]+'</div>'}).join("");
+  $("counters").innerHTML=COUNTERS.map(function(x){var n=c[x[0]]||0;return '<div class="tile'+(n&&x[2]?' hot':'')+'"><b>'+num(n)+'</b>'+x[1]+'</div>'}).join("");
+  var ag=d.agents||[],busy=ag.filter(function(a){return a.state==="busy"}).length;
+  $("agentnote").textContent="("+busy+" busy of "+ag.length+")";
+  $("agents").innerHTML=ag.map(function(a){
+    return '<div class="agent '+esc(a.state)+'"><div class="role"><span>'+esc(a.role)+'</span><span class="st">'+esc(a.state)+'</span></div>'+
+      '<div class="doc">'+esc(a.docket||"")+(a.task?' <span class="note">'+esc(a.task)+'</span>':'')+'</div>'+
+      '<div class="meta"><span>'+num(a.rows_done)+' done</span><span>'+(a.avg_sec?a.avg_sec+" s/row":"-")+'</span></div></div>'}).join("");
+  var ev=d.events||[];
+  var key=ev.length?ev[0].t+ev[0].docket+ev.length:"";
+  if(key!==lastEvKey){lastEvKey=key;
+    $("feed").innerHTML=ev.length?ev.map(function(e,i){var k=e.docket;
+      return '<div class="ev'+(openEv[k]?' open':'')+'" data-k="'+esc(k)+'"><div class="h"><span class="badge '+esc(e.verdict)+'">'+esc(e.verdict||"-")+'</span><code>'+esc(e.docket)+'</code><span>'+esc(e.t)+'</span></div><div class="t">'+esc(e.remark)+'</div></div>'}).join(""):'<div class="ev note">Waiting for the first row...</div>';}
+  var o=d.output||{};
+  $("outpath").textContent=o.path||"-";
+  $("outsaved").textContent=o.last_saved?o.last_saved+"  ("+num(o.rows_saved)+" rows written)":"not saved yet (first autosave after the set interval)";
+  $("outnote").textContent=o.note||"";
+  var er=d.errors||[];$("errbox").style.display=er.length?"block":"none";
+  $("errlist").innerHTML=er.map(function(e){return '<div class="err">'+esc(e.t)+'  '+esc(e.msg)+'</div>'}).join("");
+  $("foot").textContent="Engine: "+(d.engine||"local")+"  |  started "+(d.started_at||"");
+}
+$("feed").addEventListener("click",function(e){var el=e.target.closest(".ev");if(!el)return;var k=el.getAttribute("data-k");openEv[k]=!openEv[k];el.classList.toggle("open")});
+
+function setOffline(msg){
+  var b=$("banner");b.style.display="block";b.textContent=msg;
+  $("pill").className="pill Offline";$("status").textContent="Offline";
+}
+function tick(){
+  var x=new XMLHttpRequest();
+  x.open("GET",SRC+(SRC.indexOf("?")<0?"?":"&")+"t="+Date.now(),true);
+  x.timeout=4000;
+  x.onload=function(){
+    if(x.status!==200){fails++;if(fails>2)setOffline("Cannot read "+SRC+" (HTTP "+x.status+").");return}
+    try{var d=JSON.parse(x.responseText);fails=0;lastOK=Date.now();$("banner").style.display="none";render(d);
+      if(d.status==="Done"||d.status==="Stopped"){setTimeout(tick,3000);return}
+    }catch(err){fails++}
+    setTimeout(tick,1000);
+  };
+  x.onerror=x.ontimeout=function(){
+    fails++;
+    if(location.protocol==="file:")setOffline("Open this page through the run's web address (for example http://localhost:8765/), not as a file.");
+    else if(fails>2)setOffline("Lost connection to the QC run (finished, stopped, or the PC went to sleep). Retrying...");
+    setTimeout(tick,2000);
+  };
+  x.send();
+}
+tick();
+})();
+</script>
+</body>
+</html>
