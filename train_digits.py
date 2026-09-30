@@ -233,17 +233,58 @@ def _load_cache(dk):
     return {k: z[k] for k in z.files}
 
 
-def po_components(strip):
-    """PO-ID strip -> the 18 handwritten digit components (last 18 of consistent height) or None."""
+def _split_comp(c, k):
+    """cut a blob that holds k digits into k pieces at low-ink columns near the ideal cut positions."""
+    m = c["mask"]; h, w = m.shape
+    prof = (m > 0).sum(0).astype(float)
+    cuts = [0]
+    for j in range(1, k):
+        ideal = j * w / k
+        lo, hi = int(max(cuts[-1] + 3, ideal - 0.3 * w / k)), int(min(w - 3, ideal + 0.3 * w / k))
+        cuts.append(int(lo + np.argmin(prof[lo:hi + 1])) if hi > lo else int(ideal))
+    cuts.append(w)
+    out = []
+    for a, b in zip(cuts[:-1], cuts[1:]):
+        piece = m[:, a:b]
+        ys, xs = np.nonzero(piece)
+        if len(ys) < 10:
+            return None
+        piece = piece[ys.min():ys.max() + 1, xs.min():xs.max() + 1]
+        out.append(dict(x0=c["x0"] + a + xs.min(), x1=c["x0"] + a + xs.max() + 1, y0=c["y0"] + ys.min(), y1=c["y0"] + ys.max() + 1,
+                        mask=piece, area=int((piece > 0).sum()), dot=False))
+    return out
+
+
+def po_components(strip, n=18):
+    """PO-ID strip -> the n handwritten digit components (touching digits split by width), or None."""
     if strip.shape[0] < 60 or strip.shape[1] < 100:
         return None
     comps, H, W = D._analyse(strip[22:88], h=66)
-    comps = [c for c in comps if not c["dot"] and (c["y1"] - c["y0"]) >= 0.30 * H]
-    if len(comps) < 18:
+    comps = [c for c in comps if not c["dot"] and (c["y1"] - c["y0"]) >= 0.22 * H and c["area"] >= 30]
+    if len(comps) < 6:
         return None
-    hs = np.array([c["y1"] - c["y0"] for c in comps])
-    comps = comps[-18:]
-    return comps
+    # typical single-digit width/pitch from the rightmost comps
+    tail = comps[-8:]
+    ws = np.array([c["x1"] - c["x0"] for c in tail])
+    wd = float(np.median(ws[ws <= np.percentile(ws, 60) + 1]))
+    cx = np.array([(c["x0"] + c["x1"]) / 2 for c in comps])
+    d = np.diff(cx)
+    d = d[(d > 0.6 * wd) & (d < 2.0 * wd)]
+    P = float(np.median(d)) if len(d) >= 3 else 1.3 * wd
+    out, total = [], 0
+    for c in reversed(comps):
+        w = c["x1"] - c["x0"]
+        k = max(1, int(round((w + 0.25 * P) / P)))
+        pieces = [c] if k == 1 else _split_comp(c, k)
+        if pieces is None:
+            return None
+        if total + len(pieces) > n:
+            break
+        out = pieces + out
+        total += len(pieces)
+        if total == n:
+            return out
+    return None
 
 
 def fmt_label(v):
