@@ -266,3 +266,24 @@ def test_photo_max_photos(tmp_path):
         return SimpleNamespace(content=[SimpleNamespace(type="text", text="{}")], usage=SimpleNamespace(input_tokens=1, output_tokens=1))
     process(photo_qc, {"_local_photos": imgs}, client=SimpleNamespace(messages=SimpleNamespace(create=create)))
     assert captured["n"] == C.MAX_PHOTOS_PER_ROW
+
+
+def test_per_docket_zip_and_folder_layouts(tmp_path, monkeypatch):
+    """<docket>.zip (or a <docket>/ folder) containing form/ and media/ -> 1 form + N photos per docket."""
+    import zipfile
+    import pandas as pd
+    import local_engine as E
+    import local_media as L
+    monkeypatch.chdir(tmp_path)
+    src = tmp_path / "in"
+    src.mkdir()
+    d1, d2 = "040106260000636479", "040106260000170364"
+    with zipfile.ZipFile(src / f"{d1}.zip", "w") as z:
+        z.writestr(f"form/{d1}.jpg", b"x"); z.writestr("media/1.jpg", b"x"); z.writestr("media/2.jpg", b"x")
+    (src / d2 / "form").mkdir(parents=True); (src / d2 / "media").mkdir()
+    (src / d2 / "form" / "f.jpg").write_bytes(b"x"); (src / d2 / "media" / "p1.jpg").write_bytes(b"x")
+    df = pd.DataFrame({"docket_id": [d1, d2], "pdf_url": [None, None], "media_urls": [None, None]})
+    m = L.index(str(src), df)
+    f1, p1 = E.classify_local(m[d1], d1, None)
+    f2, p2 = E.classify_local(m[d2], d2, None)
+    assert (len(f1), len(p1)) == (1, 2) and (len(f2), len(p2)) == (1, 1)

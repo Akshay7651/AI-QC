@@ -215,3 +215,12 @@ The text only states what was read; a value that could not be read reliably is w
 `dashboard/build.py` turns the output Excel into the interactive map/table dashboard: `python dashboard/build.py <output>.xlsx`
 (writes `dashboard/index.html`; for big files choose the Excel with the "Choose File" button). The new columns
 (`QC Verdict`, `Form No`, signatures, photo columns, ...) are recognised as QC columns automatically.
+
+
+## Media layout for `--local-media` (folder or ZIP) - any of these works
+1. One flat folder/ZIP: `<docket>.jpg|png|pdf` = the signed form, `<docket>_1.jpg`, `<docket>_2.jpg` ... = field photos.
+2. One folder per docket: `<docket>/form/<anything>.jpg` and `<docket>/media/<anything>.jpg`.
+3. A folder containing one ZIP per docket: `<docket>.zip` with `form/` and `media/` inside (extracted automatically into `cache/local/`;
+   for very large runs prefer plain folders - ZIPs need disk space to unpack).
+The docket ID must appear in the file name, the folder name or the ZIP name. Files named by the PMFBY mediaID also match.
+Anything inside a folder named `form`, `forms`, `pdf`, `pdfs`, `signed`, `signed_copy` is the form; other images are field photos.
