@@ -440,6 +440,14 @@ def main():
         with torch.no_grad():
             acc = (net(torch.tensor(Xte, dtype=torch.float32).div(255).unsqueeze(1)).argmax(1).numpy() == yte).mean()
         print(f"  MNIST-test acc {acc:.4f}", flush=True)
+        try:
+            import eval_digits as E
+            r_, _ = E.run()
+            print("  HAND-LABEL round", rnd, {k: r_[k] for k in ("all_cells", "filled_cells(exp not blank)", "nonzero_value_cells", "row1_filled_only", "HOLDOUT_last50_filled")}, flush=True)
+            import shutil
+            shutil.copy(D.MODEL_PATH, D.MODEL_PATH.replace(".npz", f"_r{rnd}.npz"))
+        except Exception as e:  # noqa
+            print("  (hand eval skipped:", e, ")")
         if rnd < a.rounds - 1:
             Xr, yr, _ = harvest(forms, man, rnd + 1 if rnd + 1 in MIN_AGREE else 2)
     res = evaluate(forms, man)

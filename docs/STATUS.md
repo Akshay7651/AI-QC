@@ -99,3 +99,11 @@ Requirements still to implement/verify (in priority order):
 3. Stop when 9 of 10 consecutive fresh batches have >=95% on every asserted field; then run one final untouched batch to confirm.
 4. Fields that cannot reach 95% (loss % from photo, crop-present, damage state) are NOT counted; they stay 'low confidence - manual check'.
 5. Cheaper ground truth: when the user's ~3,000 human-QC'd rows arrive, train on ~2,000 and use the other ~1,000 as the test stream in batches of 100 (human answers = ground truth; no hand-reading needed).
+
+
+### UPDATE (first digit model result - honest): the per-digit segmentation approach FAILED on real forms
+`models/metrics.json` (first model): weak-cell exact 21%, PO-ID 18/18 segmentation 2/337 forms, MNIST 96.6% (does not transfer).
+PIVOT (sent to the digit agent): train a WHOLE-CELL value classifier (small vocabulary: 0 / multiples of 5-10 up to 100 / rare decimals /
+empty / illegible) on cell crops from `form_reader`/`form_p3` geometry; labels = app values where consistent (excluding `data/eval` dockets);
+balance classes (0 is ~75% of forms); confidence gate -> 'not readable'; report overall, NON-ZERO and precision-at-gate with coverage.
+PO-ID reading is demoted to a nice-to-have. Until the cell model reaches >=95% precision at its gate, handwritten area/loss stay 'not readable'.
