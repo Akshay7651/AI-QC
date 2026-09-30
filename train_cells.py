@@ -54,6 +54,19 @@ def label_of(v):
 def build_ds(max_forms=None):
     ev = eval_dockets()
     man = pd.read_csv(os.path.join(HERE, "data", "manifest.csv"), dtype={"docket_id": str}).drop_duplicates("docket_id").set_index("docket_id")
+    # Human-QC'd values (written by retrain.py) override the app-entered values; the human hold-out is never trained on.
+    hm = os.path.join(HERE, "data", "manifest_human.csv")
+    if os.path.exists(hm):
+        h = pd.read_csv(hm, dtype={"docket_id": str}).drop_duplicates("docket_id").set_index("docket_id")
+        for d_, r_ in h.iterrows():
+            if d_ not in man.index:
+                man.loc[d_, :] = np.nan
+            for col in ("affected_area_pct", "crop_loss_pct"):
+                if pd.notna(r_.get(col)):
+                    man.loc[d_, col] = r_[col]
+    ho = os.path.join(HERE, "data", "holdout_human.csv")
+    if os.path.exists(ho):
+        ev = ev | set(pd.read_csv(ho, dtype=str)["docket_id"])
     names = sorted(os.path.basename(f)[:-4] for f in glob.glob(os.path.join(CACHE, "*.npz")))
     names = [n for n in names if n not in ev and n in man.index]
     if max_forms:
