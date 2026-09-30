@@ -2,7 +2,7 @@
 """Every N seconds: refresh docs/STATUS_LIVE.md with machine-checked facts, then commit + push the branch.
 
   nohup python tools/status_heartbeat.py --every 300 &
-Safe by design: never commits files > 20 MB (unstages them and says so), never force-pushes, skips a cycle on git errors.
+Safe by design: never commits files > 90 MB (unstages them and says so), never force-pushes, skips a cycle on git errors.
 """
 import argparse
 import glob
@@ -66,7 +66,7 @@ def commit_push():
     big = []
     for f in sh("git diff --cached --name-only").stdout.split():
         p = ROOT / f
-        if p.exists() and p.stat().st_size > 20_000_000:
+        if p.exists() and p.stat().st_size > 90_000_000:
             sh(f"git reset -q HEAD -- '{f}'")
             big.append(f)
     if big:
