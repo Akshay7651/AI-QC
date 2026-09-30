@@ -1,0 +1,301 @@
+file,tag,damage,scene,crop_present,flooded,rotated,person
+040106260001045435_1.jpg,rand,partly damaged,field,1,0,0,0
+040106260000539204_1.jpg,rand,partly damaged,field,1,0,0,0
+040106260000627430_1.jpg,rand,healthy,field,1,0,0,0
+040106260000431850_2.jpg,rand,submerged,field,1,1,0,0
+040106260000116662_1.jpg,rand,healthy,field,1,0,1,0
+040106260000274016_3.jpg,rand,healthy,field,1,0,1,0
+040106260000985811_2.jpg,rand,weeds-uncultivated,field,0,0,0,0
+040106260001102549_1.jpg,rand,partly damaged,field,1,0,0,0
+040106260001015894_2.jpg,rand,weeds-uncultivated,field,0,0,0,0
+040106260000500028_3.jpg,rand,weeds-uncultivated,field,0,0,0,0
+040106260000677209_3.jpg,rand,healthy,field,1,0,0,0
+040106260000332985_2.jpg,rand,weeds-uncultivated,field,0,0,0,0
+040106260000665055_1.jpg,rand,healthy,field,1,0,0,1
+040106260000015592_1.jpg,rand,healthy,field,1,0,1,0
+040106260000542692_1.jpg,rand,weeds-uncultivated,field,0,0,0,1
+040106260001342974_3.jpg,rand,healthy,field,1,0,1,0
+040106260000197463_2.jpg,rand,weeds-uncultivated,field,0,0,0,0
+040106260000683031_1.jpg,rand,dried-burnt,field,1,0,0,0
+040106260000508000_3.jpg,rand,dried-burnt,field,1,0,0,0
+040106260000097495_2.jpg,rand,healthy,field,1,0,1,0
+040106260001681972_1.jpg,rand,healthy,field,1,0,0,1
+040106260000675095_2.jpg,rand,weeds-uncultivated,field,0,0,0,0
+040106260000631843_1.jpg,rand,healthy,field,1,0,0,0
+040106260001385126_1.jpg,rand,healthy,field,1,0,0,0
+040106260001450831_2.jpg,rand,partly damaged,field,1,0,0,0
+040106260000692178_3.jpg,rand,weeds-uncultivated,field,0,0,1,0
+040106260000183273_1.jpg,rand,submerged,field,1,1,0,0
+040106260000198020_2.jpg,rand,weeds-uncultivated,field,0,0,0,0
+040106260000016240_2.jpg,rand,healthy,field,1,0,0,0
+040106260000018214_1.jpg,rand,healthy,field,1,0,1,0
+040106260000611624_1.jpg,rand,partly damaged,field,1,0,0,0
+040106260001030342_1.jpg,rand,dried-burnt,field,1,0,0,0
+040106260000022510_2.jpg,rand,healthy,field,1,0,1,0
+040106260001714752_3.jpg,rand,healthy,field,1,0,1,0
+040106260000692435_1.jpg,rand,weeds-uncultivated,field,0,0,1,0
+040106260000360691_2.jpg,rand,dried-burnt,field,1,0,1,0
+040106260000624679_1.jpg,rand,partly damaged,field,1,0,0,0
+040106260000836628_1.jpg,rand,weeds-uncultivated,field,0,0,0,0
+040106260001087752_1.jpg,rand,weeds-uncultivated,field,0,0,0,0
+040106260001078614_2.jpg,rand,healthy,field,1,0,0,0
+040106260001354510_3.jpg,rand,partly damaged,field,1,0,0,0
+040106260000491023_2.jpg,rand,healthy,field,1,0,0,0
+040106260000427830_1.jpg,rand,healthy,field,1,0,1,0
+040106260000205780_1.jpg,rand,dried-burnt,field,1,0,0,1
+040106260001440902_3.jpg,rand,weeds-uncultivated,field,0,0,0,0
+040106260000618093_1.jpg,rand,healthy,field,1,0,0,0
+040106260000097161_2.jpg,rand,healthy,field,1,0,1,0
+040106260000726863_1.jpg,rand,dried-burnt,field,1,0,1,0
+040106260000041677_2.jpg,rand,partly damaged,field,1,0,0,0
+040106260000677086_2.jpg,rand,healthy,field,1,0,0,0
+040106260000413019_3.jpg,rand,weeds-uncultivated,field,0,0,0,0
+040106260000371141_3.jpg,rand,submerged,field,1,1,0,0
+040106260001304733_2.jpg,rand,healthy,field,1,0,0,0
+040106260001135488_3.jpg,rand,partly damaged,field,1,0,0,0
+040106260000412880_3.jpg,rand,partly damaged,field,1,0,0,0
+040106260000549993_2.jpg,rand,bare soil,field,0,0,0,0
+040106260000191254_3.jpg,rand,healthy,field,1,0,0,0
+040106260001140053_3.jpg,rand,partly damaged,field,1,0,0,0
+040106260001195883_2.jpg,rand,healthy,field,1,0,0,0
+040106260000668244_1.jpg,rand,healthy,field,1,0,0,0
+040106260000734956_2.jpg,water,partly damaged,field,1,0,0,0
+040106260000836066_1.jpg,water,healthy,field,1,0,0,0
+040106260000022590_2.jpg,water,,person-only,0,0,0,1
+040106260000630617_2.jpg,water,healthy,field,1,0,0,0
+040106260001130576_3.jpg,water,healthy,field,1,0,1,0
+040106260001196965_1.jpg,water,healthy,field,1,0,0,0
+040106260001309471_1.jpg,water,healthy,field,1,0,0,0
+040106260000187370_1.jpg,water,healthy,field,1,0,1,0
+040106260000016839_2.jpg,water,healthy,field,1,0,1,0
+040106260001077886_2.jpg,water,healthy,field,1,0,0,0
+040106260000016241_2.jpg,water,healthy,field,1,0,0,0
+040106260000145745_2.jpg,water,healthy,field,1,0,1,0
+040106260000933452_3.jpg,water,weeds-uncultivated,field,0,0,0,0
+040106260000836365_1.jpg,water,weeds-uncultivated,field,0,0,0,0
+040106260000553769_2.jpg,water,partly damaged,field,1,0,0,0
+040106260000085015_1.jpg,water,healthy,field,1,0,1,0
+040106260000678969_1.jpg,water,bare soil,field,0,0,0,0
+040106260001342282_2.jpg,water,dried-burnt,field,1,0,0,0
+040106260001288681_3.jpg,water,healthy,field,1,0,0,0
+040106260000752684_2.jpg,water,weeds-uncultivated,field,0,0,0,0
+040106260000665874_1.jpg,water,partly damaged,field,1,0,0,0
+040106260000210235_2.jpg,water,weeds-uncultivated,field,0,0,0,0
+040106260000688236_3.jpg,water,healthy,field,1,0,0,0
+040106260000617453_1.jpg,water,healthy,field,1,0,1,0
+040106260000838996_3.jpg,water,healthy,field,1,0,0,0
+040106260001342258_1.jpg,water,dried-burnt,field,1,0,0,0
+040106260000690246_3.jpg,water,dried-burnt,field,1,0,1,0
+040106260000015607_3.jpg,water,dried-burnt,field,1,0,1,0
+040106260000133484_1.jpg,water,healthy,field,1,0,1,0
+040106260000625173_2.jpg,water,healthy,field,1,0,0,0
+040106260000424826_1.jpg,water,healthy,field,1,0,1,0
+040106260000429243_2.jpg,water,healthy,field,1,0,1,0
+040106260000207997_2.jpg,water,healthy,field,1,0,0,0
+040106260000688127_3.jpg,water,partly damaged,field,1,0,0,0
+040106260000125204_2.jpg,water,healthy,field,1,0,1,0
+040106260001301886_3.jpg,water,dried-burnt,field,1,0,1,0
+040106260000692368_1.jpg,water,dried-burnt,field,1,0,1,0
+040106260000686726_3.jpg,water,partly damaged,field,1,0,1,0
+040106260000200822_2.jpg,water,healthy,field,1,0,0,0
+040106260000630214_1.jpg,water,partly damaged,field,1,0,0,0
+040106260001640085_1.jpg,water,dried-burnt,field,1,0,1,0
+040106260000106087_2.jpg,water,submerged,field,1,1,1,0
+040106260000690374_3.jpg,water,dried-burnt,field,1,0,1,0
+040106260000562810_2.jpg,water,healthy,field,1,0,0,0
+040106260000105971_3.jpg,water,healthy,field,1,0,0,0
+040106260001899652_2.jpg,dry,dried-burnt,field,1,0,0,0
+040106260001617600_3.jpg,dry,weeds-uncultivated,field,0,0,0,0
+040106260000201738_3.jpg,dry,dried-burnt,field,1,0,0,0
+040106260001899765_2.jpg,dry,dried-burnt,field,1,0,0,0
+040106260001667294_1.jpg,dry,dried-burnt,field,1,0,0,0
+040106260000711314_2.jpg,dry,dried-burnt,field,1,0,0,0
+040106260001442174_3.jpg,dry,partly damaged,field,1,0,0,0
+040106260001021724_2.jpg,dry,dried-burnt,field,1,0,0,1
+040106260000688551_1.jpg,dry,partly damaged,field,1,0,1,0
+040106260000688535_3.jpg,dry,dried-burnt,field,1,0,1,0
+040106260001029615_2.jpg,dry,dried-burnt,field,1,0,0,0
+040106260000667974_2.jpg,dry,dried-burnt,field,1,0,0,0
+040106260000726959_3.jpg,dry,dried-burnt,field,1,0,1,0
+040106260000570834_2.jpg,dry,dried-burnt,field,1,0,0,1
+040106260001899392_3.jpg,dry,weeds-uncultivated,field,0,0,0,0
+040106260000712327_1.jpg,dry,dried-burnt,field,1,0,0,0
+040106260000714055_1.jpg,dry,dried-burnt,field,1,0,0,0
+040106260001086616_1.jpg,dry,dried-burnt,field,1,0,0,0
+040106260000774123_1.jpg,dry,partly damaged,field,1,0,1,0
+040106260000843709_1.jpg,dry,weeds-uncultivated,field,0,0,0,0
+040106260000983430_2.jpg,dry,dried-burnt,field,1,0,0,0
+040106260000727401_3.jpg,dry,partly damaged,field,1,0,1,0
+040106260000550136_2.jpg,dry,dried-burnt,field,1,0,0,0
+040106260000919757_3.jpg,dry,dried-burnt,field,1,0,0,0
+040106260000570875_1.jpg,dry,dried-burnt,field,1,0,0,0
+040106260000743603_1.jpg,dry,dried-burnt,field,1,0,1,0
+040106260000684908_1.jpg,dry,partly damaged,field,1,0,1,0
+040106260000689366_1.jpg,dry,partly damaged,field,1,0,1,0
+040106260000736509_1.jpg,dry,dried-burnt,field,1,0,1,0
+040106260001899669_2.jpg,dry,weeds-uncultivated,field,0,0,0,0
+040106260001220134_3.jpg,dry,bare soil,field,0,0,0,0
+040106260000650736_1.jpg,dry,dried-burnt,field,1,0,0,0
+040106260000606665_2.jpg,dry,partly damaged,field,1,0,0,0
+040106260000726155_2.jpg,dry,healthy,field,1,0,1,0
+040106260000715361_2.jpg,dry,dried-burnt,field,1,0,0,0
+040106260001501960_3.jpg,dry,dried-burnt,field,1,0,0,0
+040106260000726246_1.jpg,dry,partly damaged,field,1,0,1,0
+040106260000209950_2.jpg,dry,dried-burnt,field,1,0,0,0
+040106260000759028_2.jpg,dry,weeds-uncultivated,field,0,0,0,0
+040106260000554207_1.jpg,dry,weeds-uncultivated,field,0,0,0,0
+040106260000206839_2.jpg,lowveg,bare soil,field,0,0,0,0
+040106260001345592_3.jpg,lowveg,partly damaged,field,1,0,0,0
+040106260000683429_3.jpg,lowveg,healthy,field,1,0,0,0
+040106260001451176_3.jpg,lowveg,bare soil,field,0,0,0,0
+040106260000106415_2.jpg,lowveg,healthy,field,1,0,1,0
+040106260000615832_2.jpg,lowveg,dried-burnt,field,1,0,0,0
+040106260001836194_1.jpg,lowveg,submerged,field,1,1,0,0
+040106260001589799_2.jpg,lowveg,partly damaged,field,1,0,0,0
+040106260000508162_2.jpg,lowveg,healthy,field,1,0,0,0
+040106260000684810_3.jpg,lowveg,healthy,field,1,0,1,0
+040106260001764567_2.jpg,lowveg,bare soil,field,0,0,1,0
+040106260001344927_1.jpg,lowveg,partly damaged,field,1,0,0,0
+040106260000826873_2.jpg,lowveg,partly damaged,field,1,0,0,0
+040106260001298596_3.jpg,lowveg,partly damaged,field,1,0,0,0
+040106260000631495_1.jpg,lowveg,healthy,field,1,0,0,0
+040106260001360774_1.jpg,lowveg,partly damaged,field,1,0,0,0
+040106260001075859_3.jpg,lowveg,healthy,field,1,0,0,0
+040106260000205773_3.jpg,lowveg,,person-only,0,0,0,1
+040106260001675173_3.jpg,lowveg,bare soil,field,0,0,0,0
+040106260000673994_1.jpg,lowveg,healthy,field,1,0,1,0
+040106260000421003_1.jpg,lowveg,,person-only,0,0,0,1
+040106260001676175_2.jpg,lowveg,partly damaged,field,1,0,0,0
+040106260000646946_2.jpg,lowveg,bare soil,field,0,0,0,0
+040106260000606355_1.jpg,lowveg,partly damaged,field,1,0,0,0
+040106260000421085_2.jpg,lowveg,,person-only,0,0,0,1
+040106260000598302_2.jpg,lowveg,weeds-uncultivated,field,0,0,0,0
+040106260000544201_1.jpg,lowveg,,person-only,0,0,0,1
+040106260000490683_1.jpg,lowveg,partly damaged,field,1,0,0,0
+040106260001047435_3.jpg,lowveg,partly damaged,field,1,0,0,0
+040106260000995438_2.jpg,lowveg,healthy,field,1,0,0,0
+040106260000955298_1.jpg,lowveg,healthy,field,1,0,0,0
+040106260001791744_3.jpg,lowveg,healthy,field,1,0,0,0
+040106260001304693_1.jpg,lowveg,healthy,field,1,0,0,0
+040106260000212425_1.jpg,lowveg,weeds-uncultivated,field,0,0,0,0
+040106260000189165_3.jpg,lowveg,,person-only,0,0,0,1
+040106260000494901_2.jpg,lowveg,weeds-uncultivated,field,0,0,0,0
+040106260001399845_3.jpg,lowveg,weeds-uncultivated,field,0,0,0,0
+040106260000643363_1.jpg,lowveg,healthy,field,1,0,0,0
+040106260001605896_1.jpg,lowveg,weeds-uncultivated,field,0,0,0,0
+040106260000205067_1.jpg,lowveg,partly damaged,field,1,0,0,0
+040106260000211085_1.jpg,face,healthy,field,1,0,0,1
+040106260000822517_2.jpg,face,healthy,field,1,0,0,1
+040106260000207272_1.jpg,face,,person-only,0,0,0,1
+040106260000542599_2.jpg,face,weeds-uncultivated,field,0,0,0,1
+040106260000174837_1.jpg,face,weeds-uncultivated,field,0,0,0,1
+040106260001015737_1.jpg,face,weeds-uncultivated,field,0,0,0,1
+040106260000822038_3.jpg,face,,person-only,0,0,0,1
+040106260000158891_1.jpg,face,,person-only,0,0,0,1
+040106260000207353_3.jpg,face,weeds-uncultivated,field,0,0,0,1
+040106260000974198_3.jpg,face,,person-only,0,0,0,1
+040106260000691331_2.jpg,face,,person-only,0,0,0,1
+040106260000170369_1.jpg,face,healthy,field,1,0,0,1
+040106260000227708_2.jpg,face,healthy,field,1,0,0,1
+040106260000754979_1.jpg,face,healthy,field,1,0,0,1
+040106260000634317_1.jpg,face,healthy,field,1,0,0,1
+040106260000207253_1.jpg,face,dried-burnt,field,1,0,0,1
+040106260000409398_3.jpg,face,partly damaged,field,1,0,0,0
+040106260000158928_1.jpg,face,,person-only,0,0,0,1
+040106260000631767_1.jpg,face,weeds-uncultivated,field,0,0,0,1
+040106260001008652_2.jpg,face,weeds-uncultivated,field,0,0,0,1
+040106260000159028_3.jpg,face,,person-only,0,0,0,1
+040106260000173797_1.jpg,face,submerged,field,1,1,0,1
+040106260001095487_1.jpg,face,dried-burnt,field,1,0,0,0
+040106260000516683_2.jpg,face,dried-burnt,field,1,0,0,1
+040106260000233244_2.jpg,face,weeds-uncultivated,field,0,0,0,1
+040106260000516514_2.jpg,sky,,person-only,0,0,0,1
+040106260000799913_1.jpg,sky,healthy,field,1,0,0,0
+040106260000228068_2.jpg,sky,weeds-uncultivated,field,0,0,0,0
+040106260000983304_3.jpg,sky,weeds-uncultivated,field,0,0,0,0
+040106260000836576_2.jpg,sky,weeds-uncultivated,field,0,0,0,0
+040106260000631435_1.jpg,sky,healthy,field,1,0,0,0
+040106260000771278_2.jpg,sky,partly damaged,field,1,0,0,0
+040106260001030465_3.jpg,sky,bare soil,field,0,0,0,0
+040106260000176941_1.jpg,sky,partly damaged,field,1,0,0,0
+040106260000016252_3.jpg,sky,healthy,field,1,0,0,0
+040106260001082455_1.jpg,sky,weeds-uncultivated,field,0,0,0,0
+040106260000106023_3.jpg,sky,harvested,field,0,0,0,0
+040106260000660878_3.jpg,sky,partly damaged,field,1,0,0,0
+040106260000176991_1.jpg,sky,healthy,field,1,0,0,0
+040106260000508074_3.jpg,sky,healthy,field,1,0,0,0
+040106260000684776_3.jpg,sky,partly damaged,field,1,0,0,0
+040106260000653895_1.jpg,sky,healthy,field,1,0,0,0
+040106260001082672_2.jpg,sky,healthy,field,1,0,0,0
+040106260001295320_3.jpg,sky,healthy,field,1,0,0,0
+040106260001303521_3.jpg,sky,healthy,field,1,0,0,0
+040106260000119660_1.jpg,sky,healthy,field,1,0,0,0
+040106260000629597_2.jpg,sky,healthy,field,1,0,0,0
+040106260000595697_1.jpg,sky,weeds-uncultivated,field,0,0,0,0
+040106260000598240_1.jpg,sky,weeds-uncultivated,field,0,0,0,0
+040106260001076274_3.jpg,sky,healthy,field,1,0,0,0
+040106260000544027_1.jpg,highloss,weeds-uncultivated,field,0,0,0,0
+040106260000519374_2.jpg,highloss,weeds-uncultivated,field,0,0,0,0
+040106260001131438_2.jpg,highloss,weeds-uncultivated,field,0,0,0,0
+040106260000205205_1.jpg,highloss,weeds-uncultivated,field,0,0,0,0
+040106260000675334_3.jpg,highloss,healthy,field,1,0,1,0
+040106260000708139_1.jpg,highloss,healthy,field,1,0,0,0
+040106260000422836_2.jpg,highloss,weeds-uncultivated,field,0,0,0,0
+040106260000708087_1.jpg,highloss,healthy,field,1,0,0,0
+040106260000568898_1.jpg,highloss,weeds-uncultivated,field,0,0,0,0
+040106260000540901_3.jpg,highloss,healthy,field,1,0,0,0
+040106260001667395_1.jpg,highloss,dried-burnt,field,1,0,0,0
+040106260001114185_2.jpg,highloss,healthy,field,1,0,0,0
+040106260000562377_1.jpg,highloss,healthy,field,1,0,0,0
+040106260001836188_3.jpg,highloss,dried-burnt,field,1,0,0,0
+040106260001073858_1.jpg,highloss,healthy,field,1,0,0,0
+040106260000568181_1.jpg,highloss,healthy,field,1,0,0,0
+040106260000686074_3.jpg,highloss,healthy,field,1,0,0,0
+040106260000213392_3.jpg,highloss,weeds-uncultivated,field,0,0,0,0
+040106260000560502_1.jpg,highloss,healthy,field,1,0,0,0
+040106260001017105_3.jpg,highloss,weeds-uncultivated,field,0,0,0,0
+040106260000907273_3.jpg,highloss,dried-burnt,field,1,0,0,0
+040106260000542243_2.jpg,highloss,weeds-uncultivated,field,0,0,0,0
+040106260000208855_3.jpg,highloss,weeds-uncultivated,field,0,0,0,0
+040106260000982009_3.jpg,highloss,weeds-uncultivated,field,0,0,0,0
+040106260000537386_2.jpg,highloss,weeds-uncultivated,field,0,0,0,0
+040106260000422244_2.jpg,highloss,partly damaged,field,1,0,0,0
+040106260000654750_2.jpg,highloss,healthy,field,1,0,0,0
+040106260000350156_2.jpg,highloss,healthy,field,1,0,0,0
+040106260000951860_2.jpg,highloss,dried-burnt,field,1,0,0,1
+040106260000524196_3.jpg,highloss,healthy,field,1,0,0,0
+040106260000409754_2.jpg,highloss,partly damaged,field,1,0,0,0
+040106260000553861_1.jpg,highloss,healthy,field,1,0,0,0
+040106260000708286_3.jpg,highloss,healthy,field,1,0,0,0
+040106260000688894_3.jpg,highloss,healthy,field,1,0,1,0
+040106260000208198_1.jpg,highloss,weeds-uncultivated,field,0,0,0,1
+040106260001087293_3.jpg,greenweed,submerged,field,1,1,0,0
+040106260000958448_2.jpg,greenweed,weeds-uncultivated,field,0,0,0,0
+040106260001002422_1.jpg,greenweed,healthy,field,1,0,0,0
+040106260000686526_1.jpg,greenweed,healthy,field,1,0,1,0
+040106260000097000_1.jpg,greenweed,healthy,field,1,0,1,0
+040106260000778115_3.jpg,greenweed,weeds-uncultivated,field,0,0,0,0
+040106260000832948_3.jpg,greenweed,healthy,field,1,0,1,0
+040106260001739221_1.jpg,greenweed,healthy,field,1,0,0,0
+040106260000207744_2.jpg,greenweed,submerged,field,1,1,0,0
+040106260000010368_2.jpg,greenweed,submerged,field,1,1,1,0
+040106260000360582_2.jpg,greenweed,healthy,field,1,0,1,0
+040106260000701088_1.jpg,greenweed,weeds-uncultivated,field,0,0,0,0
+040106260000677375_1.jpg,greenweed,healthy,field,1,0,1,0
+040106260000550268_2.jpg,greenweed,weeds-uncultivated,field,0,0,0,0
+040106260000988802_2.jpg,greenweed,healthy,field,1,0,0,0
+040106260001108234_1.jpg,greenweed,healthy,field,1,0,0,0
+040106260000924209_1.jpg,greenweed,weeds-uncultivated,field,0,0,0,0
+040106260000712245_2.jpg,greenweed,dried-burnt,field,1,0,0,0
+040106260000521009_3.jpg,greenweed,healthy,field,1,0,0,0
+040106260000568259_1.jpg,greenweed,healthy,field,1,0,0,0
+040106260000394603_1.jpg,greenweed,partly damaged,field,1,0,0,0
+040106260000188949_2.jpg,greenweed,weeds-uncultivated,field,0,0,0,0
+040106260000560024_2.jpg,greenweed,healthy,field,1,0,0,0
+040106260000098060_3.jpg,greenweed,healthy,field,1,0,1,0
+040106260000785679_2.jpg,greenweed,partly damaged,field,1,0,1,0
+040106260000089121_2.jpg,greenweed,healthy,field,1,0,1,0
+040106260000569091_2.jpg,greenweed,healthy,field,1,0,0,0
+040106260000256393_2.jpg,greenweed,partly damaged,field,1,0,0,0
+040106260001108301_1.jpg,greenweed,healthy,field,1,0,0,0
+040106260001306347_1.jpg,greenweed,healthy,field,1,0,0,0

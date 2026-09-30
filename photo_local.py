@@ -103,6 +103,31 @@ def _rotate_back(img, k):
     return cv2.rotate(img, _ROTBACK[k]) if k in _ROTBACK else img
 
 
+_BACKBONE = "image_classification_mobilenetv2_2022apr.onnx"
+
+
+def backbone_available():
+    return os.path.exists(os.path.join(_MODELS, _BACKBONE))
+
+
+def _backbone_logits(small_bgr):
+    """MobileNetV2 (ImageNet, frozen) 1000-d logits used as an embedding; None if the ONNX file is missing
+    (download it with tools/fetch_models.py)."""
+    with _LOCK:
+        if _BACKBONE not in _M:
+            try:
+                _M[_BACKBONE] = cv2.dnn.readNetFromONNX(os.path.join(_MODELS, _BACKBONE)) if backbone_available() else None
+            except Exception:
+                _M[_BACKBONE] = None
+        net = _M[_BACKBONE]
+        if net is None:
+            return None
+        x = cv2.resize(small_bgr, (224, 224), interpolation=cv2.INTER_AREA)[..., ::-1].astype(np.float32) / 255
+        x = (x - np.array([0.485, 0.456, 0.406], np.float32)) / np.array([0.229, 0.224, 0.225], np.float32)
+        net.setInput(x.transpose(2, 0, 1)[None].copy())
+        return net.forward()[0].astype(np.float32)
+
+
 def _faces(c):
     fd = _load("yunet.onnx")
     if fd is None:
