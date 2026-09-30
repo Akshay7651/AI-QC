@@ -29,3 +29,10 @@ Cost rates are in `config.MODEL_PRICING` - set them to your model's real pricing
 (`apt install tesseract-ocr tesseract-ocr-hin`, or the UB-Mannheim Windows installer). Local OCR reads area/loss/date by label and
 detects signatures by ink; photo checks use EXIF/stamp GPS+date, colour and person detection. Treat crop-type/loss photo guesses as hints.
 `--risk` adds `Risk_Score`/`Risk_Reasons`; `learn_qc.py train|predict|feedback` learns from human-QC'd rows once you have them.
+
+## Quick 10-row test on your PC (no settings changes needed)
+```
+pip install -r requirements.txt
+python download_media.py --input test10.xlsx --out downloads --limit 10
+python run_qc.py --input test10.xlsx --output test10_QC.xlsx --local-media downloads.zip --engine local --risk
+```
