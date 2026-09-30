@@ -37,7 +37,7 @@ def labels():
     return L, app
 
 def mk_bb(): return make_pipeline(StandardScaler(), LogisticRegression(C=0.02, max_iter=3000, class_weight='balanced'))
-def mk_cl(): return ExtraTreesClassifier(300, min_samples_leaf=2, random_state=0, n_jobs=2, class_weight='balanced')
+def mk_cl(): return ExtraTreesClassifier(80, min_samples_leaf=3, max_depth=14, random_state=0, n_jobs=2, class_weight='balanced')
 
 def evaluate(name, X1, X2, y, g, rep, seed=0, minority=None):
     """5-fold GROUPED (by docket) out-of-fold evaluation: every photo is predicted by models that never saw its row."""
@@ -90,7 +90,7 @@ def main():
     yc = np.array([short.get(crop[k], 'other') for k in ok]); Xb = np.array([xb(M[files[k]]) for k in ok]); Xc = np.array([xc(M[files[k]]) for k in ok]); gc = np.array([files[k].split('_')[0] for k in ok])
     rep['crop_type_label_counts'] = pd.Series(yc).value_counts().to_dict()
     heads['crop_type'] = evaluate('crop_type_weak_declared', Xb, Xc, yc, gc, rep)
-    pickle.dump(heads, open('photo_models/heads.pkl', 'wb'))
+    import joblib; joblib.dump(heads, 'photo_models/heads.pkl', compress=3)
     json.dump(rep, open('data/eval/photo_heads_report.json', 'w'), indent=1, default=lambda o: o.item() if hasattr(o, 'item') else str(o))
     print(json.dumps(rep, indent=1, default=lambda o: o.item() if hasattr(o, 'item') else str(o)))
 

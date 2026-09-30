@@ -15,6 +15,7 @@ Row level: GPS distance stamp<->app, photo date vs loss date / intimation date, 
 """
 import os
 import pickle
+import joblib
 import re
 import threading
 import warnings
@@ -68,7 +69,7 @@ def _load(name):
         if name not in _M:
             p = os.path.join(_MODELS, name)
             if name.endswith(".pkl"):
-                _M[name] = pickle.load(open(p, "rb")) if os.path.exists(p) else None
+                _M[name] = joblib.load(p) if os.path.exists(p) else None
                 for m in _iter_models(_M[name]):
                     if hasattr(m, "n_jobs"):
                         m.n_jobs = 1
