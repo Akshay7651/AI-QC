@@ -117,3 +117,14 @@ PO-ID reading is demoted to a nice-to-have. Until the cell model reaches >=95% p
 - Dates: NOT readable (0-3% exact) -> disabled (DATES_ENABLED=False). PO-ID reading failed -> po_id_matches stays None.
 - Overwrite detection: the old rule fired on 55% of forms (false) -> disabled; needs a real detector.
 - Speed ~2.0 s CPU per form (target 1.5).
+
+
+### UPDATE: first full pipeline run on 100 UNSEEN rows (not in training/eval) - commit 1b30c65
+- Speed: 100 rows in ~72 s on 4 cores (~83 rows/min, ~0.7 s/row wall) -> 160k rows ~ 32 h on 4 cores (~8-10 h on 16). No crashes.
+- Verdicts: OK 8, Review 13, Manual-check 28, Reject-evidence 51. Real finding: ~48% of rows upload a photo of the PAPER FORM instead of a field photo.
+- Sanity check by eye on 8 rows: photo-is-form correct 4/4 (where visible), Form No correct 3/3 of those returned (rest withheld), area/loss values correct where answered;
+  unsure cells withheld -> Manual-check (correct behaviour).
+- Fixed over-firing rules found in this run: worker/officer missing signature (informational only), duplicate photos (informational), same-location (verdict only for same-surveyor hot-spots),
+  PO-ID mismatch (never asserted: PO-ID reader does not work).
+- NOT yet done: formal accuracy measurement with ground truth on fresh 100-row batches (needs human labels: use the user's ~3,000 human-QC'd rows as ground truth, train on ~2,000, test on the rest).
+- Next: (1) user's 3,000 rows -> retrain whole-cell model (non-zero values are the weak spot) (2) fresh-batch loop until 9/10 batches >= 95% on asserted fields (3) `retrain.py` + docs/TRAINING_GUIDE.md (4) streaming mode for 160k rows (5) optional: more trees for photo heads, measured.
