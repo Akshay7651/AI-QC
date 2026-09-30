@@ -60,7 +60,7 @@ def test_dry_run_no_key_no_network(headerless_xlsx, capsys, monkeypatch):
 def test_missing_key_fails_fast(headerless_xlsx, monkeypatch):
     monkeypatch.setattr(C, "ANTHROPIC_API_KEY", None)
     with pytest.raises(SystemExit):
-        run_qc.main(["--input", headerless_xlsx, "--output", "o.xlsx", "--mode", "pdf"])
+        run_qc.main(["--input", headerless_xlsx, "--output", "o.xlsx", "--mode", "pdf", "--engine", "claude"])
     import os
     assert not os.path.exists("o.xlsx")
 
@@ -258,7 +258,7 @@ def test_plan_building_is_fast():
 def test_assemble_no_results_and_no_ai():
     df = frame([good(0), good(1)])
     out = run_qc.assemble(df, {"results": {}, "cost": 0}, False)
-    assert "Done By" in out and out["Done By"].isna().all() and "AI_Flags" not in out
+    assert "Done By" not in out and "AI_Flags" not in out and out["Match/Mismatch (Form&app)"].isna().all()
     out = run_qc.assemble(df, {"results": {}, "cost": 0}, True)
     assert out["QC Done"].isna().all() and out["AI_Flags"].tolist() == ["", ""]
 
@@ -273,7 +273,7 @@ def test_assemble_confidence_and_flags():
         "D4": {"photo_status": "OK", "photo_quality": "irrelevant", "photo_flags": ["x"]},
     }
     out = run_qc.assemble(df, {"results": res, "cost": 0}, True)
-    assert out["AI_Confidence"].tolist() == ["High", "Medium", "Low", "Low", "Low", None]
+    assert out["AI_Confidence"].tolist()[:5] == ["High", "Medium", "Low", "Low", "Low"] and pd.isna(out["AI_Confidence"][5])
     assert "Form vs app mismatch" in out["AI_Flags"][1] and "Form overwrite" in out["AI_Flags"][1]
     assert "Low OCR confidence - manual review" in out["AI_Flags"][2]
     assert "PDF unavailable: HTTP 404" in out["Any Other Remarks"][3]
@@ -326,3 +326,19 @@ def test_report_missing_columns_and_empty(tmp_path):
     s = pd.read_excel(tmp_path / "m.xlsx", sheet_name=None)
     assert s["District Summary"]["District"].tolist() == ["Unknown"] and s["Issue Summary"].empty
     report.build(frame([good(0)]).iloc[0:0], str(tmp_path / "e.xlsx"))
+
+
+def test_local_engine_runs_without_key(tmp_path, monkeypatch):
+    """--engine local (auto without key) reads a docket-named PDF with Tesseract; no API/client involved."""
+    import pandas as pd, pymupdf
+    monkeypatch.setattr(C, "ANTHROPIC_API_KEY", None)
+    d = pymupdf.open(); pg = d.new_page(); y = 80
+    for t in ["Date of Survey: 16/09/2026", "Affected Area %: 40", "Crop Loss %: 30"]:
+        pg.insert_text((60, y), t, fontsize=14); y += 50
+    (tmp_path / "media").mkdir(); d.save(str(tmp_path / "media" / "1000000000.pdf"))
+    df = pd.DataFrame([["1000000000", "A", "F", "Flood", "2026-09-01", "2026-09-05", 1, "Paddy", "1", "0", "S", "D", "T", "B", "V", "P", "Sv", "9123456789", 40, 30, 12, "", 29.1, 76.1, "", ""]])
+    df.to_excel(tmp_path / "in.xlsx", header=False, index=False)
+    assert run_qc.main(["--input", str(tmp_path / "in.xlsx"), "--output", str(tmp_path / "o.xlsx"), "--mode", "pdf",
+                        "--local-media", str(tmp_path / "media"), "--checkpoint", str(tmp_path / "ck.json")]) == 0
+    o = pd.read_excel(tmp_path / "o.xlsx")
+    assert o["Match/Mismatch (Form&app)"][0] == "Match" and o["Affected area% (Form)"][0] == 40

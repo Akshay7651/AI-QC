@@ -43,6 +43,10 @@ def parse_args(argv=None):
     p.add_argument("--dry-run", action="store_true")
     p.add_argument("--local-media", help="ZIP or folder of downloaded PDFs/photos, matched to rows by docket id")
     p.add_argument("--api-key")
+    p.add_argument("--engine", choices=["auto", "claude", "local"], default="auto",
+                   help="claude = Claude Vision (API key); local = free Tesseract/OpenCV; auto = claude if a key is set else local")
+    p.add_argument("--risk", action="store_true", help="add unsupervised Risk_Score/Risk_Reasons (learn_qc.py)")
+    p.add_argument("--ml-model", help="joblib model from `learn_qc.py train`; adds ML_<label> columns")
     p.add_argument("--checkpoint", default="output/checkpoint.json")
     a = p.parse_args(argv)
     a.workers = max(1, min(a.workers, 20))
@@ -108,11 +112,14 @@ def _truthy_done(series):
 
 
 async def run_ai(kind, fn, df, todo, ck, tracker, args, api_key, keys=None):
-    import anthropic
     import httpx
     keys = keys or make_keys(df)
     records = df.to_dict("records")
-    client = anthropic.AsyncAnthropic(api_key=api_key)
+    if args.engine == "local":
+        client = None
+    else:
+        import anthropic
+        client = anthropic.AsyncAnthropic(api_key=api_key)
     sem = asyncio.Semaphore(args.workers)
     bar = tqdm(total=len(todo), desc=f"{kind.upper():5s}", unit="row")
     done_since = 0
@@ -215,7 +222,8 @@ def assemble(df, ck, ran_ai, keys=None):
         for col, vals in (("AI_Confidence", conf), ("AI_Flags", flags)):
             new = pd.Series(vals, index=out.index, dtype=object)
             # rows with no fresh result (skipped on --resume / input already QC'd) keep their old value
-            out[col] = new.where(has, out[col].astype(object) if col in out else None)
+            fallback = out[col].astype(object) if col in out else pd.Series("" if col == "AI_Flags" else None, index=out.index, dtype=object)
+            out[col] = new.where(has, fallback)
     return out
 
 
@@ -263,8 +271,12 @@ def main(argv=None):
         return 0
 
     api_key = args.api_key or C.ANTHROPIC_API_KEY
-    if ai_phases and not api_key:  # fail fast, before any phase runs
-        sys.exit("ANTHROPIC_API_KEY not set (use --api-key or .env). GPS/data modes work without it.")
+    if args.engine == "auto":
+        args.engine = "claude" if api_key else "local"
+    if ai_phases:
+        print(f"OCR/photo engine: {args.engine}")
+    if ai_phases and args.engine == "claude" and not api_key:  # fail fast, before any phase runs
+        sys.exit("ANTHROPIC_API_KEY not set (use --api-key or .env, or --engine local). GPS/data modes work without it.")
     n_phase = len(modes)
     for step, m in enumerate(modes, 1):
         print(f"Phase {step}/{n_phase}: {m}")
@@ -277,10 +289,20 @@ def main(argv=None):
                 df[c] = g[c]
         else:
             tracker = CostTracker(args.cost_cap, ck.get("cost", 0.0))
-            fn = pdf_qc.process if m == "pdf" else photo_qc.process
+            if args.engine == "local":
+                import local_engine
+                fn = local_engine.process_pdf if m == "pdf" else local_engine.process_photo
+            else:
+                fn = pdf_qc.process if m == "pdf" else photo_qc.process
             asyncio.run(run_ai(m, fn, df, plan[m], ck, tracker, args, api_key, keys))
         print(f"  done in {time.time() - t0:.1f}s")
 
+    if args.risk or args.ml_model:
+        import learn_qc
+        if args.risk:
+            df = learn_qc.add_risk(df)
+        if args.ml_model:
+            df = learn_qc.add_predictions(df, args.ml_model)
     out = assemble(df, ck, bool(ai_phases), keys)
     Path(args.output).parent.mkdir(parents=True, exist_ok=True)
     from openpyxl.cell.cell import ILLEGAL_CHARACTERS_RE  # AI text may contain control chars Excel rejects
