@@ -71,3 +71,17 @@ Repo branch: `claude/new-session-qd93xp`. Everything below is committed unless m
 4. Compare field by field: Form No, PO-ID match, form area/loss and Match/Mismatch vs app, 4 signatures, photo-is-form, photo GPS/date,
    crop/flood/weeds, final verdict and remark correctness. Report accuracy AND the share of rows sent to manual check, per field.
 5. Report honestly every field below 95% and why; fix and re-test on a fresh 100 if needed.
+
+
+## SCALE-UP TO ~160,000 ROWS (user goal: run the whole organisation's data without depending on manual QC staff)
+Requirements still to implement/verify (in priority order):
+1. Streaming mode in `run_qc.py`: per batch (e.g. 500 rows) download forms/photos -> process -> write results -> DELETE the images
+   (160k rows x ~1.5 MB = ~200+ GB if kept). Keep `cache/` bounded.
+2. Throughput: measured ~1-3 s/row/core (target <=1.5). 160k rows on 4 cores ~ 1.5 days; on 16 cores ~ 8-10 h. Provide `--dry-run` time estimate and
+   chunked runs (`--limit N --offset M` or batch files) with `--resume`; make the output Excel per chunk (Excel max is ~1,048,576 rows but 160k x 80 columns is heavy: write one file per 20-40k rows + a merged CSV).
+3. Polite, resumable downloading (rate limit, retries, Referer fallback) - mostly exists (`common.fetch`, `fetch_dataset.py`).
+4. Quality control of the QC: per batch, a random 100-row human check; log agreement; stop and retrain if it falls below target.
+5. Audit columns in every output row: model versions (digits/photo/form), engine, confidence, reason in the remark.
+6. Privacy: pipeline is offline; never upload farmer names/phones; dashboard serves on 127.0.0.1 by default.
+7. The system sends unclear cases to "manual check" - a small human review team remains necessary for those; the goal is to shrink the
+   manual workload, not to claim 100% automation.
