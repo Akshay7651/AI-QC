@@ -1,7 +1,9 @@
 """Match locally downloaded PDFs/photos (a ZIP or folder) to rows by docket id.
 
-A file belongs to a docket if the docket id appears as a token in its relative path,
-so all of these work:  <docket>.pdf   <docket>_1.jpg   <docket>/photo2.jpg   pdfs/<docket>-form.pdf
+A file belongs to a row if, in its relative path, it contains either
+  - the docket id as a token:  <docket>.pdf   <docket>_1.jpg   <docket>/photo2.jpg   pdfs/<docket>-form.pdf
+  - or the mediaID GUID from that row's Signed_Copy_URL / Media URLs (what the PMFBY download
+    endpoint names files):  06DAD6A0-AA87-4006-9717-B4CAA9805548.pdf
 """
 import re
 import zipfile
@@ -30,11 +32,18 @@ def _materialize(src: str, cache_root="cache/local") -> Path:
     return dest
 
 
-def index(src: str, dockets) -> dict:
+GUID = re.compile(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")
+
+
+def index(src: str, df) -> dict:
     """docket_id -> {"pdfs": [Path], "images": [Path]}"""
     root = _materialize(src)
-    wanted = {str(d).strip(): str(d).strip() for d in dockets if d}
+    wanted = {str(d).strip() for d in df["docket_id"] if d}
     lower = {k.lower(): k for k in wanted}
+    guid_to_docket = {}
+    for d, u1, u2 in zip(df["docket_id"], df["pdf_url"], df["media_urls"]):
+        for g in GUID.findall(f"{u1 or ''} {u2 or ''}"):
+            guid_to_docket[g.lower()] = str(d).strip()
     out = {}
     for f in sorted(root.rglob("*")):
         ext = f.suffix.lower()
@@ -42,7 +51,9 @@ def index(src: str, dockets) -> dict:
             continue
         rel = f.relative_to(root)
         tokens = re.split(r"[^A-Za-z0-9]+", str(rel.with_suffix("")))
-        hit = next((lower[t.lower()] for t in reversed(tokens) if t.lower() in lower), None)
+        hit = next((guid_to_docket[g.lower()] for g in GUID.findall(str(rel)) if g.lower() in guid_to_docket), None)
+        if hit is None:
+            hit = next((lower[t.lower()] for t in reversed(tokens) if t.lower() in lower), None)
         if hit is None:
             hit = next((lower[s.lower()] for s in (f.stem, f.parent.name) if s.lower() in lower), None)
         if hit is not None:

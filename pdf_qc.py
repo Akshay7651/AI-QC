@@ -36,7 +36,7 @@ async def process(row: dict, client, http: httpx.AsyncClient, tracker) -> dict:
     if not local and (not url or not str(url).startswith("http")):
         return {"pdf_status": "Unavailable", "pdf_error": "no url"}
     try:
-        path = local[0] if local else await fetch(http, str(url).strip(), C.PDF_CACHE_DIR, C.PDF_TIMEOUT_SEC)
+        path = local[0] if local else await fetch(http, str(url).replace("_x000D_", "").strip(), C.PDF_CACHE_DIR, C.PDF_TIMEOUT_SEC)
         pages = _render(path)
     except Unavailable as e:
         return {"pdf_status": "Unavailable", "pdf_error": str(e)}

@@ -1,0 +1,367 @@
+<!DOCTYPE html><html><head><meta charset="utf-8"><title>Level-1 QC Dashboard</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<link rel="stylesheet" href="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.css">
+<script src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<style>
+*{box-sizing:border-box}body{margin:0;font:13px system-ui,sans-serif;display:flex;flex-direction:column;height:100vh;color:#222;overflow:hidden}
+#top{background:#f7f7f9;border-bottom:1px solid #ccc;flex:none}#side{display:flex;flex-wrap:wrap;align-items:center;gap:0 6px;padding:2px 8px}#side .bar,#side .row{display:contents}
+#main{flex:1;display:flex;flex-direction:column;min-height:0}#tblw{height:38%;min-height:120px;border-top:3px solid #2a7a3b}
+#map{flex:1;min-height:0;background:#222}
+.bar{padding:4px 10px}
+select,input,button,textarea{font:inherit;padding:4px 6px;margin:2px 0}
+button{cursor:pointer}.row{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+#tblw{overflow:auto}table{border-collapse:collapse;width:max-content;min-width:100%}
+th,td{border:1px solid #e0e0e0;padding:3px 6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:260px}
+th{position:sticky;top:0;background:#d4e8d4;cursor:pointer;user-select:none;position:relative}tr:hover{background:#fff3c4}
+.resizer{position:absolute;right:0;top:0;width:5px;height:100%;cursor:col-resize;z-index:1;background:transparent}
+.resizer:hover,.resizer.active{background:#4363d8}
+#ctxmenu{position:fixed;z-index:5000;background:#fff;border:1px solid #aaa;box-shadow:0 2px 8px #0004;border-radius:4px;padding:4px 0;min-width:160px;display:none}
+#ctxmenu div{padding:6px 14px;cursor:pointer;font:13px system-ui,sans-serif}#ctxmenu div:hover{background:#e8f0fe}
+.k{display:inline-block;padding:2px 8px;border-radius:10px;background:#d4e8d4;margin:2px}
+.panel{position:fixed;top:0;right:0;width:340px;height:100%;background:#fff;box-shadow:-2px 0 8px #0004;padding:10px;overflow:auto;display:none;z-index:1000}
+.fb{cursor:pointer;color:#666;padding:0 3px}#fpop{position:fixed;z-index:2000;background:#fff;border:1px solid #888;box-shadow:0 2px 10px #0006;padding:8px;width:250px}#fpop #fl{max-height:220px;overflow:auto;margin:4px 0}#fpop label{display:block}.panel label{display:block}
+.dot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:3px}
+#bulk{position:absolute;z-index:900;right:10px;top:10px;background:#fff;padding:10px;border-radius:6px;box-shadow:0 1px 8px #0006;width:320px;max-height:calc(100% - 20px);overflow:auto;display:none}
+#bulk label{display:block;font-size:11px;color:#555;margin-top:6px}#bulk input,#bulk select,#bulk textarea{width:100%}#map{position:relative}
+.cellon{background:#fff8dc}
+#loadov{position:fixed;inset:0;background:#fffc;z-index:9999;display:none;align-items:center;justify-content:center;font-size:16px;color:#333}
+#empty{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#888;font-size:14px;z-index:5;pointer-events:none}
+</style></head><body>
+<div id="top"><div id="side">
+ <div class="bar"><b>Level-1 QC Dashboard</b>
+  <input type="file" id="file" accept=".xlsx,.xls,.csv"> <span id="flbl" style="font-size:11px;color:#555"></span> <span id="kpis"></span></div>
+ <div class="bar">
+  <div class="row" id="dynFilters"></div>
+  <div class="row">
+   <select id="fMul" style="display:none"><option value="">Points/field: any</option><option value="2">2+ on same field</option><option value="3">3+ on same field</option></select>
+   <select id="fClu" style="display:none"><option value="">Nearby: any</option><option value="2">Has another point within radius</option></select>
+   <label>radius m <input id="rad" type="number" value="25" style="width:55px"></label>
+   <select id="fDmg" style="display:none"><option value="">Damage: any</option><option value="nd">No damage (0%)</option><option value="lo">Low (&lt;25%)</option><option value="hi">High (≥50%)</option></select>
+   <select id="fQc"><option value="">QC status: any</option><option value="done">QC filled</option><option value="pending">QC pending</option></select>
+  </div>
+  <div class="row">
+   <input id="q" placeholder="search… (Enter to apply)" style="width:200px">
+   <button id="cols">Columns ⚙</button><button id="undo">↶ Undo</button><button id="clrs">Clear sort/filters</button><button id="fit">Fit map</button><button id="csv">Export QC Excel</button><button id="clearData">🗑 Clear data</button>
+  </div>
+  <div class="row">
+   <label>Color by <select id="colorBy"></select></label>
+   <label>Base <select id="base"><option value="ghy">Google hybrid</option><option value="esri">Esri hybrid</option><option value="gsat">Google satellite</option><option value="osm">OSM</option></select></label>
+   <label>Max points on map <select id="mapCap"><option value="15000">15,000</option><option value="50000">50,000</option><option value="100000">1,00,000</option><option value="200000" selected>2,00,000</option></select></label>
+  </div>
+  
+ </div>
+</div></div>
+<div id="main">
+  <div style="position:relative;flex:1;min-height:0;display:flex">
+    <div id="map"></div>
+    <div id="empty">Choose an Excel file above to load survey data</div>
+    <div id="bulk">
+      <b id="selN"></b>
+      <div id="qcgrid"></div>
+      <button id="bapply" style="margin-top:8px;width:100%">✔ Apply filled fields to selected</button>
+      <button id="bclr" style="width:100%">Clear selection</button>
+      <label style="margin-top:6px"><input type=checkbox id="onlySel" style="width:auto"> Show only selected in table</label>
+    </div>
+  </div>
+  <div id="tblw"><table id="tbl"></table></div>
+</div>
+<div id="ctxmenu"></div>
+<div class="panel" id="colp"><b>Show / hide columns</b> <button onclick="colp.style.display='none'">✕</button><div id="collist"></div></div>
+<div id="loadov"><div>⏳ Loading & indexing data…</div></div>
+<script>
+const EMBED=(()=>{try{const d=__DATA__;return Array.isArray(d)?d:null}catch(e){return null}})();
+const $=id=>document.getElementById(id);
+let rows=[],headers=[],rawCols=[],qcCols=[],qcMeta={},idCol='',latCol='',lngCol='',hidden=new Set(),shown=[],sortK=null,sortD=1;
+let sel=new Set(),sorts=[],colF={},pin=new Set(),order=[],anchor=-1,colW={};
+const clean=v=>String(v==null?'':v).replace(/^'+/,'').trim();
+const map=L.map('map',{zoomSnap:.5,preferCanvas:true}).setView([26.5,74.5],8);
+const bases={
+  esri:L.layerGroup([L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{maxZoom:20,maxNativeZoom:17}),L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}',{maxZoom:19})]),
+  ghy:L.tileLayer('https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}',{maxZoom:20}),
+  gsat:L.tileLayer('https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}',{maxZoom:20}),
+  osm:L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19})};
+let curBase;function setBase(){if(curBase)map.removeLayer(curBase);curBase=bases[$('base').value].addTo(map)}
+$('base').onchange=setBase;setBase();
+const layer=L.layerGroup().addTo(map);
+const pal=['#e6194b','#3cb44b','#ffe119','#4363d8','#f58231','#911eb4','#46f0f0','#f032e6','#bcf60c','#fabebe','#008080','#e6beff','#9a6324','#fffac8','#800000','#aaffc3','#808000','#ffd8b1','#000075','#ffffff'];
+function hav(a,b,c,d){const R=6371000,t=Math.PI/180,x=(c-a)*t,y=(d-b)*t,s=Math.sin(x/2)**2+Math.cos(a*t)*Math.cos(c*t)*Math.sin(y/2)**2;return 2*R*Math.asin(Math.sqrt(s))}
+const find=(hs,re)=>hs.find(h=>re.test(h))||'';
+function busy(on){$('loadov').style.display=on?'flex':'none'}
+
+// ---- figure out which columns are "raw data" vs "QC fields to fill" ----
+// A QC field = a column that is blank in nearly every data row (i.e. an input column, not data)
+function classifyColumns(H,body){
+  idCol=find(H,/docket.*id/i)||H[0];
+  latCol=find(H,/^lat/i);lngCol=find(H,/^lon/i);
+  const n=body.length,blank={};H.forEach((h,j)=>{if(!h)return;let c=0;for(let i=0;i<n;i++){if(!clean(body[i][j]))c++}blank[h]=n?c/n:1});
+  rawCols=H.filter(h=>h&&blank[h]<0.95);
+  qcCols=H.filter(h=>h&&blank[h]>=0.95);
+  if(!qcCols.length){qcCols=H.slice(-8).filter(Boolean);rawCols=H.filter(h=>h&&!qcCols.includes(h))}
+  qcMeta={};
+  qcCols.forEach(h=>{
+    const m=h.match(/\(([^)]+)\)/);let type='text',opts=[];
+    if(/date/i.test(h))type='date';
+    else if(m&&m[1].includes('/')){opts=m[1].split('/').map(s=>s.trim()).filter(Boolean);type='select'}
+    else if(/\byes\/no\b/i.test(h)){type='select';opts=['Yes','No']}
+    qcMeta[h]={type,opts}})}
+
+function load(data){
+  busy(true);
+  setTimeout(()=>{ // let the overlay paint before the heavy synchronous work
+    try{ doLoad(data) } finally { busy(false) }
+  },30)}
+
+function doLoad(data){
+  let hi=data.findIndex(r=>r.some(c=>/docket.*id/i.test(String(c||''))));
+  if(hi<0)hi=0;
+  const H=data[hi].map(clean);const body=data.slice(hi+1).filter(r=>r.some(x=>x!=null&&x!==''));
+  classifyColumns(H,body);
+  headers=[...rawCols,...qcCols,'Records_On_Same_Field','Nearby_Same_Surveyor_25m','Group_ID','Suggested_Remark','Suggest_%'];
+  const latJ=H.indexOf(latCol),lngJ=H.indexOf(lngCol),dcCol=find(rawCols,/total.*damage/i),dcJ=H.indexOf(dcCol);
+  rows=body.map((r,i)=>{const o={_i:i};for(let j=0;j<H.length;j++){const h=H[j];if(h)o[h]=clean(r[j])}
+    o.lat=latJ>=0?+r[latJ]:NaN;o.lng=lngJ>=0?+r[lngJ]:NaN;
+    o.dmg=dcJ>=0?(parseFloat(r[dcJ])||0):NaN;
+    o.dmgBand=isNaN(o.dmg)?'':o.dmg===0?'No damage':o.dmg<25?'Low (<25%)':o.dmg<50?'Medium (25-49%)':'High (≥50%)';
+    return o});
+  const lsCol=find(rawCols,/land.*survey/i);
+  const vilCol=find(rawCols,/level7|village|patwar|tehsil/i)||find(rawCols,/district/i);
+  const g={};rows.forEach(o=>{o._fk=(vilCol?o[vilCol]:'')+'|'+(lsCol?o[lsCol]:'');g[o._fk]=(g[o._fk]||0)+1});
+  rows.forEach(o=>o.Records_On_Same_Field=g[o._fk]);
+  sel=new Set();pin=new Set();loadSaved();buildQcForm();buildFilters();buildColorBy();
+  $('fMul').style.display=lsCol?'':'none';$('fClu').style.display='';$('fDmg').style.display=dcCol?'':'none';
+  nearCalc();
+  render(true)}
+
+function buildFilters(){
+  const cands=[find(rawCols,/surveyor.*name/i),find(rawCols,/district/i),find(rawCols,/level7|village/i),find(rawCols,/crop.*name/i)].filter(Boolean);
+  $('dynFilters').innerHTML=cands.map(h=>`<select data-fc="${h}"><option value="">All ${h}</option></select>`).join('');
+  $('dynFilters').querySelectorAll('select').forEach(s=>{const h=s.dataset.fc;const u=[...new Set(rows.map(r=>r[h]))].filter(x=>x).sort();s.innerHTML=`<option value="">All ${h}</option>`+u.map(x=>`<option>${x}</option>`).join('');s.onchange=()=>render(false)})}
+function buildColorBy(){
+  const surCol=find(rawCols,/surveyor.*name/i);
+  const opts=[];if(surCol)opts.push([surCol,'Surveyor']);opts.push(['Records_On_Same_Field','Points on field']);
+  if(find(rawCols,/total.*damage/i))opts.push(['dmgBand','Damage band']);
+  const dc=find(rawCols,/district/i);if(dc)opts.push([dc,'District']);
+  qcCols.forEach(h=>opts.push([h,'QC: '+h]));
+  $('colorBy').innerHTML=opts.map(([v,l])=>`<option value="${v}">${l}</option>`).join('');
+  $('colorBy').onchange=()=>render(false)}
+
+// spatial-hash based proximity check — O(rows), safe up to 100k+ rows.
+// Any single grid cell holding more than CAP points is summarised per-surveyor instead of
+// compared point-by-point, so one giant cluster can never blow up the run time.
+let lastRad=null;
+function nearCalc(){
+  const r=+$('rad').value||25;lastRad=r;
+  rows.forEach(o=>{o.near=0;o.nS=0;o.Group_ID='';o.Nearby_Same_Surveyor_25m=0});
+  const surCol=find(rawCols,/surveyor.*name/i);
+  const cell=Math.max(r,10)/111000;
+  const grid={};
+  rows.forEach(o=>{if(!o.lat||!o.lng)return;const k=(Math.floor(o.lat/cell))+'_'+(Math.floor(o.lng/cell));(grid[k]=grid[k]||[]).push(o)});
+  const parent={};const pfind=x=>{if(parent[x]===undefined)parent[x]=x;if(parent[x]!==x)parent[x]=pfind(parent[x]);return parent[x]};const union=(x,y)=>{parent[pfind(x)]=pfind(y)};
+  const CAP=600;
+  Object.values(grid).forEach(cur=>{
+    if(cur.length>CAP){
+      const bySur={};cur.forEach(o=>{const k=surCol?o[surCol]:'';(bySur[k]=bySur[k]||[]).push(o)});
+      Object.values(bySur).forEach(g=>{if(g.length<2)return;g.forEach(o=>{o.near+=g.length-1;o.nS+=g.length-1});for(let i=1;i<g.length;i++)union(g[0][idCol],g[i][idCol])});
+      return}
+    for(let i=0;i<cur.length;i++)for(let j=i+1;j<cur.length;j++){
+      const a=cur[i],b=cur[j];const d=hav(a.lat,a.lng,b.lat,b.lng);
+      if(d<=r){a.near++;b.near++;if(surCol&&a[surCol]==b[surCol]){a.nS++;b.nS++;union(a[idCol],b[idCol])}}}});
+  const groupSize={};rows.forEach(o=>{const p=pfind(o[idCol]);groupSize[p]=(groupSize[p]||0)+1});
+  const groupNum={};let gn=1;rows.forEach(o=>{const p=pfind(o[idCol]);if(groupSize[p]>1&&!groupNum[p])groupNum[p]=gn++});
+  rows.forEach(o=>{const gid=groupNum[pfind(o[idCol])];o.Group_ID=gid?'G-'+String(gid).padStart(3,'0'):'';o.Nearby_Same_Surveyor_25m=o.nS||0;
+    const records=o.Records_On_Same_Field||1;let s,c;
+    if(o.nS>3&&o.dmg>15){s='Same Location - QC Required';c=95}
+    else if(o.nS>3&&!(o.dmg>15)){s='Same Location - Low Damage';c=75}
+    else if(o.nS<=3&&records>3){s='Review - Multiple Records';c=65}
+    else{s='OK';c=55}
+    o.Suggested_Remark=s;o['Suggest_%']=c})}
+
+function qcFilled(o){return qcCols.some(h=>o[h])}
+function filtered(){
+  const dyn=[...$('dynFilters').querySelectorAll('select')].map(s=>[s.dataset.fc,s.value]).filter(([,v])=>v);
+  const m=+$('fMul').value,c=+$('fClu').value,dmg=$('fDmg').value,q=$('q').value.trim().toLowerCase(),qc=$('fQc').value;
+  return rows.filter(o=>
+    dyn.every(([h,v])=>o[h]==v)&&
+    (!m||o.Records_On_Same_Field>=m)&&(!c||o.near>0)&&
+    (!dmg||(dmg=='nd'&&o.dmg===0)||(dmg=='lo'&&o.dmg>0&&o.dmg<25)||(dmg=='hi'&&o.dmg>=50))&&
+    (!qc||(qc=='done')==qcFilled(o))&&
+    Object.entries(colF).every(([k,sv])=>sv.has(String(o[k])))&&
+    (!q||headers.some(h=>String(o[h]).toLowerCase().includes(q))))}
+
+const dmgBandColor={'No damage':'#3cb44b','Low (<25%)':'#ffe119','Medium (25-49%)':'#f58231','High (≥50%)':'#e6194b'};
+function colorOf(o,key,cm){
+  if(key=='Records_On_Same_Field')return['#3cb44b','#ffe119','#f58231','#e6194b','#800000'][Math.min(o.Records_On_Same_Field,5)-1];
+  if(key=='dmgBand')return dmgBandColor[o.dmgBand]||'#aaa';
+  if(qcCols.includes(key))return o[key]?'#3cb44b':'#e6194b';
+  return cm[o[key]]||'#aaa'}
+
+function render(fit){
+  if(+$('rad').value!==lastRad)nearCalc();
+  shown=filtered();const key=$('colorBy').value;
+  const vals=[...new Set(rows.map(r=>r[key]))].sort();const cm={};vals.forEach((v,i)=>cm[v]=pal[i%pal.length]);
+  layer.clearLayers();const pts=[];
+  const cap=+$('mapCap').value;
+  const onMap=shown.length>cap?shown.filter(o=>sel.has(o._i)).concat(shown.filter(o=>!sel.has(o._i)).slice(0,cap)):shown;
+  onMap.forEach(o=>{if(!o.lat||!o.lng)return;const c=colorOf(o,key,cm);
+    const S=sel.has(o._i);const mk=L.circleMarker([o.lat,o.lng],{radius:S?9:6,color:S?'#00e5ff':'#000',weight:S?4:1,fillColor:c,fillOpacity:sel.size&&!S?.35:.95,opacity:sel.size&&!S?.5:1});
+    mk.bindPopup(()=>popup(o),{autoPan:true,autoPanPadding:[20,20],maxWidth:270,minWidth:240});layer.addLayer(mk);pts.push([o.lat,o.lng]);o._m=mk});
+  map.invalidateSize();onMap.forEach(o=>{if(o._m&&sel.has(o._i))o._m.bringToFront()});
+  if(fit&&pts.length)map.fitBounds(pts,{padding:[30,30],maxZoom:16});
+  $('empty').style.display=rows.length?'none':'flex';
+  table()}
+
+function popup(o){
+  const surCol=find(rawCols,/surveyor.*name/i),farCol=find(rawCols,/farmer.*name/i),cropCol=find(rawCols,/crop.*name/i),remCol=find(rawCols,/surveyor.*remark/i);
+  const sugBg=o.Suggested_Remark==='Same Location - QC Required'?'#fff0f0':o.Suggested_Remark==='Same Location - Low Damage'?'#fff8e1':o.Suggested_Remark==='Review - Multiple Records'?'#f3e5f5':'#f0fff0';
+  const sugColor=o.Suggested_Remark==='Same Location - QC Required'?'#c00':o.Suggested_Remark==='Same Location - Low Damage'?'#e07000':o.Suggested_Remark==='Review - Multiple Records'?'#6a1b9a':'#1a7a1a';
+  const chip=(txt,bg,col)=>`<span style="background:${bg};color:${col};padding:1px 7px;border-radius:10px;font-size:11px;font-weight:bold">${txt}</span>`;
+  return `<div style="font:11px system-ui,sans-serif;width:250px">
+  <div style="background:linear-gradient(135deg,#2a7a3b,#4363d8);color:#fff;padding:6px 8px;border-radius:4px 4px 0 0;margin:-1px -1px 0">
+    <div style="font-size:12px;font-weight:bold">${farCol?o[farCol]:''}</div>
+    <div style="opacity:.8;font-size:10px">${o[idCol]}</div>
+  </div>
+  <div style="padding:6px;background:#fafafa;border:1px solid #ddd;border-top:none;border-radius:0 0 4px 4px">
+    ${cropCol?`<div>${o[cropCol]}</div>`:''}
+    ${surCol?`<div style="color:#1a4ba0;font-weight:bold">${o[surCol]}</div>`:''}
+    <div style="display:flex;gap:4px;flex-wrap:wrap;margin:4px 0">
+      ${chip('Points on Field: '+o.Records_On_Same_Field, o.Records_On_Same_Field>1?'#fff0e0':'#e8f5e9', o.Records_On_Same_Field>1?'#b85c00':'#2a7a3b')}
+      ${chip('Nearby Same Surveyor: '+o.nS, o.nS>3?'#ffe8e8':'#e8f5e9', o.nS>3?'#c00':'#2a7a3b')}
+      ${o.Group_ID?chip(o.Group_ID,'#e8eaf6','#3949ab'):''}
+    </div>
+    ${remCol&&o[remCol]&&o[remCol]!='-'?`<div style="background:#fffde7;border-left:3px solid #f9a825;padding:3px 6px;font-size:10px;margin-bottom:4px"><i>"${o[remCol]}"</i></div>`:''}
+    <div style="background:${sugBg};border:1px solid ${sugColor}33;border-radius:4px;padding:3px 7px;display:flex;justify-content:space-between">
+      <span style="color:${sugColor};font-weight:bold;font-size:11px">${o.Suggested_Remark}</span><span style="color:#888;font-size:10px">${o['Suggest_%']}%</span>
+    </div>
+    ${qcCols.filter(h=>o[h]).map(h=>`<div style="margin-top:3px;background:#e8f5e9;border-radius:4px;padding:2px 7px;font-size:10px"><span style="color:#888">${h}:</span> <b style="color:#1a6b1a">${o[h]}</b></div>`).join('')}
+    <div style="margin-top:5px;font-size:10px;color:#aaa;text-align:right">${o.lat?.toFixed(5)}, ${o.lng?.toFixed(5)} · <a target=_blank href="https://www.google.com/maps/@${o.lat},${o.lng},19z/data=!3m1!1e3" style="color:#4363d8">Maps ↗</a></div>
+  </div></div>`}
+
+const cmp=(x,y)=>{const a=parseFloat(x),b=parseFloat(y);if(!isNaN(a)&&!isNaN(b)&&String(a)==String(x).trim()&&String(b)==String(y).trim())return a-b;return String(x).localeCompare(String(y),undefined,{numeric:true,sensitivity:'base'})};
+const ROWCAP=2000; // table only ever renders this many <tr> at once — keeps the DOM fast regardless of dataset size
+function table(){const cols=headers.filter(h=>!hidden.has(h));let d=$('onlySel').checked?shown.filter(o=>sel.has(o._i)):shown;
+  const arr=d.slice();
+  arr.sort((p,q)=>{const sp=pin.has(p._i),sq=pin.has(q._i);if(sp!=sq)return sp?-1:1;for(const s of sorts){const c=cmp(p[s.k],q[s.k]);if(c)return c*s.d}return p._i-q._i});
+  order=arr.slice(0,ROWCAP).map(o=>o._i);const sc=$('tblw').scrollTop,sl=$('tblw').scrollLeft;
+  const allOn=order.length&&order.every(i=>sel.has(i));
+  const rowsHtml=arr.slice(0,ROWCAP).map(o=>`<tr id="r${o._i}" style="${sel.has(o._i)?'background:#c9f6ff':''}" onclick="rowClick(event,${o._i})" ondblclick="zoomTo(${o._i})"><td><input type=checkbox data-c="${o._i}" ${sel.has(o._i)?'checked':''}></td>`+cols.map(h=>`<td title="${String(o[h]).replace(/"/g,'')}" class="${qcCols.includes(h)&&o[h]?'cellon':''}">${o[h]}</td>`).join('')+'</tr>').join('');
+  const moreNote=arr.length>ROWCAP?`<tr><td colspan="${cols.length+1}" style="text-align:center;color:#888;background:#f5f5f5">… ${(arr.length-ROWCAP).toLocaleString()} more rows match — narrow the filters, or sort/search to bring specific rows into view</td></tr>`:'';
+  $('tbl').innerHTML='<tr><th style="width:30px"><input type=checkbox id=selAll '+(allOn?'checked':'')+'></th>'+cols.map(h=>{const i=sorts.findIndex(s=>s.k==h);const ar=i<0?'':(sorts[i].d>0?' ▲':' ▼')+(sorts.length>1?'<sup>'+(i+1)+'</sup>':'');const f=colF[h]?'style="color:#d00"':'';const w=colW[h]?`style="width:${colW[h]}px;min-width:${colW[h]}px"`:'';return `<th data-k="${h}" ${w}>${h}${ar} <span class="fb" ${f} data-f="${h}">▾</span><div class="resizer" data-r="${h}"></div></th>`}).join('')+'</tr>'+rowsHtml+moreNote;
+  $('tblw').scrollTop=sc;$('tblw').scrollLeft=sl;
+  $('selAll').onclick=e=>{e.stopPropagation();order.forEach(i=>e.target.checked?sel.add(i):sel.delete(i));render(false)};
+  document.querySelectorAll('th[data-k]').forEach(t=>t.onclick=e=>{if(e.target.dataset.f){e.stopPropagation();openF(e.target.dataset.f,e.target);return}const k=t.dataset.k,i=sorts.findIndex(s=>s.k==k);
+    if(e.shiftKey){if(i<0)sorts.push({k,d:1});else if(sorts[i].d==1)sorts[i].d=-1;else sorts.splice(i,1)}
+    else{const d=i>=0&&sorts.length==1?(sorts[0].d==1?-1:0):1;sorts=d?[{k,d}]:[]}table()})}
+
+function openF(h,el){closeF();const vals=[...new Set(rows.map(o=>o[h]))].sort(cmp);const cur=colF[h];const box=document.createElement('div');box.id='fpop';
+  box.innerHTML=`<b>${h}</b><br><input placeholder="search values" id="fs"><div><a href="#" id="fa">All</a> · <a href="#" id="fn">None</a></div><div id="fl"></div><button id="fok">Apply</button> <button id="fcl">Clear filter</button>`;
+  document.body.appendChild(box);const r=el.getBoundingClientRect();box.style.left=Math.min(r.left,innerWidth-260)+'px';box.style.top=Math.max(10,r.top-300)+'px';
+  const draw=()=>{const s=$('fs').value.toLowerCase();$('fl').innerHTML=vals.filter(v=>String(v).toLowerCase().includes(s)).slice(0,300).map(v=>`<label><input type=checkbox value="${String(v).replace(/"/g,'&quot;')}" ${!cur||cur.has(String(v))?'checked':''}> ${v===''?'(blank)':v}</label>`).join('')};draw();
+  $('fs').oninput=draw;$('fa').onclick=e=>{e.preventDefault();box.querySelectorAll('#fl input').forEach(c=>c.checked=true)};$('fn').onclick=e=>{e.preventDefault();box.querySelectorAll('#fl input').forEach(c=>c.checked=false)};
+  $('fok').onclick=()=>{const all=[...box.querySelectorAll('#fl input')];const s=$('fs').value;const on=new Set(all.filter(c=>c.checked).map(c=>c.value));
+    if(!s&&cur){vals.forEach(v=>{if(!all.some(c=>c.value==String(v)))if(cur.has(String(v)))on.add(String(v))})}
+    colF[h]=on.size==vals.length?undefined:on;if(!colF[h])delete colF[h];closeF();render(false)};
+  $('fcl').onclick=()=>{delete colF[h];closeF();render(false)}}
+function closeF(){const b=$('fpop');if(b)b.remove()}
+document.addEventListener('mousedown',e=>{if(!e.target.closest('#fpop')&&!e.target.dataset.f)closeF()});
+
+window.rowClick=(e,i)=>{if(e.target.tagName=='A')return;const pos=order.indexOf(i);
+  if(e.target.dataset.c!==undefined){e.target.checked?sel.add(i):sel.delete(i);anchor=pos}
+  else if(e.shiftKey&&anchor>=0){const[a,b]=[Math.min(anchor,pos),Math.max(anchor,pos)];if(!(e.ctrlKey||e.metaKey))sel=new Set();order.slice(a,b+1).forEach(x=>sel.add(x))}
+  else if(e.ctrlKey||e.metaKey){sel.has(i)?sel.delete(i):sel.add(i);anchor=pos}
+  else{sel=new Set([i]);anchor=pos}
+  render(false);go(i)};
+window.go=i=>{const o=rows[i];if(!o._m)return;o._m.openPopup()};
+window.zoomTo=i=>{const o=rows[i];if(o._m)map.setView([o.lat,o.lng],Math.max(map.getZoom(),18))};
+
+['fMul','fClu','fDmg','fQc','mapCap'].forEach(id=>$(id).onchange=()=>render(false));
+$('rad').onchange=()=>render(true);
+let qTimer;$('q').oninput=()=>{clearTimeout(qTimer);qTimer=setTimeout(()=>render(false),300)};
+$('q').addEventListener('keydown',e=>{if(e.key=='Enter'){clearTimeout(qTimer);render(false)}});
+$('cols').onclick=()=>{$('collist').innerHTML=headers.map(h=>`<label><input type=checkbox ${hidden.has(h)?'':'checked'} data-h="${h}"> ${h}</label>`).join('');$('colp').style.display='block';
+  $('collist').querySelectorAll('input').forEach(c=>c.onchange=()=>{c.checked?hidden.delete(c.dataset.h):hidden.add(c.dataset.h);table()})};
+$('clrs').onclick=()=>{sorts=[];colF={};render(false)};
+$('fit').onclick=()=>{const p=shown.filter(o=>o.lat).map(o=>[o.lat,o.lng]);if(p.length)map.fitBounds(p,{padding:[30,30],maxZoom:17})};
+$('csv').onclick=()=>{const cols=headers;
+  const ws_data=[cols].concat(rows.map(o=>cols.map(h=>{const s=String(o[h]).trim();if(/^\d{10,}$/.test(s))return {v:s,t:'s'};return o[h]})));
+  const ws=XLSX.utils.aoa_to_sheet(ws_data);const wb2=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb2,ws,'QC Export');
+  XLSX.writeFile(wb2,'qc_filled_export.xlsx')};
+function readFile(f){busy(true);localStorage.removeItem(SK+'_noembed');const r=new FileReader();r.onload=x=>{const wb=XLSX.read(x.target.result,{type:'array'});const raw=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1,raw:false});dbSave(raw,f.name);setFileLabel(f.name);load(raw)};r.readAsArrayBuffer(f)}
+$('file').onchange=ev=>{const f=ev.target.files[0];if(f)readFile(f)};
+
+// ---- draw tools for polygon/rectangle select ----
+const dr=new L.FeatureGroup().addTo(map);
+map.addControl(new L.Control.Draw({position:'bottomleft',edit:{featureGroup:dr},draw:{polygon:{shapeOptions:{color:'#00e5ff'}},rectangle:{shapeOptions:{color:'#00e5ff'}},circle:false,circlemarker:false,marker:false,polyline:false}}));
+function inPoly(p,ring){let c=false;for(let i=0,j=ring.length-1;i<ring.length;j=i++){const a=ring[i],b=ring[j];if((a.lat>p.lat)!=(b.lat>p.lat)&&p.lng<(b.lng-a.lng)*(p.lat-a.lat)/(b.lat-a.lat)+a.lng)c=!c}return c}
+function reselect(){const rings=[];dr.eachLayer(l=>rings.push(l.getLatLngs()[0]));sel=new Set();
+  if(rings.length)shown.forEach(o=>{if(o.lat&&rings.some(r=>inPoly({lat:o.lat,lng:o.lng},r)))sel.add(o._i)});pin=new Set(sel);render(false)}
+map.on(L.Draw.Event.CREATED,e=>{dr.addLayer(e.layer);reselect()});map.on(L.Draw.Event.EDITED,reselect);map.on(L.Draw.Event.DELETED,reselect);
+
+function bulkUI(){const n=sel.size;$('bulk').style.display=n?'block':'none';$('selN').textContent=n.toLocaleString()+' point'+(n==1?'':'s')+' selected';
+  if(n==1){const o=rows[[...sel][0]];qcCols.forEach(h=>{const el=document.querySelector(`[data-qc="${CSS.escape(h)}"]`);if(el)el.value=o[h]||''})}}
+
+// ---- build the QC input form dynamically from detected QC columns ----
+function buildQcForm(){
+  $('qcgrid').innerHTML=qcCols.map(h=>{
+    const meta=qcMeta[h]||{type:'text',opts:[]};
+    if(meta.type=='select'){
+      return `<label>${h}<select data-qc="${h}"><option value="">— leave unchanged —</option>${meta.opts.map(o=>`<option>${o}</option>`).join('')}</select></label>`}
+    if(meta.type=='date'){return `<label>${h}<input type="date" data-qc="${h}"></label>`}
+    return `<label>${h}<input type="text" data-qc="${h}" placeholder="type value"></label>`}).join('')}
+
+const U=[],RD=[];
+function edit(){
+  const ch=[];const selArr=[...sel];
+  selArr.forEach(i=>{const o=rows[i];qcCols.forEach(h=>{const el=document.querySelector(`[data-qc="${CSS.escape(h)}"]`);if(!el)return;const v=el.value;if(v===''&&el.tagName=='SELECT')return;if(v!==''&&v!==o[h]){ch.push([i,h,o[h],v]);o[h]=v}})});
+  if(!ch.length){toast('No fields filled — nothing to apply');return}
+  U.push(ch);RD.length=0;save();render(false);toast(ch.length+' cells updated (Ctrl+Z to undo)')}
+function undo(){const a=U.pop();if(!a){toast('Nothing to undo');return}a.forEach(([i,h,o])=>rows[i][h]=o);RD.push(a);save();render(false);toast('Undone: '+a.length+' cells')}
+function redo(){const a=RD.pop();if(!a)return;a.forEach(([i,h,,n])=>rows[i][h]=n);U.push(a);save();render(false);toast('Redone')}
+function toast(m){let d=$('toast');if(!d){d=document.createElement('div');d.id='toast';d.style.cssText='position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#222;color:#fff;padding:8px 14px;border-radius:6px;z-index:3000';document.body.appendChild(d)}d.textContent=m;d.style.display='block';clearTimeout(d._t);d._t=setTimeout(()=>d.style.display='none',2500)}
+document.addEventListener('keydown',e=>{if(!(e.ctrlKey||e.metaKey))return;const tg=e.target.tagName;if((tg=='INPUT'&&e.target.type!='checkbox')||tg=='TEXTAREA'||tg=='SELECT')return;const k=e.key.toLowerCase();if(k=='z'&&!e.shiftKey){e.preventDefault();undo()}else if(k=='y'||(k=='z'&&e.shiftKey)){e.preventDefault();redo()}});
+$('bapply').onclick=()=>edit();
+$('undo').onclick=undo;
+$('bclr').onclick=()=>{dr.clearLayers();sel=new Set();pin=new Set();render(false)};
+$('onlySel').onchange=table;
+
+const SK='qc_l1_'+location.pathname;
+function save(){try{const s={};rows.forEach(o=>{const e={};qcCols.forEach(h=>{if(o[h])e[h]=o[h]});if(Object.keys(e).length)s[o[idCol]]=e});localStorage[SK]=JSON.stringify(s)}catch(e){}}
+function loadSaved(){try{const s=JSON.parse(localStorage[SK]||'{}');rows.forEach(o=>{const e=s[o[idCol]];if(e)Object.assign(o,e)})}catch(e){}}
+
+document.addEventListener('mousedown',e=>{
+  const r=e.target.closest('.resizer');if(!r)return;
+  e.preventDefault();const h=r.dataset.r;const th=r.parentElement;
+  const startX=e.clientX,startW=th.offsetWidth;r.classList.add('active');
+  const mm=ev=>{const w=Math.max(40,startW+ev.clientX-startX);colW[h]=w;document.querySelectorAll(`th[data-k="${h}"]`).forEach(t=>{t.style.width=w+'px';t.style.minWidth=w+'px'})};
+  const mu=()=>{r.classList.remove('active');document.removeEventListener('mousemove',mm);document.removeEventListener('mouseup',mu)};
+  document.addEventListener('mousemove',mm);document.addEventListener('mouseup',mu)});
+
+const ctx=$('ctxmenu');
+document.addEventListener('contextmenu',e=>{
+  const th=e.target.closest('th[data-k]');if(!th)return;e.preventDefault();const h=th.dataset.k;
+  ctx.innerHTML=`<div id="cHide">Hide column <b>${h}</b></div><div id="cWide">Make wider (+40px)</div><div id="cNarrow">Make narrower (−40px)</div><div id="cReset">Reset width</div><hr style="margin:4px 0"><div id="cShowAll">Show all hidden columns</div>`;
+  ctx.style.display='block';ctx.style.left=Math.min(e.clientX,innerWidth-170)+'px';ctx.style.top=Math.min(e.clientY,innerHeight-160)+'px';
+  $('cHide').onclick=()=>{hidden.add(h);closeCtx();table()};
+  $('cWide').onclick=()=>{colW[h]=(colW[h]||th.offsetWidth)+40;closeCtx();table()};
+  $('cNarrow').onclick=()=>{colW[h]=Math.max(40,(colW[h]||th.offsetWidth)-40);closeCtx();table()};
+  $('cReset').onclick=()=>{delete colW[h];closeCtx();table()};
+  $('cShowAll').onclick=()=>{hidden.clear();closeCtx();table()}});
+function closeCtx(){ctx.style.display='none'}
+document.addEventListener('click',closeCtx);
+document.addEventListener('keydown',e=>{if(e.key==='Escape')closeCtx()});
+
+const IDB_NAME='qc_l1',IDB_STORE='rawdata',IDB_KEY='last';let db=null;
+function openDB(){return new Promise((res,rej)=>{const r=indexedDB.open(IDB_NAME,1);r.onupgradeneeded=e=>{e.target.result.createObjectStore(IDB_STORE)};r.onsuccess=e=>{db=e.target.result;res(db)};r.onerror=rej})}
+function dbSave(raw,fname){if(!db)return;try{db.transaction(IDB_STORE,'readwrite').objectStore(IDB_STORE).put({raw,fname},IDB_KEY)}catch(e){}}
+function dbLoad(){return new Promise(res=>{if(!db)return res(null);const r=db.transaction(IDB_STORE,'readonly').objectStore(IDB_STORE).get(IDB_KEY);r.onsuccess=()=>res(r.result||null);r.onerror=()=>res(null)})}
+function dbClear(){if(!db)return;try{db.transaction(IDB_STORE,'readwrite').objectStore(IDB_STORE).delete(IDB_KEY)}catch(e){}}
+function setFileLabel(fname){const el=$('flbl');if(el)el.textContent=fname?'📄 '+fname:''}
+$('clearData').onclick=()=>{if(!confirm('Clear stored data and QC remarks, then reload?'))return;dbClear();localStorage.removeItem(SK);localStorage.setItem(SK+'_noembed','1');location.reload()};
+
+openDB().then(()=>dbLoad()).then(stored=>{
+  if(stored&&stored.raw){setFileLabel(stored.fname);load(stored.raw)}
+  else if(EMBED&&!localStorage.getItem(SK+'_noembed')){load(EMBED)}
+  else{$('empty').style.display='flex'}});
+</script></body></html>

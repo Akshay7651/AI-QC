@@ -28,7 +28,8 @@ FIELD_TYPES = ("no crop", "cut & spread", "crop mismatch", "standing crop")
 
 
 def split_urls(v) -> list[str]:
-    return [u for u in re.split(r"[\s,;]+", str(v or "")) if u.startswith("http")]
+    v = str(v or "").replace("_x000D_", " ")  # Excel-escaped carriage returns
+    return [u for u in re.split(r"[\s,;]+", v) if u.startswith("http")]
 
 
 def _parse_date(s):

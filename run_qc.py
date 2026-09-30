@@ -106,23 +106,29 @@ def assemble(df, ck, ran_ai):
     yn = lambda v: None if v is None else ("Yes" if v else "No")
     g = lambda k: [r.get(k) for r in R]
     out = df.copy()
+
+    def put(col, vals):
+        """Write AI values, but keep any value already in the input where AI produced none."""
+        new = pd.Series(vals, index=out.index, dtype=object)
+        new = new.where(new.notna(), None)
+        out[col] = new.where(new.notna(), out[col].astype(object)) if col in out else new
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     attempted = [bool(r) for r in R]
     if ran_ai:
-        out[C.COL_DONE_BY] = ["AI-Auto" if a else None for a in attempted]
-        out[C.COL_QC_TIME] = [now if a else None for a in attempted]
-    out[C.COL_FORM_AREA] = g("form_area")
-    out[C.COL_FORM_LOSS] = g("form_loss")
-    out[C.COL_MATCH] = [r.get("match", "NA") if r else None for r in R]
-    out[C.COL_PHOTO_DATE] = g("photo_date")
-    out[C.COL_FIELD_PHOTO] = g("field_photo")
-    out[C.COL_SURVEYOR_SIG] = [yn(r.get("surveyor_signed")) for r in R]
-    out[C.COL_FARMER_SIG] = [yn(r.get("farmer_signed")) for r in R]
-    out[C.COL_GOVT_SIG] = [yn(r.get("govt_signed")) for r in R]
-    out[C.COL_FORM_STATUS] = g("form_status")
-    out[C.COL_FORM_REMARKS] = g("form_remarks")
-    out[C.COL_FARMER_PHOTO] = [yn(r.get("farmer_photo")) for r in R]
-    out[C.COL_PHOTO_LOSS] = g("photo_loss")
+        put(C.COL_DONE_BY, ["AI-Auto" if a else None for a in attempted])
+        put(C.COL_QC_TIME, [now if a else None for a in attempted])
+    put(C.COL_FORM_AREA, g("form_area"))
+    put(C.COL_FORM_LOSS, g("form_loss"))
+    put(C.COL_MATCH, [r.get("match", "NA") if r else None for r in R])
+    put(C.COL_PHOTO_DATE, g("photo_date"))
+    put(C.COL_FIELD_PHOTO, g("field_photo"))
+    put(C.COL_SURVEYOR_SIG, [yn(r.get("surveyor_signed")) for r in R])
+    put(C.COL_FARMER_SIG, [yn(r.get("farmer_signed")) for r in R])
+    put(C.COL_GOVT_SIG, [yn(r.get("govt_signed")) for r in R])
+    put(C.COL_FORM_STATUS, g("form_status"))
+    put(C.COL_FORM_REMARKS, g("form_remarks"))
+    put(C.COL_FARMER_PHOTO, [yn(r.get("farmer_photo")) for r in R])
+    put(C.COL_PHOTO_LOSS, g("photo_loss"))
     conf, flags, notes, done = [], [], [], []
     for r in R:
         f = list(r.get("photo_flags") or [])
@@ -152,10 +158,11 @@ def assemble(df, ck, ran_ai):
         flags.append(", ".join(dict.fromkeys(f)))
         notes.append("; ".join(n))
         done.append(bool(r) and not failed)
-    out[C.COL_QC_DONE] = done if ran_ai else out.get(C.COL_QC_DONE, False)
-    out[C.COL_OTHER_REMARKS] = notes
-    out["AI_Confidence"] = conf
-    out["AI_Flags"] = flags
+    if ran_ai:
+        put(C.COL_QC_DONE, [d or None for d in done])
+        put(C.COL_OTHER_REMARKS, [n or None for n in notes])
+        out["AI_Confidence"] = conf
+        out["AI_Flags"] = flags
     return out
 
 
@@ -176,7 +183,7 @@ def main(argv=None):
 
     prior_done = df[C.COL_QC_DONE].astype(str).str.upper().eq("TRUE") if (args.resume and C.COL_QC_DONE in df) else pd.Series(False, index=df.index)
     if args.local_media:
-        LOCAL.update(local_media.index(args.local_media, df["docket_id"]))
+        LOCAL.update(local_media.index(args.local_media, df))
         print(f"Local media: matched {len(LOCAL):,} dockets "
               f"({sum(bool(v['pdfs']) for v in LOCAL.values()):,} with PDF, {sum(bool(v['images']) for v in LOCAL.values()):,} with photos)")
     plan = {}

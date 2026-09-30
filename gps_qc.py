@@ -8,7 +8,7 @@ from scipy.spatial import cKDTree
 import config as C
 
 OUT = ["Nearby_Same_Surveyor_25m", "Nearby_Any_Surveyor_25m", "Records_On_Same_Field",
-       "Group_ID", "Cluster_Size", "GPS_Score", "Suggested_Remark"]
+       "Group_ID", "Cluster_Size", "Suggested_Remark", "Suggest_%"]
 
 
 def run(df: pd.DataFrame, radius_m: float = C.GPS_PROXIMITY_RADIUS_M) -> pd.DataFrame:
@@ -34,7 +34,7 @@ def run(df: pd.DataFrame, radius_m: float = C.GPS_PROXIMITY_RADIUS_M) -> pd.Data
             any_v = np.bincount(a, minlength=m) + np.bincount(b, minlength=m)
             same = surv[a] == surv[b]
             same_v = np.bincount(a[same], minlength=m) + np.bincount(b[same], minlength=m)
-            g = coo_matrix((np.ones(len(a)), (a, b)), shape=(m, m))
+            g = coo_matrix((np.ones(int(same.sum())), (a[same], b[same])), shape=(m, m))
         else:
             any_v = same_v = np.zeros(m, int)
             g = coo_matrix((m, m))
@@ -47,24 +47,32 @@ def run(df: pd.DataFrame, radius_m: float = C.GPS_PROXIMITY_RADIUS_M) -> pd.Data
     inv = np.flatnonzero(~valid)
     group[inv] = (group.max() if n else 0) + 1 + np.arange(len(inv))
 
-    field_key = df[["khasra_number", "division_number", "village"]].astype(str).agg("|".join, axis=1)
+    # Same-field key = patwar circle (else village/tehsil) + land survey number, as in the Level-1 dashboard.
+    area = df["patwar_circle"].where(df["patwar_circle"].notna(), df["village"]).where(lambda x: x.notna(), df["tehsil"]).fillna("")
+    field_key = area.astype(str) + "|" + df["khasra_number"].fillna("").astype(str)
     on_field = field_key.groupby(field_key).transform("size").to_numpy()
     on_field = np.where(df["khasra_number"].isna(), 1, on_field)
 
-    loss = df["crop_loss_pct"].to_numpy(float)
-    score = np.zeros(n, int)
-    score += 40 * (same_surv > 5)
-    score += 20 * (same_surv > 10)
-    score += 15 * ((loss < 15) & (same_surv > 3))
-    score += 10 * (on_field > C.SAME_FIELD_FLAG_COUNT)
-    score += 15 * (csize > 20)
-    remark = np.select([score >= 75, score >= 55, score >= 35],
-                       ["Same Location - QC Required", "Same Location - Low Damage", "Review - Multiple Records"], "OK")
+    # Damage used for the low-damage rule: total damage %, falling back to crop loss %.
+    dmg = df["total_damage_pct"].where(df["total_damage_pct"].notna(), df["crop_loss_pct"]).to_numpy(float)
+    heavy = same_surv > C.GPS_SAME_SURVEYOR_MIN
+    remark = np.select(
+        [heavy & (dmg > C.GPS_DAMAGE_MIN), heavy, on_field > C.SAME_FIELD_FLAG_COUNT],
+        ["Same Location - QC Required", "Same Location - Low Damage", "Review - Multiple Records"], "OK")
+    conf = np.select([remark == "Same Location - QC Required", remark == "Same Location - Low Damage",
+                      remark == "Review - Multiple Records"], [95, 75, 65], 55)
+    # Group_ID: only clusters of >1 same-surveyor points get an id (G-001...)
+    gsize = csize
+    first = {}
+    gid = np.full(n, "", dtype=object)
+    for i in range(n):
+        if valid[i] and gsize[i] > 1:
+            gid[i] = first.setdefault(group[i], f"G-{len(first) + 1:03d}")
     out["Nearby_Same_Surveyor_25m"] = same_surv
     out["Nearby_Any_Surveyor_25m"] = any_surv
     out["Records_On_Same_Field"] = on_field
-    out["Group_ID"] = group
+    out["Group_ID"] = gid
     out["Cluster_Size"] = csize
-    out["GPS_Score"] = score
     out["Suggested_Remark"] = remark
+    out["Suggest_%"] = conf
     return out
