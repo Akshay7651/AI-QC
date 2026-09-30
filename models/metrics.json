@@ -1,12 +1,12 @@
 {
  "po_heldout_forms": 337,
- "po_segmented_18": 2,
- "po_digit_acc_on_segmented": 0.1111,
+ "po_segmented_18": 140,
+ "po_digit_acc_on_segmented": 0.379,
  "po_exact_18_of_segmented": 0.0,
  "po_exact_18_of_all": 0.0,
  "weak_cell_n": 674,
- "weak_cell_exact": 0.2107,
- "mnist_test_acc": 0.9661,
- "n_real_comps": 2237,
+ "weak_cell_exact": 0.503,
+ "mnist_test_acc": 0.9567,
+ "n_real_comps": 7519,
  "n_forms": 1298
 }
