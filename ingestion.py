@@ -91,6 +91,7 @@ def load(src: str) -> pd.DataFrame:
         df[c] = pd.to_numeric(df[c], errors="coerce")
     for c in DEFAULT_ORDER:
         if c not in NUMERIC:
-            df[c] = df[c].astype("object").where(df[c].notna(), None)
-            df[c] = df[c].map(lambda v: v.strip() if isinstance(v, str) else v)
+            df[c] = df[c].astype("object").map(
+                lambda v: None if v is None or (not isinstance(v, str) and pd.isna(v)) or str(v).strip().lower() in ("", "nan", "none", "nat")
+                else (v.strip() if isinstance(v, str) else v))
     return df

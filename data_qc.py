@@ -24,6 +24,10 @@ def run(df: pd.DataFrame) -> pd.Series:
     for f in REQUIRED:
         add(_blank(df[f]), f"Missing: {f}")
 
+    # Evidence links: a record with no signed form / no photos cannot be QC'd against evidence.
+    add(_blank(df["pdf_url"]), "Missing: signed form link")
+    add(_blank(df["media_urls"]), "Missing: photo links")
+
     for f in ["affected_area_pct", "crop_loss_pct", "total_damage_pct"]:
         v = df[f]
         add(v.notna() & ((v < 0) | (v > 100)), f"{f} out of range 0-100")

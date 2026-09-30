@@ -116,3 +116,13 @@ def num(v):
         return None if math.isnan(f) else f
     except (TypeError, ValueError):
         return None
+
+
+def photo_date_suspicious(photo_dt, row, after_days=30):
+    """survey_start/end_date in CLAP exports are the loss date and the farmer's intimation date, so a
+    genuine photo is taken on/after the loss date and not long after the intimation. Returns True if not."""
+    import pandas as pd
+    ds = [x for x in (parse_dates([row.get(k)])[0] for k in ("survey_start_date", "survey_end_date")) if pd.notna(x)]
+    if not ds or photo_dt is None:
+        return False
+    return photo_dt < min(ds).normalize() or photo_dt > max(ds).normalize() + pd.Timedelta(days=after_days)

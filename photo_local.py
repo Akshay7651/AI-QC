@@ -9,7 +9,7 @@ from datetime import datetime
 import numpy as np
 
 import config as C
-from common import haversine_m, num
+from common import haversine_m, num, photo_date_suspicious
 
 
 def _exif(img):
@@ -105,8 +105,7 @@ def analyse(paths, row: dict) -> dict:
     if photo_date:
         import pandas as pd
         dd = datetime.strptime(photo_date, "%d%m%Y")
-        sd = [x for x in (pd.to_datetime(row.get(k), errors="coerce", dayfirst=True) for k in ("survey_start_date", "survey_end_date")) if pd.notna(x)]
-        if sd and not any((x.year, x.month) == (dd.year, dd.month) for x in sd):
+        if photo_date_suspicious(pd.Timestamp(dd), row):
             flags.append("Photo date outside survey period")
     g, dr = float(np.mean(greens)), float(np.mean(drys))
     field = "standing crop" if g >= 0.25 else "no crop" if g < 0.05 and dr < 0.25 else "cut & spread" if dr >= 0.25 else "standing crop"

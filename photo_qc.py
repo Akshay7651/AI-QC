@@ -7,7 +7,7 @@ import httpx
 import pandas as pd
 
 import config as C
-from common import Unavailable, call_claude, fetch, haversine_m, image_media_type, num, parse_dates
+from common import photo_date_suspicious, Unavailable, call_claude, fetch, haversine_m, image_media_type, num, parse_dates
 
 PROMPT = """These are geo-tagged field photos from a PMFBY crop loss survey for crop: {crop}, reported loss: {loss}%.
 
@@ -77,8 +77,7 @@ async def process(row: dict, client, http: httpx.AsyncClient, tracker) -> dict:
             flags.append("GPS mismatch > 200m")
     pd_ = _parse_date(d.get("photo_date"))
     if pd_:
-        dates = [x for x in (parse_dates([row.get(k)])[0] for k in ("survey_start_date", "survey_end_date")) if pd.notna(x)]
-        if dates and not any((x.year, x.month) == (pd_.year, pd_.month) for x in dates):
+        if photo_date_suspicious(pd.Timestamp(pd_), row):
             flags.append("Photo date outside survey period")
     if est is not None and loss is not None and abs(est - loss) > C.PHOTO_LOSS_DIFF_FLAG_PCT:
         flags.append("Loss estimate differs from app")
