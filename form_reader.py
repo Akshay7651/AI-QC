@@ -283,6 +283,11 @@ def read_cell(rgb_crop):
 
 
 CELL_BLANK_INK = 0.006
+# Handwritten area/loss values are only asserted when the cell model's confidence is >= CELL_GATE.
+# Measured on 150 hand-labelled forms: gate 0.8 -> area 97.8% / loss 98.9% precision at ~63-66% coverage (0.7 -> 95.1% / 96.3%).
+CELL_GATE = 0.8
+# Dates: handwriting reader is ~0-3% exact on the hand labels -> NOT asserted until a real date reader exists.
+DATES_ENABLED = False
 
 
 def _digit_probs(rgb_crop):
@@ -516,9 +521,7 @@ def read_form(path_or_pil, docket=None, debug=False):
         fc["po_id"] = round(float(pcf), 3)
         if pinfo.get("blank"):
             notes.append("PO ID field appears blank")
-        if pinfo["n_comp"] > 24 or pinfo["ink"] > 0.22:
-            out["overwrite_suspected"] = True
-            notes.append("PO ID looks over-written / scribbled (too many strokes)")
+        # (PO-ID stroke-count overwrite rule disabled: it fired on ~55% of forms because PO-ID segmentation is unreliable)
     # ---- table cells
     cells = {}
     for k in ("area_r1", "loss_r1", "area_r2", "loss_r2", "area_tot", "loss_tot"):
@@ -535,9 +538,26 @@ def read_form(path_or_pil, docket=None, debug=False):
             out["row_area"], out["row_loss"] = cells["area_" + rr]["value"], cells["loss_" + rr]["value"]
             fc["row_area"], fc["row_loss"] = round(cells["area_" + rr]["conf"], 3), round(cells["loss_" + rr]["conf"], 3)
             break
+    # ---- confidence gate on handwritten values: below the gate the value is withheld ('not readable - verify manually')
+    low = []
+    for key, which in (("form_area", "area_tot"), ("form_loss", "loss_tot")):
+        if out[key] is not None and cells[which]["conf"] < CELL_GATE:
+            out[key] = None
+            low.append(which)
+    for key, which in (("row_area", "area_"), ("row_loss", "loss_")):
+        if out[key] is not None:
+            for rr in ("r1", "r2"):
+                c = cells[which + rr]
+                if not c["blank"] and c["value"] == out[key] and c["conf"] < CELL_GATE:
+                    out[key] = None
+                    low.append(which + rr)
+                    break
+    if low:
+        notes.append("handwritten area/loss not confidently readable (" + ", ".join(low) + ") - verify manually")
+    out["cells_low_conf"] = bool(low)
     # ---- dates
     for key, box in (("sow_date", "sow_date"), ("loss_date", "loss_date"), ("intimation_date", "intim_date"), ("inspection_date", "insp_date")):
-        if box in B:
+        if box in B and DATES_ENABLED:
             d, dc, dn = parse_date(P.crop(r, B[box], 2))
             out[key] = d
             fc[key] = round(float(dc), 3)
