@@ -1,5 +1,35 @@
 # AI-QC status / how to resume (read this first in a new session)
 
+> Live facts (auto-refreshed every 5 minutes by `tools/status_heartbeat.py`): see **docs/STATUS_LIVE.md**.
+> This file = the stable story: what we are building, why, what is done, what is next.
+
+## Why this project exists (the goal)
+The user's team QCs ~41k PMFBY (crop insurance) survey records. Each record has app-entered values (affected area %, crop loss %,
+GPS) plus a photographed handwritten paper form (Proforma-3) and field photos. Human reviewers compare them by hand (slow, ~10,000 INR
+already invested in this project). We are building an OFFLINE AI-QC analyst (no API key) that reads the form and photos, compares with
+the app data, and writes one detailed remark + verdict per row, so humans only review the flagged rows.
+Target set by the user: >95% accuracy. Our rule to honour that honestly: every value the system ASSERTS must be >=95% precise;
+anything less certain is written as "not readable / low confidence - manual check" (never guess). Always measure on the hand-labelled
+set in `data/eval/` and report non-zero forms separately.
+
+## Why each part matters
+- Handwritten digit reader = the single most important part: the form's affected-area/loss numbers are compared with the app values
+  (mismatches are the main fraud/error signal). Tesseract cannot read this handwriting, so we train our own model on the
+  ~6,000 downloaded forms, using the handwritten PO-ID (equals the known docket number) as free labels.
+- Photo-is-form detection: surveyors often upload a picture of the paper form instead of a field photo (user's explicit request).
+- GPS/same-location remarks: the same surveyor often surveys the same spot hundreds of times.
+- Live dashboard + 60 s autosave: the user wants to watch agents work and never lose progress.
+- Retraining: the user will bring ~3,000 human-QC'd rows (office laptop) to make the models better.
+
+## IF THIS SESSION STOPS NOW - do this in the next session (in order)
+1. `git pull` the branch `claude/new-session-qd93xp`; read this file and `docs/STATUS_LIVE.md`.
+2. If `models/digits_cnn.npz` is missing: run `python train_digits.py --quick` (see `train_digits.py --help`); needs `data/forms/` -
+   re-download with `python fetch_dataset.py --input <Level_1 Excel> --n 6000 --photo-rows 1500 --out data` (resumable; needs network access to pmfby.gov.in).
+3. Evaluate: `python tools/eval_form_reader.py --cache r.pkl` -> cells/PO-ID/dates accuracy (non-zero forms separately). If <95% exact, fix segmentation/augmentation and retrain; set confidence gates so asserted values are >=95% precise.
+4. Run the tests: `python -m pytest -q tests`; run a 100-row real sample: `python run_qc.py --input <excel> --limit 100 --agents 4` and look at the dashboard.
+5. Write `retrain.py` + `docs/TRAINING_GUIDE.md` (see "NOT finished" below), then train on the user's 3,000 human-QC'd rows.
+6. Commit small files only (<10 MB); never commit images/Excel with personal data.
+
 Repo branch: `claude/new-session-qd93xp`. Everything below is committed unless marked otherwise.
 
 ## What exists and works (measured on the 150 hand-labelled forms in `data/eval/`)
