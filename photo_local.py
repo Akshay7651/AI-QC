@@ -190,7 +190,11 @@ def _field_state(ff, p_crop):
 def _models_version():
     """Changes whenever a model file is retrained, so cached predictions never go stale."""
     try:
-        return "m%x" % (sum(int(os.stat(os.path.join(_MODELS, f)).st_mtime) for f in ("form.pkl", "orient.pkl", "crop_visible.pkl", "yunet.onnx")) % 0xFFFFFF)
+        t = 0
+        for f in ("form.pkl", "orient.pkl", "crop_visible.pkl", "yunet.onnx", "heads.pkl", _BACKBONE):
+            p = os.path.join(_MODELS, f)
+            t += int(os.stat(p).st_mtime) if os.path.exists(p) else 7
+        return "m%x" % (t % 0xFFFFFF)
     except OSError:
         return "m0"
 
@@ -327,6 +331,11 @@ def _analyse_new(paths):
         d["hash"] = PF.phash(d["_img_small"])
         d["sg"] = PF.small_gray(d["_img_small"])
         d["nfaces"], d["face_conf"] = _faces(_rotate_back(d["_img_small"], k) if k else d["_img_small"])
+        small_up = _rotate_back(d["_img_small"], k) if k else d["_img_small"]
+        if d["p_form"] < 0.5:
+            lg = _backbone_logits(small_up)
+            d["logits"] = None if lg is None else lg.astype(np.float16)
+            d["water"] = PF.water_features(c)
         d["quality"] = "dark" if d["field_f"]["v_mean"] < 0.18 else "blurry" if d["field_f"]["lap"] < 0.004 else "good"
     cv_ = _load("crop_visible.pkl")
     fl2 = [i for i in idx if out[i]["p_form"] < 0.5]
@@ -523,20 +532,13 @@ def analyse(paths, row: dict, form_image=None) -> dict:
     if rot_ids:
         remarks.append(f"Photo {', '.join(map(str, rot_ids))} {'is' if len(rot_ids) == 1 else 'are'} rotated sideways (auto-rotated for analysis)")
 
-    # ---- 6. field state ------------------------------------------------------------------------------
+    # ---- 6. field state: crop / flood / damage / scene (two independent models, see _field_outputs) ----------
     field_idx = [i for i in range(n) if not is_form[i]]
-    if field_idx:
-        labs = [_field_state(P[i]["field_f"], P[i]["p_crop"]) for i in field_idx]
-        from collections import Counter
-        field = Counter(l for l, _, _ in labs).most_common(1)[0][0]
-        note = Counter(nn for _, nn, _ in labs if nn).most_common(1)[0][0] if any(nn for _, nn, _ in labs) else ""
-        est = int(round(np.mean([x for _, _, x in labs]) / 5) * 5)
-        if field == "crop mismatch":
-            remarks.append("The field photo does not clearly show a crop (vegetation/scene mismatch) - please check")
-        if field == "no crop":
-            remarks.append("No crop visible in the field photo")
-    else:
-        field, note, est = "no crop", "no field photograph", None
+    fo = _field_outputs([P[i] for i in field_idx], row, n_form, n)
+    remarks.extend(fo.pop("remarks"))
+    field, note, est = fo.pop("field_photo"), fo.pop("field_note"), fo.pop("photo_loss")
+    if fo.get("photo_conf") == "low" and field_idx:
+        flags.append("Field-photo interpretation low confidence - manual check")
     face_idx = [i for i in range(n) if P[i]["nfaces"] > 0]
     farmer = bool(face_idx)
     if farmer:
@@ -556,7 +558,129 @@ def analyse(paths, row: dict, form_image=None) -> dict:
         "photo_lag_days_after_intimation": lag_intim, "photo_days_after_loss": lag_loss,
         "rotated": bool(rot_ids), "remarks": remarks,
     }
+    res.update(fo)
     return res
+
+
+_CROP_SHORT = {"cotton": "cotton", "kapas": "cotton", "pearl millet": "pearl millet", "bajra": "pearl millet", "green gram": "green gram",
+               "moong": "green gram", "paddy": "paddy", "dhan": "paddy", "rice": "paddy"}
+
+
+def _declared_crop(row):
+    v = str(row.get("crop_name") or "").lower()
+    for k, short in _CROP_SHORT.items():
+        if k in v:
+            return short
+    return None
+
+
+def _head_probs(heads, task, Xb, Xc):
+    """Return (probs_bb|None, probs_cl, classes) for a task; bb is None if the backbone is unavailable."""
+    h = heads[task]
+    pcl = h["cl"].predict_proba(Xc)
+    pbb = h["bb"].predict_proba(Xb) if Xb is not None else None
+    return pbb, pcl, list(h["classes"])
+
+
+def _field_outputs(Pf, row, n_form, n):
+    """Row-level crop / flood / damage / scene outputs from the non-form photos.  Two models vote per task: a logistic head on
+    frozen MobileNetV2 embeddings and a random forest on colour/texture/water features; probabilities are averaged, and when the
+    two argmaxes differ the row is marked photo_agree=False / low confidence."""
+    out = {"crop_present": "no", "crop_present_conf": None, "crop_seen": "unknown", "crop_seen_conf": None, "crop_matches_declared": None,
+           "flooded": "no", "water_frac": None, "damage_state": "", "damage_visible": False, "scene_type": "paper form" if n_form == n else "unknown",
+           "photo_agree": None, "photo_conf": "low", "remarks": [], "field_photo": "no crop", "field_note": "no field photograph", "photo_loss": None}
+    if not Pf:
+        return out
+    heads = _load("heads.pkl")
+    rem = out["remarks"]
+    declared = _declared_crop(row)
+    Xc = np.array([[d["field_f"][c] for c in heads["cols_cl"][:len(d["field_f"])]] + [d["water"][c] for c in heads["cols_cl"][len(d["field_f"]):]] for d in Pf], np.float32) if heads else None
+    have_bb = heads is not None and all(d.get("logits") is not None for d in Pf)
+    Xb = np.array([d["logits"].astype(np.float32) for d in Pf]) if have_bb else None
+    if heads is None:
+        # no trained heads: fall back to the older colour model; low confidence
+        labs = [_field_state(d["field_f"], d["p_crop"]) for d in Pf]
+        from collections import Counter
+        out.update(field_photo=Counter(l for l, _, _ in labs).most_common(1)[0][0], field_note=labs[0][1], photo_loss=labs[0][2],
+                   scene_type="field", crop_present="yes" if labs[0][0] == "standing crop" else "no", photo_conf="low")
+        return out
+
+    def combine(task):
+        pbb, pcl, classes = _head_probs(heads, task, Xb, Xc)
+        p = pcl if pbb is None else (pbb + pcl) / 2
+        agree = None if pbb is None else (pbb.argmax(1) == pcl.argmax(1))
+        return p, classes, agree
+
+    agrees = []
+    # --- scene: person-only vs field
+    p, cl, ag = combine("scene")
+    pers = p[:, cl.index("person-only")] if "person-only" in cl else np.zeros(len(Pf))
+    person_only = [bool(pers[i] >= 0.5 or (Pf[i]["nfaces"] > 0 and Pf[i]["face_conf"] > 0.85 and pers[i] >= 0.3)) for i in range(len(Pf))]
+    if ag is not None:
+        agrees.append(ag.all())
+    fi = [i for i in range(len(Pf)) if not person_only[i]]
+    if not fi:
+        out.update(scene_type="person-only", photo_conf="high" if (ag is None or ag.all()) else "low", crop_present="no", field_photo="crop mismatch",
+                   field_note="person only, no crop visible", photo_agree=None if ag is None else bool(ag.all()))
+        rem.append("The field photo shows only a person, no crop or field is visible")
+        return out
+    Xb2 = None if Xb is None else Xb[fi]; Xc2 = Xc[fi]
+    sub = lambda task: (lambda pb, pc, cs: (pb[fi] if pb is not None else None, pc[fi], cs))(*_head_probs(heads, task, Xb, Xc))
+    def comb2(task):
+        pbb, pcl, classes = sub(task)
+        return (pcl if pbb is None else (pbb + pcl) / 2), classes, (None if pbb is None else (pbb.argmax(1) == pcl.argmax(1)))
+    pc_, cs_c, ag_c = comb2("crop_present"); pf_, cs_f, ag_f = comb2("flooded"); pd_, cs_d, ag_d = comb2("damage"); pt_, cs_t, ag_t = comb2("crop_type")
+    for a_ in (ag_c, ag_f, ag_d):
+        if a_ is not None:
+            agrees.append(bool(a_.all()))
+    # crop present (mean over field photos)
+    pcrop = float(pc_[:, cs_c.index(1)].mean()) if 1 in cs_c else 0.5
+    pflood = float(pf_[:, cs_f.index(1)].mean()) if 1 in cs_f else 0.0
+    dmean = pd_.mean(0); dstate = cs_d[int(dmean.argmax())]; dconf = float(dmean.max())
+    tmean = pt_.mean(0); tstate = cs_t[int(tmean.argmax())]; tconf = float(tmean.max())
+    wf = float(np.mean([min(1.0, Pf[i]["water"]["w_smooth_low"]) for i in fi]))
+    no_crop_state = dstate in ("weeds-uncultivated", "bare soil", "harvested")
+    crop_yes = (pcrop >= 0.5) and not (no_crop_state and dconf >= 0.5)
+    out["crop_present"] = "yes" if crop_yes else "no"; out["crop_present_conf"] = round(max(pcrop, 1 - pcrop), 2)
+    out["flooded"] = "yes" if (pflood >= 0.5 or dstate == "submerged") else "no"; out["water_frac"] = round(wf, 2)
+    out["damage_state"] = dstate; out["damage_visible"] = bool(dstate not in ("healthy",))
+    out["scene_type"] = "field"
+    sky = float(np.mean([Pf[i]["field_f"]["sky"] for i in fi])); veg = float(np.mean([Pf[i]["field_f"]["green"] + Pf[i]["field_f"]["yellow"] + Pf[i]["field_f"]["brown"] for i in fi]))
+    if any(Pf[i]["quality"] != "good" for i in fi) and all(Pf[i]["quality"] != "good" for i in fi):
+        out["scene_type"] = "blurry-dark-irrelevant"
+    elif sky > 0.5 and veg < 0.1:
+        out["scene_type"] = "house-road-sky-other"      # rule only: no labelled examples
+    if tconf >= 0.5:
+        out["crop_seen"] = tstate; out["crop_seen_conf"] = round(tconf, 2)
+        if declared:
+            out["crop_matches_declared"] = bool(tstate == declared)
+    else:
+        out["crop_seen_conf"] = round(tconf, 2)
+    out["photo_agree"] = bool(all(agrees)) if agrees else None
+    low = (out["photo_agree"] is False) or dconf < 0.5 or out["crop_present_conf"] < 0.6
+    out["photo_conf"] = "low" if (low or not have_bb) else "high"
+    # legacy four-label field_photo
+    out["field_photo"] = ("crop mismatch" if dstate == "weeds-uncultivated" else "no crop" if dstate in ("bare soil", "harvested") else
+                          "cut & spread" if dstate == "cut & spread" else "crop mismatch" if not crop_yes else "standing crop")
+    out["field_note"] = "; ".join(x for x in (("flooded" if out["flooded"] == "yes" else ""), dstate if dstate not in ("healthy", "") else "") if x)
+    out["photo_loss"] = None
+    # remarks
+    dec = f" (declared: {declared})" if declared else ""
+    if dstate == "weeds-uncultivated":
+        rem.append(f"Photo shows weeds / uncultivated land, no insured crop visible{dec}")
+    elif not crop_yes:
+        rem.append(f"No crop visible in the field photo ({dstate or 'unclear'}){dec}")
+    if out["flooded"] == "yes":
+        rem.append("Field appears flooded / waterlogged (water visible)")
+    if crop_yes and dstate not in ("healthy", "weeds-uncultivated"):
+        rem.append(f"Visible crop condition: {dstate}")
+    if out["crop_matches_declared"] is False:
+        rem.append(f"Crop in photo looks like {out['crop_seen']}, declared crop is {declared}")
+    if out["photo_agree"] is False:
+        rem.append("The two photo models disagree - manual review")
+    elif out["photo_conf"] == "low":
+        rem.append("Field-photo interpretation is low confidence - manual check")
+    return out
 
 
 def photo_date_suspicious_safe(pdt, row):
