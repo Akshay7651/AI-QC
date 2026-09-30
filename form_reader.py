@@ -111,9 +111,9 @@ def read_formno(lay):
     w = (tab["R"] - tab["L"]) * sc
     T = (gb["T"] if gb else tab["ytop"] - (P.GRID_GAP + P.GRID_H) * tab["p"]) * sc
     x0 = int(max(0, tab["L"] * sc + 0.3 * w))
-    x1 = int(min(r.shape[1], tab["R"] * sc + 0.2 * w))
-    y0 = int(max(0, T - 9.5 * p))
-    y1 = int(min(r.shape[0], T + 0.6 * p))
+    x1 = int(min(r.shape[1], tab["R"] * sc + 0.25 * w))
+    y0 = 0
+    y1 = int(min(r.shape[0], T + 0.6 * p)) if (gb and gb.get("detected")) else int(min(r.shape[0], 0.42 * r.shape[0]))
     if y1 - y0 < 10 or x1 - x0 < 10:
         return None, 0.0, "", "form-no window outside image"
     g = cv2.cvtColor(r[y0:y1, x0:x1], cv2.COLOR_RGB2GRAY)
@@ -167,10 +167,13 @@ def _chroma_rel(rgb):
     return d - int(np.median(d))
 
 
-def sig_features(rgb_box, p):
-    """features of a signature box crop (RGB, hi-res). p = row pitch in px (scale)."""
+def sig_features(rgb_box, p, split=1.1):
+    """features of a signature box crop (RGB, hi-res; its top edge is 1.0 pitch below the table). p = row pitch in px.
+    area_low = ink area (in p^2) below `split` pitches from the crop top (where signatures sit); area_top = above
+    (where handwritten committee remarks sit)."""
+    z = {"area": 0.0, "area_low": 0.0, "area_top": 0.0, "ncomp": 0, "ext_w": 0.0, "ext_h": 0.0, "blue": 0.0, "cy": 0.0}
     if rgb_box.size == 0 or min(rgb_box.shape[:2]) < 5:
-        return {"area": 0.0, "ncomp": 0, "ext_w": 0.0, "ext_h": 0.0, "blue": 0.0}
+        return z
     m = P.ink_mask(rgb_box, min_len_frac=0.35, contrast=20)
     chroma = rgb_box.astype(np.int16)
     red_print = ((chroma[..., 0] - chroma[..., 2]) > 18) & (chroma.sum(2) < 520)     # printed brown/red label text
@@ -179,13 +182,19 @@ def sig_features(rgb_box, p):
     n, lab, st, _ = cv2.connectedComponentsWithStats(cv2.dilate(m, np.ones((3, 3), np.uint8)))
     keep = [l for l in range(1, n) if st[l, 4] >= 0.02 * p * p]
     if not keep:
-        return {"area": 0.0, "ncomp": 0, "ext_w": 0.0, "ext_h": 0.0, "blue": 0.0}
+        return z
     sel = np.isin(lab, keep) & (m > 0)
-    xs = [st[l, 0] for l in keep] + [st[l, 0] + st[l, 2] for l in keep]
-    ys = [st[l, 1] for l in keep] + [st[l, 1] + st[l, 3] for l in keep]
-    blue = float((_chroma_rel(rgb_box)[sel] > 12).mean()) if sel.any() else 0.0
-    return {"area": float(sel.sum()) / (p * p), "ncomp": len(keep), "ext_w": (max(xs) - min(xs)) / rgb_box.shape[1],
-            "ext_h": (max(ys) - min(ys)) / p, "blue": blue}
+    ys_, xs_ = np.nonzero(sel)
+    cut = int(split * p)
+    z["area"] = float(sel.sum()) / (p * p)
+    z["area_top"] = float(sel[:cut].sum()) / (p * p)
+    z["area_low"] = float(sel[cut:].sum()) / (p * p)
+    z["ncomp"] = len(keep)
+    z["ext_w"] = float(xs_.max() - xs_.min()) / rgb_box.shape[1]
+    z["ext_h"] = float(ys_.max() - ys_.min()) / p
+    z["cy"] = float(ys_.mean()) / p
+    z["blue"] = float((_chroma_rel(rgb_box)[sel] > 12).mean())
+    return z
 
 
 def stamp_features(rgb_zone, p):
@@ -201,7 +210,7 @@ def stamp_features(rgb_zone, p):
     return {"frac": float(bm.mean()), "span": float((cols.max() - cols.min()) / rgb_zone.shape[1])}
 
 
-SIG_AREA_MIN = 0.22          # in p^2 units; tuned on the labelled set (see tools/eval_form_reader.py)
+SIG_LOW_MIN = {"farmer": 0.12, "company": 0.12, "worker": 0.25, "officer": 0.25}   # ink area (p^2 units) below the remark zone
 STAMP_FRAC_MIN = 0.012
 STAMP_SPAN_MIN = 0.45
 
@@ -209,13 +218,14 @@ STAMP_SPAN_MIN = 0.45
 def read_signatures(lay):
     r, B, sc = lay["rgb"], lay["boxes"], lay["scale"]
     p = lay["tab"]["p"] * sc
+    yt = lay["tab"]["ytot"] * sc
     out, feats = {}, {}
     for nm in ("farmer", "company", "worker", "officer"):
-        f = sig_features(P.crop(r, B["sig_" + nm]), p)
+        x0, _, x1, y1 = B["sig_" + nm]
+        f = sig_features(r[int(max(0, yt + 1.0 * p)): int(y1), int(max(0, x0)): int(x1)], p)
         feats[nm] = f
-        out[nm] = bool(f["area"] >= SIG_AREA_MIN and (f["ext_w"] >= 0.18 or f["ext_h"] >= 0.5))
+        out[nm] = bool(f["area_low"] >= SIG_LOW_MIN[nm] and (f["ext_w"] >= 0.12 or f["ext_h"] >= 0.45))
     x0, _, x1, _ = B["sig_officer"]
-    yt = lay["tab"]["ytot"] * sc
     zone = r[int(yt + 3.3 * p): int(min(r.shape[0], yt + 5.4 * p)), int(x0): int(x1)]
     sf = stamp_features(zone, p)
     feats["stamp"] = sf
