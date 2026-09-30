@@ -113,11 +113,11 @@ def read_formno(lay):
     x0 = int(max(0, tab["L"] * sc + 0.3 * w))
     x1 = int(min(r.shape[1], tab["R"] * sc + 0.25 * w))
     y0 = 0
-    y1 = int(min(r.shape[0], T + 0.6 * p)) if (gb and gb.get("detected")) else int(min(r.shape[0], 0.42 * r.shape[0]))
+    y1 = int(0.45 * r.shape[0])
     if y1 - y0 < 10 or x1 - x0 < 10:
         return None, 0.0, "", "form-no window outside image"
     g = cv2.cvtColor(r[y0:y1, x0:x1], cv2.COLOR_RGB2GRAY)
-    bb = _bar_bbox(g, max(9, int(1.3 * p)), hmin=int(0.6 * p), hmax=int(3.0 * p))
+    bb = _bar_bbox(g, max(9, int(1.3 * p)), hmin=int(0.3 * p), hmax=int(3.0 * p))
     if bb is None:
         return None, 0.0, "", "barcode not found"
     bx0, by0, bx1, by1, _ = bb
