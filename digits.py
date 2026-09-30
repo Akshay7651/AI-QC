@@ -228,7 +228,8 @@ def read_digit_string(img, expected_len=None):
     return dict(text=txt, conf=conf, n_components=len(comps))
 
 
-def read_number(img, *, max_digits=3, allow_decimal=True, min_conf=0.4):
+def read_number_segmented(img, *, max_digits=3, allow_decimal=True, min_conf=0.4):
+    """per-digit reader (weak, ~40% exact on filled cells) - kept as fallback / for decimals."""
     comps, H, W = _analyse(img)
     if not [c for c in comps if not c["dot"]]:
         return dict(value=None, text="", conf=1.0, n_components=0)
@@ -302,3 +303,23 @@ def read_cell(img, gate=0.6):
     if name == "OTHER":
         return dict(value=None, text="?", conf=conf, n_components=-1, cls="OTHER")
     return dict(value=float(name) if conf >= gate else None, text=name, conf=conf, n_components=-1, cls=name)
+
+
+GATE = 0.5
+
+
+def read_number(img, *, max_digits=3, allow_decimal=True, gate=GATE):
+    """Read ONE table cell (% value).  Whole-cell CNN -> value in {0,5,...,100} / blank / None.
+    value None = blank cell (text '', n_components 0) or not readable (conf below the gate, OTHER class, >100)."""
+    try:
+        r = read_cell(img, gate=gate)
+    except FileNotFoundError:  # cell model missing -> segmented reader
+        return read_number_segmented(img, max_digits=max_digits, allow_decimal=allow_decimal)
+    try:
+        comps, _, _ = _analyse(img)
+        n = len([c for c in comps if not c["dot"]])
+    except Exception:
+        n = -1
+    if r["cls"] == "EMPTY" and n > 0 and r["conf"] < 0.9:
+        r["conf"] = min(r["conf"], 0.6)   # ink present but model says blank: unsure
+    return dict(value=r["value"], text=r["text"], conf=r["conf"], n_components=n)

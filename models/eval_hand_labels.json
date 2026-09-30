@@ -1,0 +1,88 @@
+{
+ "all_cells": {
+  "n": 875,
+  "acc": 0.8114
+ },
+ "filled_cells(exp not blank)": {
+  "n": 431,
+  "acc": 0.645
+ },
+ "blank_cells": {
+  "n": 444,
+  "acc": 0.973
+ },
+ "nonzero_value_cells": {
+  "n": 91,
+  "acc": 0.4505
+ },
+ "zero_value_cells": {
+  "n": 340,
+  "acc": 0.6971
+ },
+ "row1_cells(area+loss)": {
+  "n": 286,
+  "acc": 0.6573
+ },
+ "row1_nonzero_forms": {
+  "n": 72,
+  "acc": 0.4583
+ },
+ "row1_filled_only": {
+  "n": 284,
+  "acc": 0.6549
+ },
+ "HOLDOUT_last50_all": {
+  "n": 294,
+  "acc": 0.7857
+ },
+ "HOLDOUT_last50_filled": {
+  "n": 142,
+  "acc": 0.5634
+ },
+ "HOLDOUT_last50_nonzero_value": {
+  "n": 28,
+  "acc": 0.3214
+ },
+ "FORM_LEVEL(total else row1)": {
+  "n": 285,
+  "exact": 0.6702,
+  "nonzero_n": 66,
+  "nonzero_exact": 0.4697,
+  "zero_exact": 0.7306,
+  "answered": 0.7123,
+  "precision_when_answered": 0.9409,
+  "holdout_exact": 0.6146,
+  "holdout_n": 96
+ },
+ "per_field": {
+  "area_r1": {
+   "n": 142,
+   "acc": 0.6408
+  },
+  "loss_r1": {
+   "n": 144,
+   "acc": 0.6736
+  },
+  "area_r2": {
+   "n": 149,
+   "acc": 0.9866
+  },
+  "loss_r2": {
+   "n": 149,
+   "acc": 0.9732
+  },
+  "area_tot": {
+   "n": 145,
+   "acc": 0.7931
+  },
+  "loss_tot": {
+   "n": 146,
+   "acc": 0.7877
+  }
+ },
+ "errors": {
+  "n": 165,
+  "abstained": 141,
+  "wrong_value": 24
+ }
+}
