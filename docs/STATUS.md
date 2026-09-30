@@ -91,3 +91,11 @@ Requirements still to implement/verify (in priority order):
 - Exclude every docket in `data/forms/` (6,027 training forms), every docket with files in `data/photos/` (8,204 training photos) and every docket in `data/eval/*.csv` (hand labels).
 - Test A: 100 random unseen rows. Test B: +50 unseen rows from surveyors/districts that are under-represented in the training sample (generalisation to new handwriting/cameras).
 - If the user meant "different columns" literally (other Excel layouts / field names), also run a differently-formatted export through `ingestion.load` and the pipeline.
+
+
+### Train-test loop (user request): repeat until 9 of 10 consecutive fresh 100-row batches reach >=95%
+1. Train -> test on a FRESH 100 unseen dockets -> per-field accuracy of ASSERTED values (+ coverage = share not sent to manual check) -> fix errors -> retrain -> next fresh 100.
+2. Never reuse a batch (a batch used for fixing becomes training data). ~35,000 unseen rows exist (41,377 minus training/eval dockets).
+3. Stop when 9 of 10 consecutive fresh batches have >=95% on every asserted field; then run one final untouched batch to confirm.
+4. Fields that cannot reach 95% (loss % from photo, crop-present, damage state) are NOT counted; they stay 'low confidence - manual check'.
+5. Cheaper ground truth: when the user's ~3,000 human-QC'd rows arrive, train on ~2,000 and use the other ~1,000 as the test stream in batches of 100 (human answers = ground truth; no hand-reading needed).
