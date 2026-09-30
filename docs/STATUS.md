@@ -128,3 +128,9 @@ PO-ID reading is demoted to a nice-to-have. Until the cell model reaches >=95% p
   PO-ID mismatch (never asserted: PO-ID reader does not work).
 - NOT yet done: formal accuracy measurement with ground truth on fresh 100-row batches (needs human labels: use the user's ~3,000 human-QC'd rows as ground truth, train on ~2,000, test on the rest).
 - Next: (1) user's 3,000 rows -> retrain whole-cell model (non-zero values are the weak spot) (2) fresh-batch loop until 9/10 batches >= 95% on asserted fields (3) `retrain.py` + docs/TRAINING_GUIDE.md (4) streaming mode for 160k rows (5) optional: more trees for photo heads, measured.
+
+
+### UPDATE: retrain.py + docs/TRAINING_GUIDE.md are DONE (commits 22eedb1, efbe59a)
+- `python retrain.py --labels human_qc.xlsx` retrains the whole-cell model from human rows with a 15% never-trained hold-out and only adopts the new model if it is not worse (tested: a bad 200-step model was rejected and the old file restored byte-identical).
+- Remaining for the next session: (1) get the user's 3,000 human-QC'd rows and run retrain.py; (2) fresh-batch accuracy loop (train on ~2,000 / test on the rest in batches of 100, until 9/10 batches >= 95% on asserted fields);
+  (3) streaming mode + chunked output for 160k rows; (4) real overwrite detector, date reader, PO-ID reader (all currently disabled/unreliable); (5) optional: more trees for photo heads, measured.
