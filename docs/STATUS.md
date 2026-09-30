@@ -61,3 +61,13 @@ Repo branch: `claude/new-session-qd93xp`. Everything below is committed unless m
 - `survey_start_date`/`survey_end_date` in the export are the LOSS date and the farmer INTIMATION date, not the survey date (the real survey date is the committee-inspection date on the form).
 - 76% of labelled forms are all-zero: always report accuracy on non-zero forms separately.
 - Keep model files in git small (<10 MB each).
+
+
+## FINAL ACCEPTANCE TEST (requested by the user; do this once everything is built)
+1. Draw 100 random rows from the 41,377 that are NOT in `data/forms/` (training) and NOT in `data/eval/` (hand labels) - truly unseen.
+2. Download their forms/photos (`fetch_dataset.py`-style, ~2 min), then establish ground truth by eye (same method as the 10-row sample in
+   `output/sample10_OUTPUT.xlsx`; use `tools/make_label_sheets.py` contact sheets; spot-check with a second reader).
+3. Run the normal command: `python run_qc.py --input sample100.xlsx --local-media <dir> --agents 4` (offline engine).
+4. Compare field by field: Form No, PO-ID match, form area/loss and Match/Mismatch vs app, 4 signatures, photo-is-form, photo GPS/date,
+   crop/flood/weeds, final verdict and remark correctness. Report accuracy AND the share of rows sent to manual check, per field.
+5. Report honestly every field below 95% and why; fix and re-test on a fresh 100 if needed.
