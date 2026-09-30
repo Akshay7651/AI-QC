@@ -107,3 +107,13 @@ PIVOT (sent to the digit agent): train a WHOLE-CELL value classifier (small voca
 empty / illegible) on cell crops from `form_reader`/`form_p3` geometry; labels = app values where consistent (excluding `data/eval` dockets);
 balance classes (0 is ~75% of forms); confidence gate -> 'not readable'; report overall, NON-ZERO and precision-at-gate with coverage.
 PO-ID reading is demoted to a nice-to-have. Until the cell model reaches >=95% precision at its gate, handwritten area/loss stay 'not readable'.
+
+
+### UPDATE: end-to-end form reader on 150 hand-labelled forms (whole-cell digit model + gate) - commit fe08ec8
+- Area: 98.1% precise when answered, answered on 75% of forms; Loss: 98.1% precise, 74% answered (gate CELL_GATE=0.8 in form_reader.py).
+  Non-zero values are the weak spot: only ~50% of non-zero cells get an answer (few training examples) - the user's 3,000 human rows are the fix.
+- Form No: >=3 agreeing passes -> 96% exact on 73% of forms; best guess 76% overall.
+- Signatures: farmer 93%, company 95%, worker 92% (precision 72%), officer 98.6% (always empty).
+- Dates: NOT readable (0-3% exact) -> disabled (DATES_ENABLED=False). PO-ID reading failed -> po_id_matches stays None.
+- Overwrite detection: the old rule fired on 55% of forms (false) -> disabled; needs a real detector.
+- Speed ~2.0 s CPU per form (target 1.5).
