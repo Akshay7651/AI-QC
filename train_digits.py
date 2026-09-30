@@ -63,6 +63,7 @@ def _cache_one(path):
         return dk, True
     try:
         img = Image.open(path)
+        img.draft('L', (img.width // 2, img.height // 2)) if img.width >= 3200 else None
         t = L.locate_table(img)
         if t is None:
             np.savez_compressed(out, ok=np.array(0))

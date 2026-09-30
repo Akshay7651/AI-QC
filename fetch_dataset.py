@@ -48,6 +48,39 @@ def pdf_to_jpg(data: bytes):
         return d[0].get_pixmap(dpi=150).tobytes("jpg")
 
 
+def photos_only(a, df, out):
+    have = {p.stem.rsplit("_", 1)[0] for p in (out / "photos").glob("*.jpg")}
+    forms = [p.stem for p in (out / "forms").glob("*.jpg")]
+    df = df.set_index(df["docket_id"].astype(str), drop=False)
+    todo = [d for d in forms if d not in have and d in df.index]
+    print(f"{len(have)} rows already have photos; {len(todo)} candidates; target {a.photos_target} photos", flush=True)
+    cnt = [len(list((out / "photos").glob("*.jpg")))]
+    lk = threading.Lock()
+
+    def one(d):
+        if cnt[0] >= a.photos_target:
+            return
+        urls = split_urls(df.loc[d, "media_urls"])[:3]
+        with httpx.Client() as c:
+            for i, u in enumerate(urls, 1):
+                b = get(c, u)
+                if b:
+                    try:
+                        im = Image.open(io.BytesIO(b)).convert("RGB")
+                        im.thumbnail((720, 1280))
+                        im.save(out / "photos" / f"{d}_{i}.jpg", quality=82)
+                        with lk:
+                            cnt[0] += 1
+                    except Exception:
+                        pass
+        if cnt[0] % 200 < 3:
+            print(f"photos {cnt[0]}", flush=True)
+
+    with ThreadPoolExecutor(a.threads) as ex:
+        list(ex.map(one, todo))
+    print("PHOTOS DONE", cnt[0])
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--input", required=True)
@@ -56,11 +89,14 @@ def main():
     ap.add_argument("--out", default="data")
     ap.add_argument("--threads", type=int, default=6)
     ap.add_argument("--seed", type=int, default=42)
+    ap.add_argument("--photos-target", type=int, help="photos-only mode: add up to 3 photos for already-downloaded rows until this many photo files exist")
     a = ap.parse_args()
     out = Path(a.out)
     (out / "forms").mkdir(parents=True, exist_ok=True)
     (out / "photos").mkdir(exist_ok=True)
     df = ingestion.load(a.input)
+    if a.photos_target:
+        return photos_only(a, df, out)
     df = df[df["pdf_url"].notna()]
     # stratified by district so every area/surveyor mix is represented
     frac = min(1.0, a.n / len(df))
