@@ -154,3 +154,394 @@ def read_formno(lay):
         return None, 0.0, "", "form-no text line not found"
     DEBUG.append((g, (bx0, by0, bx1, by1), st, band))
     return _ocr_formno(band, st)
+
+
+# ----------------------------------------------------------------------------------------- signatures / stamp
+def _chroma_rel(rgb):
+    """(B - R) relative to the crop's own median -> robust to bluish/yellowish lighting"""
+    c = rgb.astype(np.int16)
+    d = c[..., 2] - c[..., 0]
+    return d - int(np.median(d))
+
+
+def sig_features(rgb_box, p):
+    """features of a signature box crop (RGB, hi-res). p = row pitch in px (scale)."""
+    if rgb_box.size == 0 or min(rgb_box.shape[:2]) < 5:
+        return {"area": 0.0, "ncomp": 0, "ext_w": 0.0, "ext_h": 0.0, "blue": 0.0}
+    m = P.ink_mask(rgb_box, min_len_frac=0.35, contrast=20)
+    chroma = rgb_box.astype(np.int16)
+    red_print = ((chroma[..., 0] - chroma[..., 2]) > 18) & (chroma.sum(2) < 520)     # printed brown/red label text
+    m[red_print] = 0
+    m = cv2.morphologyEx(m, cv2.MORPH_OPEN, np.ones((2, 2), np.uint8))
+    n, lab, st, _ = cv2.connectedComponentsWithStats(cv2.dilate(m, np.ones((3, 3), np.uint8)))
+    keep = [l for l in range(1, n) if st[l, 4] >= 0.02 * p * p]
+    if not keep:
+        return {"area": 0.0, "ncomp": 0, "ext_w": 0.0, "ext_h": 0.0, "blue": 0.0}
+    sel = np.isin(lab, keep) & (m > 0)
+    xs = [st[l, 0] for l in keep] + [st[l, 0] + st[l, 2] for l in keep]
+    ys = [st[l, 1] for l in keep] + [st[l, 1] + st[l, 3] for l in keep]
+    blue = float((_chroma_rel(rgb_box)[sel] > 12).mean()) if sel.any() else 0.0
+    return {"area": float(sel.sum()) / (p * p), "ncomp": len(keep), "ext_w": (max(xs) - min(xs)) / rgb_box.shape[1],
+            "ext_h": (max(ys) - min(ys)) / p, "blue": blue}
+
+
+def stamp_features(rgb_zone, p):
+    """printed rubber stamp (blue/violet regular text) in the zone around the officer label"""
+    if rgb_zone.size == 0 or min(rgb_zone.shape[:2]) < 5:
+        return {"frac": 0.0, "span": 0.0}
+    m = P.ink_mask(rgb_zone, min_len_frac=0.5, contrast=12)
+    d = _chroma_rel(rgb_zone)
+    bm = (m > 0) & (d > 14)
+    if bm.sum() < 0.05 * p * p:
+        return {"frac": float(bm.mean()), "span": 0.0}
+    cols = np.where(bm.sum(0) > 0)[0]
+    return {"frac": float(bm.mean()), "span": float((cols.max() - cols.min()) / rgb_zone.shape[1])}
+
+
+SIG_AREA_MIN = 0.22          # in p^2 units; tuned on the labelled set (see tools/eval_form_reader.py)
+STAMP_FRAC_MIN = 0.012
+STAMP_SPAN_MIN = 0.45
+
+
+def read_signatures(lay):
+    r, B, sc = lay["rgb"], lay["boxes"], lay["scale"]
+    p = lay["tab"]["p"] * sc
+    out, feats = {}, {}
+    for nm in ("farmer", "company", "worker", "officer"):
+        f = sig_features(P.crop(r, B["sig_" + nm]), p)
+        feats[nm] = f
+        out[nm] = bool(f["area"] >= SIG_AREA_MIN and (f["ext_w"] >= 0.18 or f["ext_h"] >= 0.5))
+    x0, _, x1, _ = B["sig_officer"]
+    yt = lay["tab"]["ytot"] * sc
+    zone = r[int(yt + 3.3 * p): int(min(r.shape[0], yt + 5.4 * p)), int(x0): int(x1)]
+    sf = stamp_features(zone, p)
+    feats["stamp"] = sf
+    stamp = bool(sf["frac"] >= STAMP_FRAC_MIN and sf["span"] >= STAMP_SPAN_MIN)
+    return out, stamp, feats
+
+
+# ----------------------------------------------------------------------------------------- digits.py bridge
+_DIG = None
+
+
+def _digits():
+    """digits.py module if importable AND its trained model exists, else None (handwriting then stays unread)"""
+    global _DIG
+    if _DIG is None:
+        try:
+            import digits as D
+            _DIG = D
+        except Exception:      # noqa: BLE001
+            return None
+    mp = getattr(_DIG, "MODEL_PATH", None)
+    if mp is not None and not os.path.exists(mp):
+        return None
+    return _DIG
+
+
+def _pil(a):
+    from PIL import Image
+    return Image.fromarray(a if a.ndim == 2 else a)
+
+
+def _gray_hi(rgb):
+    return cv2.cvtColor(rgb, cv2.COLOR_RGB2GRAY) if rgb.ndim == 3 else rgb
+
+
+def read_cell(rgb_crop):
+    """-> dict(value, text, conf, ink, blank)"""
+    ink = P.ink_frac(rgb_crop, inset=0.08)
+    blank = ink < CELL_BLANK_INK
+    out = {"value": None, "text": "", "conf": 0.0, "ink": ink, "blank": blank}
+    D = _digits()
+    if blank or D is None:
+        return out
+    try:
+        res = D.read_number(_pil(_gray_hi(rgb_crop)), max_digits=3, allow_decimal=True)
+        out.update(value=res.get("value"), text=res.get("text", ""), conf=float(res.get("conf", 0.0)))
+    except Exception as e:     # noqa: BLE001
+        out["err"] = str(e)
+    return out
+
+
+CELL_BLANK_INK = 0.006
+
+
+def _digit_probs(rgb_crop):
+    """per-component class probabilities (digits.py internals) -> (chars list [(ch, prob, probs13)], comps) or None"""
+    D = _digits()
+    if D is None or not hasattr(D, "_analyse") or not hasattr(D, "classify_components"):
+        return None
+    try:
+        comps, H, W = D._analyse(_pil(_gray_hi(rgb_crop)))
+        comps = [c for c in comps if not c.get("dot")]
+        if not comps:
+            return [], comps
+        probs = D.classify_components(comps)
+        return probs, comps
+    except Exception:      # noqa: BLE001
+        return None
+
+
+# ----------------------------------------------------------------------------------------- dates
+def parse_date(rgb_crop):
+    """handwritten date cell -> (DDMMYYYY|None, conf, note). Uses digits.py component classes: digits + separator (slash/dash) class."""
+    ink = P.ink_frac(rgb_crop, inset=0.08)
+    if ink < CELL_BLANK_INK:
+        return None, 1.0, "blank"
+    pr = _digit_probs(rgb_crop)
+    D = _digits()
+    groups = None
+    conf = 0.0
+    if pr is not None and len(pr[1]):
+        probs, comps = pr
+        chars = []
+        for c, pv in zip(comps, probs):
+            k = int(np.argmax(pv))
+            chars.append((k, float(pv[k]), c))
+        cur, groups, confs = "", [], []
+        H = max(c["y1"] - c["y0"] for _, _, c in chars)
+        for k, pk, c in chars:
+            ch = c["y1"] - c["y0"]
+            cw = c["x1"] - c["x0"]
+            sep = (k >= 10) or (k == 1 and ch > 1.35 * np.median([cc["y1"] - cc["y0"] for _, _, cc in chars]) and cw < 0.5 * ch)
+            if sep:
+                if cur:
+                    groups.append(cur)
+                cur = ""
+            else:
+                cur += str(k)
+                confs.append(pk)
+        if cur:
+            groups.append(cur)
+        conf = float(np.mean(confs)) if confs else 0.0
+    elif D is not None:
+        res = D.read_digit_string(_pil(_gray_hi(rgb_crop)))
+        t = res.get("text", "")
+        conf = float(res.get("conf", 0.0))
+        groups = [t] if t else None
+    if not groups:
+        return None, 0.0, "no digits"
+    return _assemble_date(groups, conf)
+
+
+def _assemble_date(groups, conf):
+    import datetime
+    d = m = y = None
+    note = ""
+    if len(groups) >= 3:
+        d, m, y = groups[0], groups[1], groups[2]
+        if len(groups) > 3:
+            note = "extra date parts ignored"
+    elif len(groups) == 1:
+        t = groups[0]
+        if len(t) == 8:
+            d, m, y = t[:2], t[2:4], t[4:]
+        elif len(t) == 6:
+            d, m, y = t[:2], t[2:4], t[4:]
+        else:
+            return None, 0.0, f"date digits '{t}' unparsable"
+    else:
+        return None, 0.0, f"date parts {groups} unparsable"
+    if len(y) == 2:
+        y = "20" + y
+    if len(y) == 1:
+        y = "202" + y
+    if len(y) == 3:                      # dropped digit, e.g. 026 / 226
+        y = "2026" if y.endswith("26") else y
+    if len(y) > 4:
+        y = y[-4:]
+    try:
+        di, mi, yi = int(d), int(m), int(y)
+        if yi in (2020, 2028, 2029, 2005):      # 2026 often misread: flag but keep
+            note += " year unusual"
+        datetime.date(yi, mi, di)
+    except Exception:      # noqa: BLE001
+        return None, 0.0, f"invalid date {d}/{m}/{y}"
+    return f"{di:02d}{mi:02d}{yi:04d}", conf, note.strip()
+
+
+# ----------------------------------------------------------------------------------------- PO ID
+def read_po_id(rgb_crop, docket=None):
+    """-> (po_id|None, conf, matches|None, info dict)"""
+    info = {"n_comp": 0, "ink": P.ink_frac(rgb_crop, inset=0.05)}
+    if info["ink"] < 0.004:
+        return None, 1.0, (False if docket else None), dict(info, blank=True)
+    pr = _digit_probs(rgb_crop)
+    D = _digits()
+    text, conf, probs = "", 0.0, None
+    if pr is not None and len(pr[1]):
+        probs, comps = pr
+        # drop the printed 'PO ID:' remains / underline: keep components whose height is in digit range
+        hs = np.array([c["y1"] - c["y0"] for c in comps], float)
+        medh = np.median(hs)
+        keep = [i for i, c in enumerate(comps) if hs[i] >= 0.5 * medh]
+        probs = probs[keep]
+        comps = [comps[i] for i in keep]
+        info["n_comp"] = len(comps)
+        dig = probs[:, :10]
+        text = "".join(str(int(r.argmax())) for r in dig)
+        conf = float(np.mean(dig.max(1) / np.maximum(dig.sum(1), 1e-9)))
+    elif D is not None:
+        res = D.read_digit_string(_pil(_gray_hi(rgb_crop)), expected_len=18)
+        text, conf = res.get("text", ""), float(res.get("conf", 0.0))
+        info["n_comp"] = res.get("n_components", 0)
+    matches = None
+    if docket:
+        if text == docket:
+            matches = True
+        elif probs is not None and len(probs) == len(docket):
+            # verification: is the docket digit the best / a plausible class at every position?
+            pd = np.array([probs[i, int(ch)] / max(probs[i, :10].sum(), 1e-9) for i, ch in enumerate(docket)])
+            if (pd >= 0.25).all():
+                matches = True
+            elif (pd < 0.05).any():
+                matches = False
+        elif len(text) >= 10 and len(text) != len(docket) and info["n_comp"] not in (len(docket) - 1, len(docket) + 1):
+            matches = False if len(text) < 14 else None
+        elif text and len(text) == len(docket):
+            diff = sum(a != b for a, b in zip(text, docket))
+            matches = False if diff >= 5 else None
+    return (text or None), conf, matches, info
+
+
+# ----------------------------------------------------------------------------------------- quality / identification
+def _quality(lay_or_rgb):
+    rgb = lay_or_rgb
+    g = _gray_hi(rgb)
+    gs = P._resize_w(g, 800)
+    lap = cv2.Laplacian(gs, cv2.CV_32F).var()
+    mean = float(gs.mean())
+    return {"blur": float(lap), "mean": mean, "contrast": float(np.percentile(gs, 95) - np.percentile(gs, 5))}
+
+
+def _hin_header_is_form(rgb):
+    """Tesseract hin on a small strip (only used when the ruled-line layout is ambiguous)."""
+    try:
+        import pytesseract
+        g = P._resize_w(_gray_hi(rgb), 900)
+        strip = g[: int(0.3 * g.shape[0])]
+        txt = pytesseract.image_to_string(strip, lang="hin+eng", config="--psm 6")
+        keys = ["प्रारूप", "फसल", "बीमा", "योजना", "मंत्री", "हानि", "रिपोर्ट", "PO ID", "वर्ष", "मौसम"]
+        return sum(k in txt for k in keys) >= 2, txt[:80]
+    except Exception:      # noqa: BLE001
+        return False, ""
+
+
+def _empty(notes):
+    return {"is_proforma3": False, "quality": "unknown", "form_no": None, "form_no_conf": 0.0, "po_id": None,
+            "po_id_matches": None, "form_area": None, "form_loss": None, "row_area": None, "row_loss": None,
+            "total_row_blank": False, "sow_date": None, "loss_date": None, "intimation_date": None,
+            "inspection_date": None, "farmer_signed": False, "company_signed": False, "worker_signed": False,
+            "officer_signed": False, "officer_stamp_only": False, "overwrite_suspected": False, "confidence": 0.0,
+            "field_conf": {}, "notes": list(notes)}
+
+
+def read_form(path_or_pil, docket=None, debug=False):
+    """Read one photographed Proforma-3. See module docstring / docs/agent_brief.md for the returned keys."""
+    t0 = time.time()
+    out = _empty([])
+    notes = out["notes"]
+    try:
+        rgb = P.load_image(path_or_pil)
+    except Exception as e:     # noqa: BLE001
+        notes.append(f"image unreadable: {e}")
+        out["quality"] = "unreadable"
+        return out
+    q = _quality(rgb)
+    if q["mean"] < 60:
+        out["quality"] = "dark"
+    elif q["blur"] < 25:
+        out["quality"] = "blurry"
+    else:
+        out["quality"] = "good"
+    lay = P.analyse_layout(rgb)
+    out["quality_metrics"] = {k: round(v, 1) for k, v in q.items()}
+    out["rotation_deg"] = lay["info"].get("rot", 0) if "info" in lay else 0
+    out["skew_deg"] = round(lay["info"].get("skew", 0.0), 2) if "info" in lay else 0.0
+    if not lay["ok"]:
+        ok, sample = _hin_header_is_form(lay.get("rgb", rgb)) if lay.get("info", {}).get("lines") else (False, "")
+        out["is_proforma3"] = bool(ok)
+        notes.extend(lay["notes"])
+        if ok:
+            notes.append("looks like a Proforma-3 but the table layout could not be located (cropped / heavily distorted)")
+            out["quality"] = "cropped" if out["quality"] == "good" else out["quality"]
+        else:
+            notes.append("not recognised as a Proforma-3 form (no ruled table / printed header)")
+        out["confidence"] = 0.0
+        out["elapsed"] = round(time.time() - t0, 3)
+        return out
+
+    tab, B, r, sc = lay["tab"], lay["boxes"], lay["rgb"], lay["scale"]
+    fc = out["field_conf"]
+    out["is_proforma3"] = True
+    if tab["n_cols"] < 5 or tab["n_rowlines"] < 8:
+        notes.append("table only weakly matched to the template")
+    W = r.shape[1]
+    if tab["L"] < 0.02 * P.GW or tab["R"] > 0.985 * P.GW:
+        out["quality"] = "cropped" if out["quality"] == "good" else out["quality"]
+        notes.append("table touches the image border (page may be cropped)")
+    # ---- FORM NO
+    fn, fcf, raw, note = read_formno(lay)
+    out["form_no"], out["form_no_conf"] = fn, round(float(fcf), 3)
+    fc["form_no"] = out["form_no_conf"]
+    if note:
+        notes.append(note)
+    # ---- PO ID
+    if "po_id" in B:
+        po, pcf, pm, pinfo = read_po_id(P.crop(r, B["po_id"]), docket)
+        out["po_id"], out["po_id_matches"] = po, pm
+        fc["po_id"] = round(float(pcf), 3)
+        if pinfo.get("blank"):
+            notes.append("PO ID field appears blank")
+        if pinfo["n_comp"] > 24 or pinfo["ink"] > 0.22:
+            out["overwrite_suspected"] = True
+            notes.append("PO ID looks over-written / scribbled (too many strokes)")
+    # ---- table cells
+    cells = {}
+    for k in ("area_r1", "loss_r1", "area_r2", "loss_r2", "area_tot", "loss_tot"):
+        cells[k] = read_cell(P.crop(r, B[k], 2))
+    out["_cells"] = {k: {kk: vv for kk, vv in v.items() if kk != "err"} for k, v in cells.items()}
+    tot_blank = cells["area_tot"]["blank"] and cells["loss_tot"]["blank"]
+    out["total_row_blank"] = bool(tot_blank)
+    if not tot_blank:
+        out["form_area"] = cells["area_tot"]["value"]
+        out["form_loss"] = cells["loss_tot"]["value"]
+        fc["form_area"], fc["form_loss"] = round(cells["area_tot"]["conf"], 3), round(cells["loss_tot"]["conf"], 3)
+    for rr in ("r1", "r2"):
+        if not (cells["area_" + rr]["blank"] and cells["loss_" + rr]["blank"]):
+            out["row_area"], out["row_loss"] = cells["area_" + rr]["value"], cells["loss_" + rr]["value"]
+            fc["row_area"], fc["row_loss"] = round(cells["area_" + rr]["conf"], 3), round(cells["loss_" + rr]["conf"], 3)
+            break
+    # ---- dates
+    for key, box in (("sow_date", "sow_date"), ("loss_date", "loss_date"), ("intimation_date", "intim_date"), ("inspection_date", "insp_date")):
+        if box in B:
+            d, dc, dn = parse_date(P.crop(r, B[box], 2))
+            out[key] = d
+            fc[key] = round(float(dc), 3)
+            if dn and dn != "blank":
+                notes.append(f"{key}: {dn}")
+    # ---- signatures
+    sg, stamp, feats = read_signatures(lay)
+    out["farmer_signed"], out["company_signed"], out["worker_signed"], out["officer_signed"] = (sg["farmer"], sg["company"], sg["worker"], sg["officer"])
+    out["officer_stamp_only"] = bool(stamp and not sg["officer"])
+    out["_sig_feats"] = feats
+    # ---- overwrite on cells
+    for k, v in cells.items():
+        if v["ink"] > 0.30:
+            out["overwrite_suspected"] = True
+            notes.append(f"{k}: very heavy ink (possible over-writing / scribble)")
+            break
+    # ---- confidence
+    parts = [out["form_no_conf"] if fn else 0.3]
+    parts += [c for k, c in fc.items() if k in ("form_area", "form_loss", "row_area", "row_loss")]
+    conf = float(np.mean(parts)) if parts else 0.3
+    if out["quality"] != "good":
+        conf *= 0.7
+    if not lay.get("grid") or not lay["grid"].get("detected"):
+        conf *= 0.9
+    out["confidence"] = round(conf, 3)
+    out["elapsed"] = round(time.time() - t0, 3)
+    if debug:
+        out["_lay"] = lay
+    return out

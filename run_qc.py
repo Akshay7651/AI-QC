@@ -58,7 +58,7 @@ def parse_args(argv=None):
     p.add_argument("--checkpoint", default="output/checkpoint.json")
     p.add_argument("--autosave-sec", type=float, default=60.0, help="write the output Excel + checkpoint every N seconds (0 = only at the end)")
     p.add_argument("--serve-port", type=int, default=8765, help="live dashboard port (default 8765)")
-    p.add_argument("--serve-host", default="0.0.0.0", help="0.0.0.0 = reachable from your phone on the same Wi-Fi; 127.0.0.1 = this PC only")
+    p.add_argument("--serve-host", default="127.0.0.1", help="127.0.0.1 = this PC only (default, safe); 0.0.0.0 = also reachable from a phone on the same Wi-Fi (exposes docket IDs/remarks to that network)")
     p.add_argument("--no-serve", action="store_true", help="do not start the live dashboard web server")
     p.add_argument("--progress", default="output/progress.json", help="progress file written every second")
     p.add_argument("--task-timeout", type=float, default=180.0, help="seconds before a stuck agent is killed and its row retried")

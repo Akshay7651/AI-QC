@@ -84,7 +84,7 @@ python run_qc.py --input Level_1_GEO_Tagged_QC_Done.xlsx --resume
 | `--output file.xlsx` | where to write (default `<input>_QC.xlsx`); `--inplace` writes into the input file |
 | `--autosave-sec 60` | how often the Excel + checkpoint are saved (default every 60 s) |
 | `--serve-port 8765` / `--no-serve` | live dashboard port / switch it off |
-| `--serve-host 127.0.0.1` | dashboard only on this PC (default `0.0.0.0` so your phone on the same Wi-Fi can open it) |
+| `--serve-host 0.0.0.0` | let a phone on the same Wi-Fi open the dashboard (default is `127.0.0.1` = this PC only, because the dashboard shows docket IDs and remarks) |
 | `--no-risk` | skip the risk score (saves about 10 s per 40,000 rows) |
 | `--rate 5` | max new download requests per second (be polite to the site) |
 | `--engine claude` | optional: use Claude vision instead of the offline readers (needs `ANTHROPIC_API_KEY`) |
