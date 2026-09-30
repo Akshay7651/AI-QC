@@ -224,3 +224,10 @@ The text only states what was read; a value that could not be read reliably is w
    for very large runs prefer plain folders - ZIPs need disk space to unpack).
 The docket ID must appear in the file name, the folder name or the ZIP name. Files named by the PMFBY mediaID also match.
 Anything inside a folder named `form`, `forms`, `pdf`, `pdfs`, `signed`, `signed_copy` is the form; other images are field photos.
+
+
+## First-time setup on a new PC (after `git clone`)
+1. Install **Python 3.11** (tick "Add to PATH") and **Tesseract with Hindi** (UB-Mannheim installer on Windows; `sudo apt install tesseract-ocr tesseract-ocr-hin` on Linux).
+2. Windows: double-click `setup_windows.bat`. Linux/macOS: `bash setup.sh`. (Creates a virtual environment, installs `requirements.txt`, downloads any missing model, runs the self-check.)
+3. `python tools/selfcheck.py` must print **RESULT: READY**. It lists exactly what is missing if not (e.g. Hindi language data, a model file).
+4. Retraining the digit model also needs `pip install -r requirements-train.txt` (PyTorch); normal QC runs do not.

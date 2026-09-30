@@ -1,0 +1,4 @@
+# Only needed to RETRAIN the digit model (python train_digits.py) - not for normal QC runs.
+# CPU build of PyTorch: pip install torch --index-url https://download.pytorch.org/whl/cpu
+torch>=2.1
+playwright>=1.40   # only for dashboard UI tests
