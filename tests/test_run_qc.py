@@ -342,4 +342,5 @@ def test_local_engine_runs_without_key(tmp_path, monkeypatch):
                         "--local-media", str(tmp_path / "media"), "--checkpoint", str(tmp_path / "ck.json"),
                         "--progress", str(tmp_path / "p.json"), "--agents", "1"]) == 0
     o = pd.read_excel(tmp_path / "o.xlsx")
-    assert o["QC Verdict"][0] in ("Manual-check", "Review", "OK") and "FORM:" in o["Any Other Remarks"][0]
+    # a synthetic English page is not a Proforma-3: the Proforma-3 reader must not read values from it
+    assert o["QC Verdict"][0] in ("Manual-check", "Review", "OK", "Reject-evidence") and "FORM:" in o["Any Other Remarks"][0]
