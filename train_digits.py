@@ -235,7 +235,9 @@ def _load_cache(dk):
 
 def po_components(strip):
     """PO-ID strip -> the 18 handwritten digit components (last 18 of consistent height) or None."""
-    comps, H, W = D._analyse(strip)
+    if strip.shape[0] < 60 or strip.shape[1] < 100:
+        return None
+    comps, H, W = D._analyse(strip[22:88], h=66)
     comps = [c for c in comps if not c["dot"] and (c["y1"] - c["y0"]) >= 0.30 * H]
     if len(comps) < 18:
         return None
