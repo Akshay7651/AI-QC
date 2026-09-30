@@ -10,3 +10,4 @@ output/*
 data/*
 !data/eval/
 data/eval/sheets/
+photo_models/image_classification_*.onnx

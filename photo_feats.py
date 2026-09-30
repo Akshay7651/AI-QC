@@ -156,3 +156,26 @@ def ssim(a, b):
     s11 = cv2.blur(a * a, k) - mu1 ** 2; s22 = cv2.blur(b * b, k) - mu2 ** 2; s12 = cv2.blur(a * b, k) - mu1 * mu2
     m = ((2 * mu1 * mu2 + C1) * (2 * s12 + C2)) / ((mu1 ** 2 + mu2 ** 2 + C1) * (s11 + s22 + C2))
     return float(m.mean())
+
+
+def water_features(c):
+    """Cheap flood cues on the content image (BGR, HxW=232x160): smooth, non-green, sky-coloured / grey-brown areas in the
+    lower part of the frame (standing water reflects sky or shows muddy brown)."""
+    g = cv2.cvtColor(c, cv2.COLOR_BGR2GRAY).astype(np.float32)
+    hsv = cv2.cvtColor(c, cv2.COLOR_BGR2HSV)
+    hue, s, v = hsv[..., 0].astype(np.float32), hsv[..., 1].astype(np.float32), hsv[..., 2].astype(np.float32)
+    mu = cv2.blur(g, (5, 5)); sd = np.sqrt(np.maximum(cv2.blur(g * g, (5, 5)) - mu * mu, 0))
+    exg = 2 * c[..., 1].astype(np.float32) - c[..., 0] - c[..., 2]
+    smooth = (sd < 5) & (exg < 12)
+    lower = np.zeros_like(smooth); lower[int(H * 0.30):] = True
+    skyc = ((hue > 85) & (hue < 135) & (s > 25)) | ((s < 40) & (v > 150))
+    muddy = (hue >= 5) & (hue < 28) & (s > 30) & (s < 140) & (v > 50) & (v < 190)
+    dark = (v < 90)
+    f = {}
+    f["w_smooth_low"] = float((smooth & lower).sum() / lower.sum())
+    f["w_sky_low"] = float((smooth & lower & skyc).sum() / lower.sum())
+    f["w_muddy_low"] = float((smooth & lower & muddy).sum() / lower.sum())
+    f["w_dark_low"] = float((smooth & lower & dark).sum() / lower.sum())
+    f["w_smooth_rows"] = float(((smooth & lower).mean(axis=1) > 0.5).sum() / H)
+    f["sd_low"] = float(sd[lower].mean() / 255)
+    return f

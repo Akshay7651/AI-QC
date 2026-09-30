@@ -18,24 +18,26 @@ DEBUG = []
 
 
 # ----------------------------------------------------------------------------------------- FORM NO
-def _bar_bbox(g, kx):
-    """bounding box of the barcode in a gray window: largest wide blob of 'vertical bar' energy"""
+def _bar_bbox(g, kx, hmin=0, hmax=10 ** 9):
+    """bounding box of the barcode in a gray window: best wide blob of 'vertical bar' energy (bars have strong
+    horizontal gradients and weak vertical ones; handwriting / underlines do not)"""
     gx = np.abs(cv2.Sobel(g, cv2.CV_32F, 1, 0, ksize=3))
     gy = np.abs(cv2.Sobel(g, cv2.CV_32F, 0, 1, ksize=3))
     e = cv2.boxFilter(gx, -1, (kx, 5)) - 2.0 * cv2.boxFilter(gy, -1, (kx, 5))
     s = float(e.max())
-    if s < 12:
+    if s < 10:
         return None
-    m = (e > 0.25 * s).astype(np.uint8)
+    m = (e > 0.3 * s).astype(np.uint8)
     m = cv2.morphologyEx(m, cv2.MORPH_CLOSE, cv2.getStructuringElement(cv2.MORPH_RECT, (kx, 3)))
     n, lab, st, _ = cv2.connectedComponentsWithStats(m)
     best = None
     for l in range(1, n):
         x0, y0, w, h = st[l, :4]
-        if w < 4 * h or h < 6:
+        if w < 3 * h or h < max(6, hmin) or h > hmax:
             continue
-        if best is None or w * h > best[4]:
-            best = (int(x0), int(y0), int(x0 + w), int(y0 + h), int(w * h))
+        sc = float(e[lab == l].mean()) * w
+        if best is None or sc > best[4]:
+            best = (int(x0), int(y0), int(x0 + w), int(y0 + h), sc)
     return best
 
 
@@ -71,22 +73,24 @@ def _find_formno(txt):
 
 
 def _ocr_formno(band, strip):
-    """-> (form_no|None, conf, raw, note); several independent passes must agree for high confidence"""
-    tries = [(band, 7, "otsu"), (strip, 6, "otsu"), (band, 7, "adapt"), (strip, 6, "adapt")]
-    got = []
-    raws = []
+    """-> (form_no|None, conf, raw, note); independent passes must agree for high confidence"""
+    tries = []
+    if band is not None:
+        tries += [(band, 7, "otsu"), (band, 7, "adapt")]
+    tries += [(strip, 6, "otsu"), (strip, 6, "adapt"), (strip, 11, "otsu")]
+    got, raws = [], []
     for img, psm, bn in tries:
         txt, cf = _tess(img, psm, bn)
         raws.append(txt)
         f = _find_formno(txt)
         if f:
             got.append((f, cf))
-            if len(got) >= 2 and got[0][0] == got[1][0]:
+            from collections import Counter
+            top = Counter(x for x, _ in got).most_common(1)[0]
+            if top[1] >= 2:
                 break
-        if len(got) == 2 and got[0][0] != got[1][0]:
-            continue
     if not got:
-        return None, 0.0, raws[0], "form no pattern not matched"
+        return None, 0.0, raws[0] if raws else "", "form no pattern not matched"
     from collections import Counter
     cnt = Counter(f for f, _ in got)
     f, n = cnt.most_common(1)[0]
@@ -100,36 +104,39 @@ def _ocr_formno(band, strip):
 
 def read_formno(lay):
     """-> (form_no|None, conf, raw_text, note)"""
-    r, B = lay["rgb"], lay["boxes"]
-    if "formno_win" not in B:
-        return None, 0.0, "", "no form-no window"
-    p = lay["tab"]["p"] * lay["scale"]
-    x0, y0, x1, y1 = B["formno_win"]
-    wx0, wx1 = int(max(0, x0 - 0.1 * (x1 - x0))), int(min(r.shape[1], x1 + 0.15 * (x1 - x0)))
-    wy0, wy1 = int(max(0, y0 - 1.5 * p)), int(min(r.shape[0], y1 + 2.2 * p))
-    if wy1 - wy0 < 10 or wx1 - wx0 < 10:
+    r, sc = lay["rgb"], lay["scale"]
+    tab = lay["tab"]
+    gb = lay.get("gb")
+    p = tab["p"] * sc
+    w = (tab["R"] - tab["L"]) * sc
+    T = (gb["T"] if gb else tab["ytop"] - (P.GRID_GAP + P.GRID_H) * tab["p"]) * sc
+    x0 = int(max(0, tab["L"] * sc + 0.3 * w))
+    x1 = int(min(r.shape[1], tab["R"] * sc + 0.2 * w))
+    y0 = int(max(0, T - 9.5 * p))
+    y1 = int(min(r.shape[0], T + 0.6 * p))
+    if y1 - y0 < 10 or x1 - x0 < 10:
         return None, 0.0, "", "form-no window outside image"
-    g = cv2.cvtColor(r[wy0:wy1, wx0:wx1], cv2.COLOR_RGB2GRAY)
-    bb = _bar_bbox(g, max(9, int(1.3 * p)))
+    g = cv2.cvtColor(r[y0:y1, x0:x1], cv2.COLOR_RGB2GRAY)
+    bb = _bar_bbox(g, max(9, int(1.3 * p)), hmin=int(0.6 * p), hmax=int(3.0 * p))
     if bb is None:
         return None, 0.0, "", "barcode not found"
     bx0, by0, bx1, by1, _ = bb
     bh, bw = by1 - by0, bx1 - bx0
-    ya, yb = by1 + int(0.02 * bh), min(g.shape[0], by1 + int(1.25 * bh))
-    xa, xb = max(0, bx0 - int(0.12 * bw)), min(g.shape[1], bx1 + int(0.2 * bw))
+    ya, yb = by1 - int(0.05 * bh), min(g.shape[0], by1 + int(1.35 * bh))
+    xa, xb = max(0, bx0 - int(0.25 * bw)), min(g.shape[1], bx1 + int(0.3 * bw))
     if yb - ya < 8:
-        return None, 0.0, "", "no room under barcode"
+        return None, 0.0, "", "no room under barcode (page cropped?)"
     st = g[ya:yb, xa:xb]
-    sc = max(2.0, 70.0 / max(1, bh))
-    st = cv2.resize(st, None, fx=sc, fy=sc, interpolation=cv2.INTER_CUBIC)
-    bh2 = bh * sc
+    scl = max(2.0, 70.0 / max(1, bh))
+    st = cv2.resize(st, None, fx=scl, fy=scl, interpolation=cv2.INTER_CUBIC)
+    bh2 = bh * scl
     bn = cv2.adaptiveThreshold(st, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, 51, 14)
     n, lab, stt, cen = cv2.connectedComponentsWithStats(bn)
     comps = []
     for l in range(1, n):
-        x, y, w, h, ar = stt[l]
-        if 0.22 * bh2 < h < 0.8 * bh2 and w < 1.4 * h and ar > 0.12 * h * h * 0.3:
-            comps.append((x, y, w, h))
+        x, y, w_, h_, ar = stt[l]
+        if 0.22 * bh2 < h_ < 0.8 * bh2 and w_ < 1.4 * h_ and y > 0.08 * bh2:
+            comps.append((x, y, w_, h_))
     band = None
     if len(comps) >= 6:
         comps.sort(key=lambda c: c[1] + c[3] / 2)
@@ -143,15 +150,11 @@ def read_formno(lay):
         groups.append(cur)
         groups = [g_ for g_ in groups if len(g_) >= 8]
         if groups:
-            gg = groups[0]                    # closest to the barcode
-            x0_ = min(c[0] for c in gg)
-            x1_ = max(c[0] + c[2] for c in gg)
-            y0_ = min(c[1] for c in gg)
-            y1_ = max(c[1] + c[3] for c in gg)
+            gg = groups[0]
+            x0_, x1_ = min(c[0] for c in gg), max(c[0] + c[2] for c in gg)
+            y0_, y1_ = min(c[1] for c in gg), max(c[1] + c[3] for c in gg)
             pad = int(0.2 * (y1_ - y0_)) + 3
             band = st[max(0, y0_ - pad): y1_ + pad, max(0, x0_ - pad): x1_ + pad]
-    if band is None:
-        return None, 0.0, "", "form-no text line not found"
     DEBUG.append((g, (bx0, by0, bx1, by1), st, band))
     return _ocr_formno(band, st)
 
