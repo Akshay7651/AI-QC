@@ -179,17 +179,39 @@ def _analyse(img, h=CELL_H):
     return keep, H, W
 
 
-def _seq(comps, probs, H):
-    """-> list of (char, prob) in reading order, junk dropped; also trailing-mark count."""
-    out = []
-    for c, p in zip(comps, probs):
+def _decode(comps, probs):
+    """Structured decode: leading digit comps, then only marks/junk ('%', slash, pen marks).
+    -> (text, conf, n_digit_comps).  conf = min over digit comps of P(digit) (from the softmax), times split margin."""
+    nd_idx = [i for i, c in enumerate(comps) if not c["dot"]]
+    if not nd_idx:
+        return "", 0.0, 0
+    pd_ = {i: float(probs[i, :10].sum()) for i in nd_idx}
+    pm_ = {i: float(probs[i, 11] + probs[i, 12] + probs[i, 10]) for i in nd_idx}
+    best, bk = None, 0
+    scores = []
+    for k in range(0, len(nd_idx) + 1):
+        sc = sum(np.log(max(pd_[i], 1e-4)) for i in nd_idx[:k]) + sum(np.log(max(pm_[i], 1e-4)) for i in nd_idx[k:])
+        scores.append(sc)
+    order = np.argsort(scores)[::-1]
+    bk = int(order[0])
+    margin = 1.0 if len(order) < 2 else float(1 - np.exp(scores[order[1]] - scores[order[0]]))
+    lead = nd_idx[:bk]
+    if not lead:
+        return "", 0.0, 0
+    text, confs = "", []
+    last = lead[-1]
+    for i, c in enumerate(comps):
+        if i > last:
+            break
         if c["dot"]:
-            out.append((".", 0.9, c))
+            if text and any(j > i for j in lead):
+                text += "."
             continue
-        k = int(p.argmax())
-        ch = CLASSES[k]
-        out.append((ch, float(p[k]), c))
-    return out
+        if i in lead:
+            p = probs[i, :10]
+            text += str(int(p.argmax()))
+            confs.append(float(p.max() / max(p.sum(), 1e-9)) * min(1.0, pd_[i] / 0.9 + 0.05))
+    return text, float(min(confs) * max(margin, 0.05) ** 0.5), len(lead)
 
 
 def read_digit_string(img, expected_len=None):
@@ -204,29 +226,15 @@ def read_digit_string(img, expected_len=None):
     return dict(text=txt, conf=conf, n_components=len(comps))
 
 
-def read_number(img, *, max_digits=3, allow_decimal=True, min_conf=0.5):
+def read_number(img, *, max_digits=3, allow_decimal=True, min_conf=0.4):
     comps, H, W = _analyse(img)
-    if not comps:
+    if not [c for c in comps if not c["dot"]]:
         return dict(value=None, text="", conf=1.0, n_components=0)
     probs = classify_components(comps)
-    seq = _seq(comps, probs, H)
-    chars, confs = [], []
-    seen_mark = False
-    for ch, p, c in seq:
-        if ch in ("%", "#"):
-            if ch == "%":
-                seen_mark = True
-            continue
-        if seen_mark:  # digits after a mark -> ambiguous
-            confs.append(0.0)
-        if ch == "." and (not allow_decimal or "." in chars):
-            continue
-        chars.append(ch)
-        confs.append(p)
-    # strip leading/trailing dots
-    text = "".join(chars).strip(".") if chars else ""
-    conf = float(min(confs)) if confs else 0.0
+    text, conf, nlead = _decode(comps, probs)
     n = len(comps)
+    if not allow_decimal:
+        text = text.replace(".", "")
     if not text or not any(ch.isdigit() for ch in text):
         return dict(value=None, text=text, conf=min(conf, 0.3), n_components=n)
     try:
