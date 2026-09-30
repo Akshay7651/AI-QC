@@ -180,15 +180,19 @@ def _peaks1d(prof, thr, merge):
     return res
 
 
-def line_masks(g):
-    """g: 1000-wide upright gray. -> (binary-ish ink, hl, vl) using black-hat (works on faint ruled lines)."""
+def line_masks(g, relax=False):
+    """g: 1000-wide upright gray. -> (None, hl, vl) using black-hat (works on faint ruled lines); relax=True for
+    blurry / low-contrast photos (thicker lines, lower thresholds)."""
     W = g.shape[1]
-    bh_h = cv2.morphologyEx(g, cv2.MORPH_BLACKHAT, cv2.getStructuringElement(cv2.MORPH_RECT, (1, 9)))
-    bh_v = cv2.morphologyEx(g, cv2.MORPH_BLACKHAT, cv2.getStructuringElement(cv2.MORPH_RECT, (9, 1)))
-    hl = cv2.morphologyEx(bh_h, cv2.MORPH_OPEN, cv2.getStructuringElement(cv2.MORPH_RECT, (int(W * 0.05), 1)))
-    vl = cv2.morphologyEx(bh_v, cv2.MORPH_OPEN, cv2.getStructuringElement(cv2.MORPH_RECT, (1, int(W * 0.03))))
-    th = max(8.0, 0.3 * float(np.percentile(hl, 99.7)))
-    tv = max(8.0, 0.3 * float(np.percentile(vl, 99.7)))
+    kk = 15 if relax else 9
+    if relax:
+        g = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8)).apply(g)
+    bh_h = cv2.morphologyEx(g, cv2.MORPH_BLACKHAT, cv2.getStructuringElement(cv2.MORPH_RECT, (1, kk)))
+    bh_v = cv2.morphologyEx(g, cv2.MORPH_BLACKHAT, cv2.getStructuringElement(cv2.MORPH_RECT, (kk, 1)))
+    hl = cv2.morphologyEx(bh_h, cv2.MORPH_OPEN, cv2.getStructuringElement(cv2.MORPH_RECT, (int(W * (0.04 if relax else 0.05)), 1)))
+    vl = cv2.morphologyEx(bh_v, cv2.MORPH_OPEN, cv2.getStructuringElement(cv2.MORPH_RECT, (1, int(W * (0.025 if relax else 0.03)))))
+    th = max(4.0 if relax else 8.0, (0.15 if relax else 0.3) * float(np.percentile(hl, 99.7)))
+    tv = max(4.0 if relax else 8.0, (0.15 if relax else 0.3) * float(np.percentile(vl, 99.7)))
     hl = ((hl > th) * 255).astype(np.uint8)
     vl = ((vl > tv) * 255).astype(np.uint8)
     return None, hl, vl
@@ -505,8 +509,13 @@ def _layout(r, info):
         lay["notes"].append("no ruled lines found")
         return lay
     _, hl, vl = line_masks(g)
-    lay["hl"], lay["vl"] = hl, vl
     tab = locate_table(g, hl, vl)
+    if tab is None:          # blurry / low contrast: retry with relaxed line extraction
+        _, hl, vl = line_masks(g, relax=True)
+        tab = locate_table(g, hl, vl)
+        if tab is not None:
+            lay["notes"].append("low-contrast page (relaxed line detection)")
+    lay["hl"], lay["vl"] = hl, vl
     if tab is None:
         lay["notes"].append("table not located")
         return lay
