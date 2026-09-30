@@ -46,6 +46,7 @@ COUNTER_OF = {
     "Crop mismatch": "crop_mismatch",
     "Flooding seen": "flooded",
     "Photo not of the field": "photo_not_field",
+    "Same location": "same_location",
     "Photo GPS mismatch": "gps_mismatch",
     "Signature missing": "signature_missing",
     "Form vs app mismatch": "mismatch",
@@ -372,16 +373,22 @@ def evaluate(row, form=None, photos=None, gps=None, data_flags="", risk=None):
                 parts_photo.append(t + ".")
 
     # ------------------------------------------------------------ GPS cluster
+    same_txt = gps.get("Same_Location_Remark")
+    same_txt = None if _blank(same_txt) else str(same_txt).strip()
     g_rem = str(gps.get("Suggested_Remark") or "OK")
     same = int(_num(gps.get("Nearby_Same_Surveyor_25m")) or 0)
     onf = int(_num(gps.get("Records_On_Same_Field")) or 0)
     dmg = _num(row.get("total_damage_pct"))
+    if same_txt:
+        flag("Same location", "review", "multiple surveys at the same location")
     if g_rem.startswith("Same Location"):
-        if "QC Required" in g_rem:
+        if same_txt:
+            pass
+        elif "QC Required" in g_rem:
             parts_gps.append(f"{same} same-surveyor records within {C.GPS_PROXIMITY_RADIUS_M} m - QC required.")
         else:
             parts_gps.append(f"{same} same-surveyor records within {C.GPS_PROXIMITY_RADIUS_M} m (low damage{'' if dmg is None else f' {_fmt(dmg)}%'}).")
-        flag("GPS cluster", "review", f"{same} same-surveyor records within {C.GPS_PROXIMITY_RADIUS_M} m")
+        flag("GPS cluster", "review", None if same_txt else f"{same} same-surveyor records within {C.GPS_PROXIMITY_RADIUS_M} m")
     elif g_rem.startswith("Review"):
         parts_gps.append(f"{onf} records on the same survey number - review.")
         flag("GPS cluster", "review")
@@ -424,6 +431,8 @@ def evaluate(row, form=None, photos=None, gps=None, data_flags="", risk=None):
         sections.append("FORM: " + " ".join(parts_form))
     if parts_photo:
         sections.append("PHOTOS: " + " ".join(parts_photo))
+    if same_txt:
+        sections.append("SAME LOCATION: " + same_txt)
     if parts_gps:
         sections.append("GPS: " + " ".join(parts_gps))
     if dflags:

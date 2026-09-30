@@ -4,8 +4,13 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import cv2, numpy as np, pandas as pd
 import photo_feats as PF
 
-def load_feats(cache='cache/photos/train_feats.pkl'):
-    lab = pd.read_csv('data/eval/photos_labels.csv')
+LABELS = {'train': ['data/eval/photos_labels.csv'], 'all': ['data/eval/photos_labels.csv', 'data/eval/photos_labels_test.csv']}
+
+
+def load_feats(which='train'):
+    """Labels + cached features. which: 'train' (first hand-labelled set, 436 photos) or 'all' (train + held-out test set)."""
+    lab = pd.concat([pd.read_csv(p) for p in LABELS[which]], ignore_index=True)
+    cache = f'cache/photos/train_feats_{which}.pkl'
     if os.path.exists(cache):
         d = pickle.load(open(cache, 'rb'))
         if d['files'] == list(lab.file):
@@ -19,6 +24,8 @@ def load_feats(cache='cache/photos/train_feats.pkl'):
     d = dict(files=list(lab.file), form=pd.DataFrame(ff), field=pd.DataFrame(fl), content=[cv2.resize(o, (360, 525), interpolation=cv2.INTER_AREA) for o in ori])
     pickle.dump(d, open(cache, 'wb'))
     return lab, d
+
+
 ROTS = [cv2.ROTATE_90_CLOCKWISE, cv2.ROTATE_180, cv2.ROTATE_90_COUNTERCLOCKWISE]
 FLIPMAP = {0: 0, 90: 270, 180: 180, 270: 90}
 
@@ -40,12 +47,13 @@ def main():
     from sklearn.pipeline import make_pipeline
     from sklearn.preprocessing import StandardScaler
     from sklearn.model_selection import GroupKFold, cross_val_predict
-    lab, d = load_feats()
+    which = sys.argv[1] if len(sys.argv) > 1 else 'all'
+    lab, d = load_feats(which)
     grp = lab.file.str.split('_').str[0].values
     out = {'n_photos': len(lab), 'n_rows': int(len(set(grp))), 'class_counts': lab.cls.value_counts().to_dict()}
     # ---- 1. form vs field
     Xf = d['form'].values; yf = lab.is_form.values
-    mk = lambda: [RandomForestClassifier(150, random_state=0, min_samples_leaf=2, n_jobs=2), ExtraTreesClassifier(150, random_state=0, min_samples_leaf=2, n_jobs=2),
+    mk = lambda: [RandomForestClassifier(100, random_state=0, min_samples_leaf=2, n_jobs=2), ExtraTreesClassifier(100, random_state=0, min_samples_leaf=2, n_jobs=2),
                   make_pipeline(StandardScaler(), LogisticRegression(C=1, max_iter=3000))]
     P = [cross_val_predict(m, Xf, yf, groups=grp, cv=GroupKFold(5), method='predict_proba')[:, 1] for m in mk()]
     p = np.mean(P, 0); pr = p > .5; tp = int((pr & (yf == 1)).sum())
@@ -63,7 +71,7 @@ def main():
     pu = np.zeros((len(up), 4)); pr_ = np.zeros((len(rot), 4)); ug = grp[up]
     for tr, te in GroupKFold(5).split(X, Y, G):
         trg = set(G[tr])
-        m = ExtraTreesClassifier(150, random_state=0, min_samples_leaf=2, n_jobs=2).fit(X[tr], Y[tr])
+        m = ExtraTreesClassifier(80, random_state=0, min_samples_leaf=3, n_jobs=2).fit(X[tr], Y[tr])
         a = [j for j in range(len(up)) if ug[j] not in trg]
         b = [j for j in range(len(rot)) if grp[rot[j]] not in trg]
         if a and set(a) - set(np.where(pu.sum(1) > 0)[0]):
@@ -77,22 +85,19 @@ def main():
                          upright_field_false_rot=float(((1 - pu[:, 0] > TH) & (isF[up] == 0)).sum() / (isF[up] == 0).sum()),
                          upright_form_false_rot=float(((1 - pu[:, 0] > TH) & (isF[up] == 1)).sum() / (isF[up] == 1).sum()),
                          direction_90_for_rotated=float((pr_[:, 1][isF[rot] == 0] > 0.5).mean()))
-    em = ExtraTreesClassifier(150, random_state=0, min_samples_leaf=2, n_jobs=2).fit(np.vstack([X, np.repeat(Xr, 0, axis=0)]) if False else X, Y)
+    em = ExtraTreesClassifier(80, random_state=0, min_samples_leaf=3, n_jobs=2).fit(np.vstack([X, np.repeat(Xr, 0, axis=0)]) if False else X, Y)
     pickle.dump(em, open('photo_models/orient.pkl', 'wb'))
-    # form sideways rule (text lines vertical -> edge_xy high)
-    fr = d['form'].edge_xy.values
-    out['orient']['form_rule'] = dict(thr=0.56, upright_forms_fp=int(((fr > .56) & (isF == 1) & ~rotm).sum()), rotated_forms_tp=int(((fr > .56) & (isF == 1) & rotm).sum()), n_rot_forms=int(((isF == 1) & rotm).sum()))
     # ---- 3. crop visible vs not (non-form photos only)
     nf = np.where(isF == 0)[0]
-    Xc = d['field'].values[nf]; yc = (lab.cls.values[nf] == 'S').astype(int); gc = grp[nf]
-    rf = RandomForestClassifier(150, min_samples_leaf=2, random_state=0, n_jobs=2, class_weight='balanced')
+    Xc = d['field'].values[nf]; yc = np.isin(lab.cls.values[nf], ['S', 'C']).astype(int); gc = grp[nf]
+    rf = RandomForestClassifier(100, min_samples_leaf=2, random_state=0, n_jobs=2, class_weight='balanced')
     pc = cross_val_predict(rf, Xc, yc, groups=gc, cv=GroupKFold(6), method='predict_proba')[:, 1]
     prc = pc > .5
     out['crop_visible'] = dict(n=len(nf), n_crop=int(yc.sum()), acc=float((prc == yc).mean()), crop_recall=float((prc & (yc == 1)).sum() / yc.sum()),
-                               noncrop_recall=float((~prc & (yc == 0)).sum() / max((yc == 0).sum(), 1)), note='only 21 non-crop field-type photos (7 scenes); weak')
+                               noncrop_recall=float((~prc & (yc == 0)).sum() / max((yc == 0).sum(), 1)), note='few non-crop field-type photos; weak')
     rf.fit(Xc, yc)
     pickle.dump(dict(model=rf, cols=list(d['field'].columns)), open('photo_models/crop_visible.pkl', 'wb'))
-    json.dump(out, open('data/eval/photo_cv.json', 'w'), indent=1, default=float)
+    json.dump(out, open(f'data/eval/photo_cv_{which}.json', 'w'), indent=1, default=float)
     print(json.dumps(out, indent=1, default=float))
 
 

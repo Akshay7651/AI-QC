@@ -257,7 +257,7 @@ QC_BLOCK = [
     "Duplicate photos (n)", "Photos rotated (Yes/No)", "Photo GPS distance (m)", "Photos analysed (n)",
     "Photo scene type", "Crop present in photo", "Crop seen in photo", "Crop matches declared", "Flooding/waterlogging seen",
     "Crop damage state",
-    C.COL_FARMER_PHOTO, C.COL_PHOTO_LOSS, "AI_Flags", C.COL_OTHER_REMARKS, "AI Engine",
+    C.COL_FARMER_PHOTO, C.COL_PHOTO_LOSS, "AI_Flags", "Same Location Remark", C.COL_OTHER_REMARKS, "AI Engine",
 ]
 _AI_PREFIX = ("OK:", "REJECT-EVIDENCE:", "MANUAL-CHECK:", "REVIEW:", "FORM:", "PHOTOS:", "GPS:", "DATA:", "RISK ")
 
@@ -292,6 +292,7 @@ def assemble_local(df, results, keys):
     R = [results.get(k) for k in keys]
     R = [r if r and "verdict" in r else None for r in R]
     cols = {c: [None] * n for c in QC_BLOCK}
+    slr = df["Same_Location_Remark"].tolist() if "Same_Location_Remark" in df else None
     for i, r in enumerate(R):
         if r is None:
             continue
@@ -305,6 +306,7 @@ def assemble_local(df, results, keys):
         put("AI_Confidence", r.get("confidence"))
         put("AI_Flags", ", ".join(r.get("flags") or []))
         put(C.COL_OTHER_REMARKS, r.get("remark"))
+        put("Same Location Remark", _nn(slr[i]) if slr is not None else None)
         put("AI Engine", r.get("engine"))
         if f and f.get("_state") not in ("skipped",):
             put("Form vs App (Match/Mismatch/NA)", r.get("match"))
@@ -405,8 +407,11 @@ class Autosaver:
                 self.last_seconds = time.time() - t
 
     def _loop(self):
-        while not self._stop.wait(self.interval):
+        wait = self.interval
+        while not self._stop.wait(wait):
             self.save("autosave")
+            # a very large sheet can take a while to write: never spend more than ~1/3 of the time saving
+            wait = max(self.interval, 3 * getattr(self, "last_seconds", 0))
 
     def start(self):
         if self.interval and self.interval > 0:
@@ -474,7 +479,7 @@ def _main_local(args, df, modes, ck, keys, prior_done):
     rc, runner = 0, None
     try:
         if kinds and todo:
-            gcols = [c for c in gps_qc.OUT if c in df]
+            gcols = [c for c in dict.fromkeys(list(gps_qc.OUT) + ["Same_Location_Remark"]) if c in df]
             ctx = {"gps": df[gcols].to_dict("records") if gcols else None,
                    "dflags": df["Data_QC_Flags"].fillna("").tolist() if "Data_QC_Flags" in df else None,
                    "risk": df[["Risk_Score", "Risk_Reasons"]].to_dict("records") if "Risk_Score" in df else None}

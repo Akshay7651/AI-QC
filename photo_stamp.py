@@ -113,13 +113,15 @@ def _stack(masks):
 
 
 def _split_blocks(txt):
+    """Split stacked OCR text into per-photo blocks: a block starts at each line beginning with 'Lat'."""
     blocks, cur = [], []
     for line in txt.splitlines():
-        if re.match(r"\s*(L[a-z]*t|Latit)", line) and cur and any(re.match(r"\s*L", c) for c in cur):
-            if any(("lat" in c.lower()[:5]) for c in cur):
-                blocks.append("\n".join(cur)); cur = []
-        cur.append(line)
-    blocks.append("\n".join(cur))
+        if re.match(r"\s*Lat", line, re.I) and cur:
+            blocks.append("\n".join(cur)); cur = []
+        if line.strip():
+            cur.append(line)
+    if cur:
+        blocks.append("\n".join(cur))
     return blocks
 
 
@@ -171,7 +173,7 @@ def read_stamps(grays):
     try:
         masks = [_mask(g) for g in grays]
         txt = _ocr(_stack(masks))
-        blocks = [b for b in _split_blocks(txt) if "lat" in b.lower()[:200]]
+        blocks = _split_blocks(txt)
         if len(blocks) == n:
             for i, b in enumerate(blocks):
                 res[i] = parse_block(b)

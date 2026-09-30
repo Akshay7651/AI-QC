@@ -193,3 +193,10 @@ def test_damage_state_vs_reported_loss():
     e = ev(r=row(crop_loss_pct=80, affected_area_pct=80), f=form(form_area=80.0, form_loss=80.0, row_area=80.0, row_loss=80.0), p=photos(damage_state="healthy"))
     assert e["verdict"] == "Review" and "healthy crop but reported crop loss is 80%" in e["remark"]
     assert ev(p=photos(damage_state="lodged"))["verdict"] == "Review"      # app loss 0 vs visible damage
+
+
+def test_same_location_remark_verbatim():
+    txt = "MULTIPLE SURVEYS AT SAME LOCATION: 448 other record(s) within 25 m (448 by the same surveyor) - cluster G-251"
+    e = ev(gps={"Suggested_Remark": "Same Location - QC Required", "Nearby_Same_Surveyor_25m": 448, "Same_Location_Remark": txt})
+    assert "SAME LOCATION: " + txt in e["remark"] and e["verdict"] == "Review" and "same_location" in e["counters"]
+    assert "448 same-surveyor records within" not in e["remark"]

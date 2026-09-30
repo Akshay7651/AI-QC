@@ -313,3 +313,22 @@ def test_assemble_local_keeps_input_values_for_unprocessed_rows():
     # an earlier AI remark is replaced, not stacked
     df["Any Other Remarks"] = ["OK: old | FORM: x", "kept"]
     assert r.assemble_local(df, res, ["A", "B"])["Any Other Remarks"][0] == "OK: fine"
+
+
+def test_fast_xlsx_writer_roundtrip_and_odd_values(tmp_path):
+    import report
+    from openpyxl import load_workbook
+    df = pd.DataFrame({"docket_id": ["1", "2", "3"], "v": [1.5, None, float("nan")], "t": ["=SUM(A1)", "a<b & \x0bc", "कृषक ✓"],
+                       "b": [True, False, None], "QC Verdict": ["OK", "Review", "Reject-evidence"], "Any Other Remarks": ["x" * 40000, "", None]})
+    p = str(tmp_path / "f.xlsx")
+    assert report._write_fast(df, p, "Any Other Remarks") == "fastxml"
+    ws = load_workbook(p).active
+    assert ws.freeze_panes == "B2" and ws.max_row == 4 and ws["B2"].value == 1.5 and ws["B3"].value is None
+    assert ws["C2"].value == "=SUM(A1)" and ws["C2"].data_type == "s" and ws["C3"].value == "a<b & c" and ws["C4"].value == "कृषक ✓"
+    assert ws["D2"].value is True and ws["D3"].value is False and len(ws["F2"].value) == 32000
+    assert ws.conditional_formatting and ws.auto_filter.ref == "A1:F4"
+    back = pd.read_excel(p, dtype=str)
+    assert back["QC Verdict"].tolist() == ["OK", "Review", "Reject-evidence"]
+    empty = pd.DataFrame({"docket_id": []})
+    report._write_fast(empty, str(tmp_path / "e.xlsx"), "x")
+    assert load_workbook(tmp_path / "e.xlsx").active.max_row == 1

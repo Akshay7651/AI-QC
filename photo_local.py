@@ -37,6 +37,7 @@ _MODELS = os.path.join(_HERE, "photo_models")
 _CACHE_DIR = os.path.join(_HERE, getattr(C, "PHOTO_CACHE_DIR", "cache/photos"))
 _LOCK = threading.Lock()
 _M = {}
+_MV = None
 
 FIELD_LABELS = ("no crop", "cut & spread", "crop mismatch", "standing crop")
 DUP_HD = 12            # pHash Hamming distance (of 64) for a near-duplicate
@@ -48,12 +49,29 @@ KEYWORDS = ("प्रारूप", "बीमा", "हस्ताक्ष�
 
 
 # ---------------------------------------------------------------- models
+def _iter_models(obj):
+    if isinstance(obj, dict):
+        for v in obj.values():
+            yield from _iter_models(v)
+    elif isinstance(obj, (list, tuple)):
+        for v in obj:
+            yield from _iter_models(v)
+    else:
+        yield obj
+        if hasattr(obj, "steps"):
+            for _, st in obj.steps:
+                yield st
+
+
 def _load(name):
     with _LOCK:
         if name not in _M:
             p = os.path.join(_MODELS, name)
             if name.endswith(".pkl"):
                 _M[name] = pickle.load(open(p, "rb")) if os.path.exists(p) else None
+                for m in _iter_models(_M[name]):
+                    if hasattr(m, "n_jobs"):
+                        m.n_jobs = 1
             elif name.endswith(".onnx"):
                 try:
                     _M[name] = cv2.FaceDetectorYN.create(p, "", (240, 350), 0.5, 0.3, 50) if os.path.exists(p) else None
@@ -144,10 +162,21 @@ def _field_state(ff, p_crop):
 
 
 # ---------------------------------------------------------------- per photo
+def _models_version():
+    """Changes whenever a model file is retrained, so cached predictions never go stale."""
+    try:
+        return "m%x" % (sum(int(os.stat(os.path.join(_MODELS, f)).st_mtime) for f in ("form.pkl", "orient.pkl", "crop_visible.pkl", "yunet.onnx")) % 0xFFFFFF)
+    except OSError:
+        return "m0"
+
+
 def _key(path):
+    global _MV
+    if _MV is None:
+        _MV = _models_version()
     try:
         st = os.stat(path)
-        return f"{os.path.basename(path)}.{st.st_size}.{int(st.st_mtime)}.v3.pkl"
+        return f"{os.path.basename(path)}.{st.st_size}.{int(st.st_mtime)}.{_MV}.pkl"
     except OSError:
         return None
 
@@ -244,29 +273,24 @@ def _analyse_new(paths):
         d["form_f"] = PF.form_features(c)
         d["exif"] = _exif(paths[i]) if not st.get("stamp_ok") or st.get("date") is None else {"date": None, "lat": None, "lng": None}
         out[i] = d
-    # batch model calls
-    idx = [i for i in ok]
+    # batch model calls (form probability first; orientation / crop models only for photos that are not forms)
+    idx = list(ok)
     pf = _form_prob([out[i]["form_f"] for i in idx])
-    po = _orient_probs([out[i]["_img_small"] for i in idx])
     for j, i in enumerate(idx):
+        out[i]["p_form"] = float(pf[j])
+    fld = [i for i in idx if out[i]["p_form"] < 0.5]
+    po = _orient_probs([out[i]["_img_small"] for i in fld])
+    for j, i in enumerate(fld):
+        out[i]["orient_p"] = po[j].tolist()
+    for i in idx:
         d = out[i]
-        d["p_form"] = float(pf[j])
-        d["orient_p"] = po[j].tolist()
-    # orientation decision + re-derive features for rotated photos
-    for j, i in enumerate(idx):
-        d = out[i]
-        ef = d["form_f"]["edge_xy"]
-        rotated_by = d["rot_stamp"]
+        d.setdefault("orient_p", [1.0, 0.0, 0.0, 0.0])
         k = 0
-        if d["p_form"] >= 0.5:
-            if ef > FORM_SIDEWAYS_EDGE_XY:
-                k = 90
-        else:
-            pr = np.array(d["orient_p"])
-            if 1 - pr[0] > ROT_TH:
-                k = [90, 180, 270][int(np.argmax(pr[1:]))]
+        pr = np.array(d["orient_p"])
+        if d["p_form"] < 0.5 and 1 - pr[0] > ROT_TH:
+            k = [90, 180, 270][int(np.argmax(pr[1:]))]      # sideways forms are not detected (striped backgrounds fool line statistics)
         d["rot_content"] = k
-        d["rotated"] = bool(rotated_by or k)
+        d["rotated"] = bool(d["rot_stamp"] or k)
         if k:
             im2 = _rotate_back(d["_img_small"], k)
             c = cv2.resize(im2, (PF.W, PF.H), interpolation=cv2.INTER_AREA)
@@ -278,12 +302,15 @@ def _analyse_new(paths):
         d["hash"] = PF.phash(d["_img_small"])
         d["sg"] = PF.small_gray(d["_img_small"])
         d["nfaces"], d["face_conf"] = _faces(_rotate_back(d["_img_small"], k) if k else d["_img_small"])
-        cv_ = _load("crop_visible.pkl")
-        if cv_ is not None:
-            d["p_crop"] = float(cv_["model"].predict_proba(np.array([[d["field_f"][cc] for cc in cv_["cols"]]]))[0, 1])
-        else:
-            d["p_crop"] = 0.5
         d["quality"] = "dark" if d["field_f"]["v_mean"] < 0.18 else "blurry" if d["field_f"]["lap"] < 0.004 else "good"
+    cv_ = _load("crop_visible.pkl")
+    fl2 = [i for i in idx if out[i]["p_form"] < 0.5]
+    for i in idx:
+        out[i]["p_crop"] = 0.5
+    if cv_ is not None and fl2:
+        pc = cv_["model"].predict_proba(np.array([[out[i]["field_f"][c_] for c_ in cv_["cols"]] for i in fl2]))[:, 1]
+        for j, i in enumerate(fl2):
+            out[i]["p_crop"] = float(pc[j])
     for d in out:
         if d is not None:
             d.pop("_img_small", None)
@@ -493,7 +520,7 @@ def analyse(paths, row: dict, form_image=None) -> dict:
     qual = max(set(d["quality"] for d in P), key=[d["quality"] for d in P].count)
     res = {
         "photo_status": "OK", "engine": "local-v3", "n_photos": n,
-        "field_photo": field, "field_note": note, "farmer_photo": farmer,
+        "field_photo": field, "field_note": note, "farmer_photo": farmer, "person_each": [bool(d["nfaces"] > 0) for d in P],
         "photo_loss": est, "photo_loss_note": "rough colour-based hint only; not correlated with app loss in tests" if est is not None else "",
         "photo_date": photo_date, "photo_quality": qual, "photo_flags": flags,
         "photo_is_form": bool(n_form == n), "n_form_photos": n_form, "photo_is_form_each": is_form,
