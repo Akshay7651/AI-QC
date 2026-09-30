@@ -1,0 +1,49 @@
+{
+ "n_photos": 766,
+ "n_rows": 257,
+ "class_counts": {
+  "F": 451,
+  "S": 284,
+  "M": 16,
+  "H": 12,
+  "C": 3
+ },
+ "form": {
+  "acc": 0.9817232375979112,
+  "precision": 0.9802197802197802,
+  "recall": 0.9889135254988913,
+  "errors": [
+   42,
+   43,
+   44,
+   87,
+   88,
+   89,
+   430,
+   431,
+   432,
+   443,
+   444,
+   670,
+   671,
+   672
+  ],
+  "ambiguous": 39
+ },
+ "orient": {
+  "threshold": 0.8,
+  "field_rotated_detected": 0.8333333333333334,
+  "n_field_rotated": 42,
+  "upright_field_false_rot": 0.02197802197802198,
+  "upright_form_false_rot": 0.0,
+  "direction_90_for_rotated": 0.6904761904761905
+ },
+ "crop_visible": {
+  "n": 315,
+  "n_crop": 287,
+  "acc": 0.9174603174603174,
+  "crop_recall": 0.9825783972125436,
+  "noncrop_recall": 0.25,
+  "note": "few non-crop field-type photos; weak"
+ }
+}

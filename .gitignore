@@ -7,4 +7,6 @@ output/*
 !output/.gitkeep
 *.xlsx
 !tests/*.xlsx
-data/
+data/*
+!data/eval/
+data/eval/sheets/
