@@ -175,8 +175,7 @@ def evaluate(row, form=None, photos=None, gps=None, data_flags="", risk=None):
                 flag("PO ID mismatch", "review", "PO ID on the form differs from the docket")
                 shown = form.get("po_id") if _readable(form, form.get("po_id"), "po_id") else None
                 s += f"; PO ID {shown} does NOT match docket" if shown else "; PO ID does NOT match docket"
-            else:
-                s += "; PO ID not readable"
+            # (PO ID reading is skipped by design: say nothing when it is unknown)
             parts_form.append(s + ".")
             # values
             fa, fl = _num(form.get("form_area")), _num(form.get("form_loss"))
@@ -221,7 +220,7 @@ def evaluate(row, form=None, photos=None, gps=None, data_flags="", risk=None):
             missing = []
             for name, v in sig:
                 if v is None:
-                    bits.append(f"{name} not readable")
+                    bits.append(f"{name} not assessed" if name == "block officer" else f"{name} not readable")
                 else:
                     bits.append(f"{name} {'Yes' if v else 'NO'}")
                     if not v:

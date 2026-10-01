@@ -159,3 +159,11 @@ Remaining: user's 3,000 human rows -> retrain.py; fresh-batch loop (9/10 >= 95%)
 - `python retrain.py --labels human_disputed.xlsx --holdout 0.3 --steps 4000` (269 train / 114 never-trained hold-out) -> new models/cells_cnn.npz ADOPTED. Real hold-out (114 forms, 228 cells): new model better calibrated;
   CELL_GATE lowered 0.8 -> 0.7: 71% of cells answered at 96.9% precision; non-zero answered (19) 95% right; false zeros 4 (old model: 5 at its gate, with lower coverage).
 - Still weak: non-zero coverage (~24-45% depending on gate) - small number of non-zero training examples (~80 human non-zero forms). More human non-zero forms (the user's remaining checked rows, staged filled forms) will help most.
+
+
+### UPDATE (2026-10-01): date reader, new columns, photo/person logic (commits de850d1 and later)
+- Date reader (date_reader.py, models/dates_crnn.npz CNN+BiGRU+CTC marginalised over writing styles): only the LOSS date is enabled (gate 0.95: 96-97% precise, ~45-60% coverage; on unseen-100: read on 32 rows, 29 equal the app loss date).
+  Sowing/intimation/inspection OFF (43-90% precision). Cause: app intimation date equals the form's only 19%; rare sowing months; month-name dates. FIX = ~1,000 forms with the 4 dates typed by humans (offered a labelling sheet to the user).
+- New Excel columns: Sowing/Loss/Intimation/Inspection date (Form); 'Farmer/person present in photos (remark)' ('Farmer available' if ANY photo shows a person with >=25% body visible, else 'Farmer not available'; face detector only: legs/edge-of-frame people are missed by design);
+  Form status = correct / incomplete (farmer or company signature missing, or nothing written) - overwrite/whitener NOT detected; 'Date of survey (as per Geo Tagged Image)' from the photo stamp (landscape photos supported); photo GPS vs app check stays ON (config.USE_PHOTO_GPS).
+- ALL photos of a docket are checked (MAX_PHOTOS_PER_ROW 10; data has up to 6). PO ID is skipped by design (user decision).
