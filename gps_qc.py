@@ -8,7 +8,7 @@ from scipy.spatial import cKDTree
 import config as C
 
 OUT = ["Nearby_Same_Surveyor_25m", "Nearby_Any_Surveyor_25m", "Records_On_Same_Field",
-       "Group_ID", "Cluster_Size", "Suggested_Remark", "Suggest_%", "Same_Location_Remark"]
+       "Group_ID", "Cluster_Size", "Suggested_Remark", "Suggest_%", "Same_Location_Remark", "Same_Location_Values"]
 
 
 def run(df: pd.DataFrame, radius_m: float = C.GPS_PROXIMITY_RADIUS_M) -> pd.DataFrame:
@@ -101,6 +101,28 @@ def run(df: pd.DataFrame, radius_m: float = C.GPS_PROXIMITY_RADIUS_M) -> pd.Data
             parts.append("e.g. dockets " + ", ".join(dock[j] for j in examples[i]))
         txt[i] = "; ".join(parts)
     out["Same_Location_Remark"] = txt
+    # Do the surveys at one spot carry the same (possibly copied) app entry?  Each docket is still checked on its own form.
+    a_pct = pd.to_numeric(df["affected_area_pct"], errors="coerce").to_numpy(float)
+    l_pct = pd.to_numeric(df["crop_loss_pct"], errors="coerce").to_numpy(float)
+    vals = np.full(n, "", dtype=object)
+    fmt = lambda x: "?" if x != x else f"{x:g}"
+    members = {}
+    for i in range(n):
+        if valid[i] and csize[i] > 1:
+            members.setdefault(group[i], []).append(i)
+    for idx in members.values():
+        tup = [(fmt(a_pct[j]), fmt(l_pct[j])) for j in idx]
+        distinct = list(dict.fromkeys(tup))
+        if len(distinct) == 1:
+            a, l = distinct[0]
+            t = f"all {len(idx)} surveys at this spot have the SAME app entry ({a}% area / {l}% loss)"
+            if (a_pct[idx[0]] or 0) > 0 or (l_pct[idx[0]] or 0) > 0:
+                t += " - possible copied entry"
+        else:
+            t = f"the {len(idx)} surveys at this spot have different app entries (" + "; ".join(f"{a}%/{l}%" for a, l in distinct[:4]) + (" ..." if len(distinct) > 4 else "") + ")"
+        for j in idx:
+            vals[j] = t
+    out["Same_Location_Values"] = vals
     out["Nearby_Same_Surveyor_25m"] = same_surv
     out["Nearby_Any_Surveyor_25m"] = any_surv
     out["Records_On_Same_Field"] = on_field

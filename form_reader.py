@@ -107,6 +107,38 @@ def _ocr_formno(band, strip):
     return f, conf, raws[0], note
 
 
+def _formno_scan(r):
+    """Fallback when the barcode/under-barcode window was not found (tilted, shadowed or off-centre photos): scan the whole top-right
+    of the page.  Same voting rule as _ocr_formno (>= 3 agreeing passes are needed to be asserted)."""
+    from collections import Counter
+    H, W = r.shape[:2]
+    got = []
+    for fy in (0.17, 0.24):
+        g = cv2.cvtColor(r[: int(fy * H), int(0.42 * W):], cv2.COLOR_RGB2GRAY)
+        sc = 1500.0 / max(1, g.shape[1])
+        g = cv2.resize(g, None, fx=sc, fy=sc, interpolation=cv2.INTER_CUBIC if sc > 1 else cv2.INTER_AREA)
+        sharp = cv2.addWeighted(g, 2.0, cv2.GaussianBlur(g, (0, 0), 3), -1.0, 0)
+        for img, psm, bn in ((g, 6, "otsu"), (g, 6, "adapt"), (sharp, 6, "otsu"), (g, 11, "otsu")):
+            try:
+                txt, _ = _tess(img, psm, bn)
+            except Exception:     # noqa: BLE001
+                continue
+            f = _find_formno(txt)
+            if f:
+                got.append(f)
+                if Counter(got).most_common(1)[0][1] >= 3:
+                    break
+        if got and Counter(got).most_common(1)[0][1] >= 3:
+            break
+    if not got:
+        return None, 0.0, "", "form no pattern not matched"
+    cnt = Counter(got)
+    f, n = cnt.most_common(1)[0]
+    conf = {1: 0.6, 2: 0.75, 3: 0.93, 4: 0.97, 5: 0.98}.get(n, 0.99)
+    note = "" if n >= 3 else ("form no: only %d agreeing pass(es) - verify manually" % n)
+    return f, conf, "", note
+
+
 def read_formno(lay):
     """-> (form_no|None, conf, raw_text, note)"""
     r, sc = lay["rgb"], lay["scale"]
@@ -559,6 +591,13 @@ def read_form(path_or_pil, docket=None, debug=False):
         fn, fcf, raw, note = read_formno(lay)
     except Exception as e:     # noqa: BLE001
         fn, fcf, raw, note = None, 0.0, "", f"form no reading failed: {type(e).__name__}"
+    if not fn or float(fcf) < FORMNO_GATE:       # second chance: scan the top of the page
+        try:
+            fn2, fcf2, raw2, note2 = _formno_scan(r)
+            if fn2 and float(fcf2) > float(fcf):
+                fn, fcf, raw, note = fn2, fcf2, raw2, note2
+        except Exception:     # noqa: BLE001
+            pass
     out["form_no"], out["form_no_conf"] = fn, round(float(fcf), 3)
     out["form_no_guess"] = None
     if fn and float(fcf) < FORMNO_GATE:       # measured: only '>=3 agreeing passes' is ~96-97% exact -> weaker reads are hints, not facts

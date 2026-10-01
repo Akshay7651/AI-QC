@@ -133,6 +133,7 @@ _REASON = {
     "Photo GPS mismatch": "the photo was taken far from the app location",
     "Photo date outside survey period": "the photo date is outside the survey period",
     "Same location": "several surveys were done at the same spot",
+    "Same app entry at same spot": "the surveys at the same spot all have the same app entry (possible copy)",
     "GPS cluster": "many surveys by the same surveyor at one spot",
     "Field state vs reported loss": "the field in the photo does not match the reported loss",
     "Crop mismatch": "the crop in the photo is different from the declared crop",
@@ -237,7 +238,9 @@ def _plain(row, form, photos, gps, flags, verdict, ev):
     gps = gps or {}
     anyn, same = int(_num(gps.get("Nearby_Any_Surveyor_25m")) or 0), int(_num(gps.get("Nearby_Same_Surveyor_25m")) or 0)
     if anyn:
-        out.append(f"PLACE: {anyn} other survey(s) within 25 m ({same} by the same surveyor, {anyn - same} by others).")
+        sv = str(gps.get("Same_Location_Values") or "").strip()
+        out.append(f"PLACE: {anyn} other survey(s) within 25 m ({same} by the same surveyor, {anyn - same} by others)."
+                   + (f" {sv[0].upper() + sv[1:]}." if sv else "") + " This docket's form is still checked on its own (see FORM).")
     return " ".join(out)
 
 
@@ -546,6 +549,10 @@ def evaluate(row, form=None, photos=None, gps=None, data_flags="", risk=None):
             flag("Same location", "review", "multiple surveys at the same location")
         else:
             flag("Same location", None)       # a neighbour within 25 m is common; only repeated same-surveyor hot-spots need review
+    sv_txt = str(gps.get("Same_Location_Values") or "")
+    if "possible copied entry" in sv_txt:
+        flag("Same app entry at same spot", "review")
+        parts_gps.append("Surveys at the same spot carry the same app entry - possible copied entry.")
     if g_rem.startswith("Same Location"):
         if same_txt:
             pass
