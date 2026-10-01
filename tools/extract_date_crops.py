@@ -31,6 +31,8 @@ def work(path):
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser(); ap.add_argument("--out", default=os.path.join(ROOT, "data", "date_crops.pkl"))
+    ap.add_argument("--skip", default=None, help="pickle of an earlier run: its forms are not extracted again")
+    ap.add_argument("--procs", type=int, default=4)
     a = ap.parse_args()
     paths = []
     for d, src in (("forms", "main"), ("disputed/forms", "disp")):
@@ -40,8 +42,11 @@ if __name__ == "__main__":
     hand = {r["docket"].zfill(18) for r in csv.DictReader(open(os.path.join(ROOT, "data", "eval", "dates.csv")))}
     random.Random(0).shuffle(paths)          # priority: disputed + hand-labelled first, then the rest in random order
     paths.sort(key=lambda t: 0 if (t[1] == "disp" or os.path.basename(t[0])[:-4] in hand) else 1)
+    if a.skip:
+        done = pickle.load(open(a.skip, "rb"))
+        paths = [t for t in paths if (t[1], os.path.basename(t[0])[:-4]) not in done]
     res = {}
-    with ProcessPoolExecutor(4) as ex:
+    with ProcessPoolExecutor(a.procs) as ex:
         for i, (p, o) in enumerate(ex.map(work, [p for p, _ in paths], chunksize=4)):
             src = paths[i][1]
             res[(src, os.path.basename(p)[:-4])] = o
