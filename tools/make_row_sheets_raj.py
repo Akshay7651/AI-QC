@@ -79,10 +79,17 @@ def main():
     out = Path(a.out)
     out.mkdir(parents=True, exist_ok=True)
     from concurrent.futures import ProcessPoolExecutor
-    done = []
     idx = ["sheet,pos,docket"]
     buf = []
     n = 0
+    old = out / "index.csv"        # resume after a machine restart: keep finished sheets, skip their dockets
+    if old.exists():
+        rows = [ln for ln in old.read_text().splitlines()[1:] if ln.strip()]
+        keep = [r for r in rows if (out / f"sheet_{int(r.split(',')[0]):03d}.jpg").exists()]
+        idx += keep
+        have = {r.split(",")[2] for r in keep}
+        n = max([int(r.split(",")[0]) for r in keep] or [0])
+        jobs = [j for j in jobs if j[0] not in have]
     with ProcessPoolExecutor(a.procs) as ex:
         for d, im in ex.map(one, jobs, chunksize=4):
             if im is None:
@@ -101,7 +108,7 @@ def main():
                 cv2.imwrite(str(out / f"sheet_{n:03d}.jpg"), cv2.cvtColor(np.vstack([cv2.copyMakeBorder(t, 0, 0, 0, w - t.shape[1], cv2.BORDER_CONSTANT, value=(255, 255, 255)) for t in tiles]),
                                                                            cv2.COLOR_RGB2BGR), [cv2.IMWRITE_JPEG_QUALITY, 85])
                 buf = []
-                if n % 20 == 0:
+                if n % 5 == 0:
                     (out / "index.csv").write_text("\n".join(idx) + "\n")
                     print("sheets", n, flush=True)
     (out / "index.csv").write_text("\n".join(idx) + "\n")
