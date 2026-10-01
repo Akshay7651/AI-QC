@@ -152,7 +152,12 @@ def main():
     Xd = torch.tensor(X[dev], dtype=torch.float32).div_(255).unsqueeze(1); yd = y[dev]
     cnt = np.bincount(y[~dev], minlength=len(CELL_CLASSES)).astype(float)
     wcls = 1.0 / np.sqrt(np.maximum(cnt, 1))          # sqrt-balanced sampling
-    p = torch.tensor(wcls[y[~dev]] / wcls[y[~dev]].sum())
+    w = wcls[y[~dev]]
+    hm = os.path.join(HERE, "data", "manifest_human.csv")   # human-checked forms (retrain.py): trusted labels -> 4x sampling weight
+    if os.path.exists(hm):
+        human = set(pd.read_csv(hm, dtype={"docket_id": str})["docket_id"])
+        w = w * np.where(np.array([d in human for d in dk[~dev]]), 4.0, 1.0)
+    p = torch.tensor(w / w.sum())
     net = make_net()
     opt = torch.optim.AdamW(net.parameters(), 2e-3, weight_decay=1e-4)
     sched = torch.optim.lr_scheduler.OneCycleLR(opt, 4e-3, total_steps=a.steps)
