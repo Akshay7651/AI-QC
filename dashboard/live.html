@@ -133,7 +133,7 @@ table.live td.num{font-variant-numeric:tabular-nums}
   <input id="fq" placeholder="search docket / farmer / remark" size="30">
   <a id="dl" href="rows.csv" download="live_results.csv">Download as Excel (CSV)</a>
   <label class="note"><input type="checkbox" id="auto" checked> follow newest</label>
-  <span class="note">click a remark to read it fully</span>
+  <span class="note">oldest on top, new rows appear at the bottom; click a remark to read it fully</span>
 </div>
 <div class="tabw" id="tabw"><table class="live"><thead><tr>
   <th>#</th><th>Time</th><th>Docket</th><th>Verdict</th><th>Remark (AI)</th><th>Form No</th><th>Area% form</th><th>Loss% form</th><th>Area% app</th><th>Loss% app</th><th>Match</th>
@@ -206,19 +206,24 @@ function render(d){
 
 function tg(v,good,bad){v=String(v==null?"":v);if(!v)return "";var c=v===good?"g":v===bad?"r":"y";return '<span class="tag '+c+'">'+esc(v)+'</span>'}
 function vcls(v){return '<span class="badge '+esc(v)+'">'+esc(v||"-")+'</span>'}
-function drawRows(fresh){
-  var fv=$("fv").value,q=($("fq").value||"").toLowerCase(),tb=$("tb"),html=[];
-  var rows=ALL.filter(function(r){return (!fv||r.verdict===fv)&&(!q||(r.docket+" "+r.farmer+" "+r.remark+" "+r.flags).toLowerCase().indexOf(q)>=0)});
-  rows=rows.slice(-400).reverse();
-  tb.innerHTML=rows.map(function(r){return '<tr'+(fresh&&fresh[r.seq]?' class="new"':'')+'><td>'+r.seq+'</td><td>'+esc(r.t)+'</td><td><code>'+esc(r.docket)+'</code></td><td>'+vcls(r.verdict)+'</td><td class="rem">'+esc(r.remark)+'</td><td>'+esc(r.form_no)+'</td><td class="num">'+esc(r.area_form)+'</td><td class="num">'+esc(r.loss_form)+'</td><td class="num">'+esc(r.area_app)+'</td><td class="num">'+esc(r.loss_app)+'</td><td>'+tg(r.match,'Match','Mismatch')+'</td><td>'+tg(r.farmer_sig,'Yes','No')+'</td><td>'+tg(r.company_sig,'Yes','No')+'</td><td>'+tg(r.photo_is_form,'','Yes')+'</td><td>'+esc(r.farmer)+'</td><td>'+esc(r.surveyor)+'</td></tr>'}).join("");
-  $("tabnote").textContent="("+ALL.length+" rows, newest on top)";
+function rowHtml(r,isNew){return '<tr'+(isNew?' class="new"':'')+'><td>'+r.seq+'</td><td>'+esc(r.t)+'</td><td><code>'+esc(r.docket)+'</code></td><td>'+vcls(r.verdict)+'</td><td class="rem">'+esc(r.remark)+'</td><td>'+esc(r.form_no)+'</td><td class="num">'+esc(r.area_form)+'</td><td class="num">'+esc(r.loss_form)+'</td><td class="num">'+esc(r.area_app)+'</td><td class="num">'+esc(r.loss_app)+'</td><td>'+tg(r.match,'Match','Mismatch')+'</td><td>'+tg(r.farmer_sig,'Yes','No')+'</td><td>'+tg(r.company_sig,'Yes','No')+'</td><td>'+tg(r.photo_is_form,'','Yes')+'</td><td>'+esc(r.farmer)+'</td><td>'+esc(r.surveyor)+'</td></tr>'}
+function passes(r){var fv=$("fv").value,q=($("fq").value||"").toLowerCase();return (!fv||r.verdict===fv)&&(!q||(r.docket+" "+r.farmer+" "+r.remark+" "+r.flags).toLowerCase().indexOf(q)>=0)}
+function drawRows(newOnes){
+  var tb=$("tb");
+  if(newOnes){            // incremental: oldest stays on top, finished rows are added at the bottom
+    var h=newOnes.filter(passes).map(function(r){return rowHtml(r,true)}).join("");
+    if(h)tb.insertAdjacentHTML("beforeend",h);
+  }else{
+    tb.innerHTML=ALL.filter(passes).map(function(r){return rowHtml(r,false)}).join("");
+  }
+  $("tabnote").textContent="("+ALL.length+" rows, oldest on top, newest at the bottom)";
 }
 function pollRows(){
   var x=new XMLHttpRequest();
   x.open("GET","rows.json?since="+seq+"&t="+Date.now(),true);x.timeout=4000;
-  x.onload=function(){try{var d=JSON.parse(x.responseText);var fr={};
-      d.rows.forEach(function(r){if(r.seq>seq){ALL.push(r);fr[r.seq]=1}});
-      if(d.rows.length){seq=d.last;var op={};Array.prototype.forEach.call(document.querySelectorAll('#tb tr.open'),function(t){op[t.firstChild.textContent]=1});drawRows(fr);Array.prototype.forEach.call(document.querySelectorAll('#tb tr'),function(t){if(op[t.firstChild.textContent])t.classList.add('open')});if($("auto").checked)$("tabw").scrollTop=0}}catch(e){}
+  x.onload=function(){try{var d=JSON.parse(x.responseText);var nw=[];
+      d.rows.forEach(function(r){if(r.seq>seq){ALL.push(r);nw.push(r)}});
+      if(nw.length){seq=d.last;drawRows(nw);if($("auto").checked)$("tabw").scrollTop=$("tabw").scrollHeight}}catch(e){}
     setTimeout(pollRows,1500)};
   x.onerror=x.ontimeout=function(){setTimeout(pollRows,3000)};
   x.send();
