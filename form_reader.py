@@ -238,6 +238,35 @@ def read_signatures(lay):
     return out, stamp, feats
 
 
+# ----------------------------------------------------------------------------------------- learned signature classifier
+_SIGCLF = None
+
+
+def _sig_clf():
+    """models/sig_clf.joblib (tools/train_sig_classifier.py) or None -> the old ink rule stays in charge."""
+    global _SIGCLF
+    if _SIGCLF is None:
+        try:
+            import joblib
+            _SIGCLF = joblib.load(os.path.join(os.path.dirname(os.path.abspath(__file__)), "models", "sig_clf.joblib"))
+        except Exception:      # noqa: BLE001
+            _SIGCLF = False
+    return _SIGCLF or None
+
+
+def _sig_pred(blk, feats):
+    """-> bool | None (None = no classifier / no features)"""
+    clf = _sig_clf()
+    if not clf or not feats or not feats.get(blk) or blk not in clf["models"]:
+        return None
+    m, f = clf["models"][blk], feats[blk]
+    x = [f[k] for k in clf["keys"]]
+    if isinstance(m, dict):                       # 'common answer unless ink far below normal'
+        low = x[clf["keys"].index(m["key"])] < m["thr"]
+        return bool(1 - m["common"]) if low else bool(m["common"])
+    return bool(m.predict([x])[0])
+
+
 # ----------------------------------------------------------------------------------------- digits.py bridge
 _DIG = None
 
@@ -282,6 +311,7 @@ def read_cell(rgb_crop):
     return out
 
 
+FORMNO_GATE = 0.9   # >=3 agreeing OCR passes (see _ocr_formno)
 CELL_BLANK_INK = 0.006
 # Handwritten area/loss values are only asserted when the cell model's confidence is >= CELL_GATE.
 # Measured on 150 hand-labelled forms: gate 0.8 -> area 97.8% / loss 98.9% precision at ~63-66% coverage (0.7 -> 95.1% / 96.3%).
@@ -511,6 +541,9 @@ def read_form(path_or_pil, docket=None, debug=False):
     except Exception as e:     # noqa: BLE001
         fn, fcf, raw, note = None, 0.0, "", f"form no reading failed: {type(e).__name__}"
     out["form_no"], out["form_no_conf"] = fn, round(float(fcf), 3)
+    out["form_no_guess"] = None
+    if fn and float(fcf) < FORMNO_GATE:       # measured: only '>=3 agreeing passes' is ~96-97% exact -> weaker reads are hints, not facts
+        out["form_no_guess"], out["form_no"] = fn, None
     fc["form_no"] = out["form_no_conf"]
     if note:
         notes.append(note)
@@ -571,6 +604,13 @@ def read_form(path_or_pil, docket=None, debug=False):
         sg, stamp, feats = {"farmer": False, "company": False, "worker": False, "officer": False}, False, {}
         notes.append(f"signature analysis failed: {type(e).__name__}")
     out["farmer_signed"], out["company_signed"], out["worker_signed"], out["officer_signed"] = (sg["farmer"], sg["company"], sg["worker"], sg["officer"])
+    for blk in ("farmer", "company", "worker"):          # learned classifier overrides the ink rule when available
+        pv = _sig_pred(blk, feats)
+        if pv is not None:
+            out[blk + "_signed"] = pv
+    # The block officer is almost never signed (1 positive in ~246 labelled forms), so a reliable reading is impossible:
+    # report 'not assessed' instead of a misleading Yes/No.
+    out["officer_signed"] = None
     out["officer_stamp_only"] = bool(stamp and not sg["officer"])
     out["_sig_feats"] = feats
     # ---- overwrite on cells
