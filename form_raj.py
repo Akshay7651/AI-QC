@@ -38,23 +38,40 @@ def rows_geometry(lay):
 
 
 def column_edges(lay, y0, p):
-    """x of the 10 column edges (1000-wide geometry coords) - detected vertical lines, completed with the constant column pitch."""
-    t, vl = lay["tab"], lay["vl"]
+    """-> (edges, s): x (1000-wide geometry coords) of [table left, area-column left, loss-column left, table right] and the column pitch s.
+    The right edge comes from the length of the ruled ROW lines (robust against handwriting confusing the vertical-line detector); the last
+    two columns (affected area %, loss %) are equally wide, about 11.3% of the table; each edge is then snapped to a detected vertical line."""
+    hl, vl, g = lay["hl"], lay["vl"], lay["g"]
+    W = g.shape[1]
+    ext = []
+    for k in range(0, 11):
+        e = P.line_extent(hl, y0 + k * p, 0.012 * W)
+        if e is not None and e[1] - e[0] > 0.45 * W:
+            ext.append(e)
+    if len(ext) < 3:
+        return None
+    Lx = float(np.median([e[0] for e in ext]))
+    Rx = float(np.median([e[1] for e in ext]))
+    w = Rx - Lx
+    if w < 0.45 * W:
+        return None
+    s = 0.113 * w
     ya, yb = int(y0 + 0.2 * p), int(y0 + 9.8 * p)
     vp = (vl[ya:yb] > 0).sum(0).astype(float)
     vp = vp + np.r_[vp[1:], 0] + np.r_[0, vp[:-1]]
-    vx = sorted(x for x, _ in P._peaks1d(vp, 0.22 * (yb - ya), 3))
-    if len(vx) < 4:
+    vx = np.array(sorted(x for x, _ in P._peaks1d(vp, 0.22 * (yb - ya), 3)))
+    pred = [Rx - 2 * s, Rx - s, Rx]
+    snapped, hit = [], []
+    for q in pred:
+        ok = bool(len(vx) and np.min(np.abs(vx - q)) < 0.03 * w)
+        hit.append(ok)
+        snapped.append(float(vx[np.argmin(np.abs(vx - q))]) if ok else float(q))
+    # the ruled lines fade out on some photos, then the real right edge is unknown: a vertical border must exist at the right edge
+    # (and one more column edge, unless the table fills the photo); otherwise decline rather than read the wrong cells
+    if not (hit[2] and (sum(hit) >= 2 or w >= 0.8 * W)) and not (len(ext) >= 9 and w >= 0.5 * W):
         return None
-    s = float(np.median(np.diff(vx[-4:])))              # pitch of the (equal-width) right-hand columns
-    last = vx[-1]
-    # a missing right edge: the last detected edge is the loss column's LEFT edge -> add one pitch
-    R = t["R"]
-    if abs(R - (last + s)) < 0.35 * s and (R - last) > 0.6 * s:
-        edges = vx + [last + s]
-    else:
-        edges = vx
-    return edges, s
+    a0, a1, l1 = snapped
+    return [Lx, a0, a1, l1], float(np.mean([a1 - a0, l1 - a1]))
 
 
 def read_rows(lay, read_cell):
@@ -67,9 +84,7 @@ def read_rows(lay, read_cell):
     if ce is None:
         return None
     edges, s = ce
-    xl, xr = edges[-1], edges[-1]
-    xr = edges[-1]
-    a0, a1, l1 = xr - 2 * s, xr - s, xr
+    a0, a1, l1 = edges[1], edges[2], edges[3]
     rows = []
     for k in range(10):
         ya, yb = y0 + k * p, y0 + (k + 1) * p
@@ -93,7 +108,7 @@ def cell_crops(lay):
     if ce is None:
         return None
     edges, s = ce
-    a0, a1, l1 = edges[-1] - 2 * s, edges[-1] - s, edges[-1]
+    a0, a1, l1 = edges[1], edges[2], edges[3]
     out = []
     for k in range(10):
         ya, yb = y0 + k * p, y0 + (k + 1) * p
