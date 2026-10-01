@@ -190,7 +190,19 @@ def main():
         if har is not None:
             Xh = torch.tensor(har["X"], dtype=torch.float32).div_(255).unsqueeze(1); yh = torch.tensor(har["y"])
         t0 = time.time()
-        for s in range(a.steps):
+        ck = os.path.join(HERE, "data", f"raj_ckpt_round{rnd + 1}.pt")      # the cloud machine can restart: resume an interrupted round
+        s0 = 0
+        if os.path.exists(ck):
+            try:
+                st = torch.load(ck)
+                if st.get("steps") == a.steps and st.get("n") == len(yt):
+                    net.load_state_dict(st["net"]); opt.load_state_dict(st["opt"]); sched.load_state_dict(st["sched"]); s0 = st["step"]
+                    print(f"  resumed round {rnd + 1} from checkpoint at step {s0}", flush=True)
+            except Exception:     # noqa: BLE001
+                s0 = 0
+        if s0 >= a.steps and os.path.exists(a.out) and rnd + 1 < a.rounds:
+            pass
+        for s in range(s0, a.steps):
             net.train()
             nr = int(round(64 * (1 - a.haryana_share))) if har is not None else 64
             idx = torch.randint(0, len(yt), (nr,))
@@ -199,6 +211,8 @@ def main():
                 ih = torch.randint(0, len(yh), (64 - nr,))
                 xb, yb = torch.cat([xb, Xh[ih]]), torch.cat([yb, yh[ih]])
             opt.zero_grad(); l = lossf(net(TC.augment(xb)), yb); l.backward(); opt.step(); sched.step()
+            if (s + 1) % 250 == 0:
+                torch.save({"net": net.state_dict(), "opt": opt.state_dict(), "sched": sched.state_dict(), "step": s + 1, "steps": a.steps, "n": len(yt)}, ck)
             if (s + 1) % 500 == 0:
                 print(f"  step {s + 1} loss {l.item():.3f} ({time.time() - t0:.0f}s)", flush=True)
         TC.export(net, a.out)

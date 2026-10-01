@@ -96,10 +96,12 @@ def main():
     cache = ROOT / "data" / "raj_sig_feats.pkl"
     feats = pickle.load(open(cache, "rb")) if cache.exists() else {}
     todo = [d for d in lab if d not in feats]
-    if todo:
+    for i in range(0, len(todo), 150):                 # saved after every batch: the cloud machine can restart
+        part = todo[i: i + 150]
         with ProcessPoolExecutor(a.procs) as ex:
-            feats.update(dict(ex.map(_feat, todo, [forms] * len(todo), chunksize=8)))
+            feats.update(dict(ex.map(_feat, part, [forms] * len(part), chunksize=8)))
         pickle.dump(feats, open(cache, "wb"))
+        print(f"  signature features {len(feats)} forms", flush=True)
     models, report = {}, {}
     for blk in ("farmer", "company", "aao"):
         X, y, isv = [], [], []

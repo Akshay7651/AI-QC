@@ -172,10 +172,22 @@ def main():
     sched = torch.optim.lr_scheduler.OneCycleLR(opt, 4e-3, total_steps=a.steps)
     lossf = nn.CrossEntropyLoss(label_smoothing=0.05)
     t0 = time.time()
-    for s in range(a.steps):
+    ck = os.path.join(HERE, "data", "cells_ckpt.pt")           # the cloud machine can restart: resume an interrupted run
+    s0 = 0
+    if os.path.exists(ck):
+        try:
+            st = torch.load(ck)
+            if st.get("steps") == a.steps and st.get("n") == len(yt):
+                net.load_state_dict(st["net"]); opt.load_state_dict(st["opt"]); sched.load_state_dict(st["sched"]); s0 = st["step"]
+                print(f"resumed from checkpoint at step {s0}", flush=True)
+        except Exception:     # noqa: BLE001
+            s0 = 0
+    for s in range(s0, a.steps):
         net.train()
         idx = torch.multinomial(p, 64, replacement=True)
         opt.zero_grad(); l = lossf(net(augment(Xt[idx])), yt[idx]); l.backward(); opt.step(); sched.step()
+        if (s + 1) % 250 == 0:
+            torch.save({"net": net.state_dict(), "opt": opt.state_dict(), "sched": sched.state_dict(), "step": s + 1, "steps": a.steps, "n": len(yt)}, ck)
         if (s + 1) % 500 == 0:
             net.eval()
             with torch.no_grad():
@@ -184,6 +196,8 @@ def main():
             print(f"  step {s+1} loss {l.item():.3f} dev acc {np.mean(pd_==yd):.4f} nonzero-value acc {np.mean(pd_[nz]==yd[nz]):.4f} ({time.time()-t0:.0f}s)", flush=True)
             export(net, os.path.join(HERE, "models", "cells_cnn.npz"))
     export(net, os.path.join(HERE, "models", "cells_cnn.npz"))
+    if os.path.exists(ck):
+        os.remove(ck)
     json.dump(dict(classes=CELL_CLASSES), open(os.path.join(HERE, "models", "cells_classes.json"), "w"))
 
 
