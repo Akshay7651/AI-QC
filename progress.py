@@ -38,6 +38,8 @@ class Progress:
         self.counters = {k: 0 for k in COUNTER_KEYS}
         self.verdicts = {k: 0 for k in VERDICT_KEYS}
         self.events = collections.deque(maxlen=50)
+        self.rows = collections.deque(maxlen=3000)      # finished rows (the live table), newest last
+        self.row_seq = 0
         self.errors = collections.deque(maxlen=50)
         self.error_count = 0
         self.samples = collections.deque([(self.t0, 0)], maxlen=400)
@@ -92,6 +94,20 @@ class Progress:
             if remark or verdict:
                 self.events.appendleft({"t": datetime.now().strftime("%H:%M:%S"), "docket": str(docket),
                                         "verdict": verdict or "", "remark": str(remark)[:600]})
+
+    def add_row(self, cells: dict):
+        """One finished row for the live table (plain strings/numbers only)."""
+        with self.lock:
+            self.row_seq += 1
+            c = {k: ("" if v is None else v) for k, v in cells.items()}
+            c["seq"] = self.row_seq
+            c["t"] = datetime.now().strftime("%H:%M:%S")
+            self.rows.append(c)
+
+    def rows_since(self, since=0, limit=500):
+        with self.lock:
+            out = [r for r in self.rows if r["seq"] > since][-limit:] if since else list(self.rows)[-limit:]
+            return {"last": self.row_seq, "rows": out}
 
     def error(self, msg):
         with self.lock:
@@ -214,6 +230,19 @@ class Progress:
                         self._send(Path(prog.html_path).read_bytes(), "text/html; charset=utf-8")
                     elif p == "/favicon.ico":
                         self._send(b"", "image/x-icon", 204)
+                    elif p == "/rows.json":
+                        q = dict(x.split("=", 1) for x in self.path.split("?", 1)[1].split("&") if "=" in x) if "?" in self.path else {}
+                        self._send(json.dumps(prog.rows_since(int(q.get("since", 0) or 0)), ensure_ascii=False).encode("utf-8"), "application/json; charset=utf-8")
+                    elif p == "/rows.csv":
+                        import csv, io
+                        rows = prog.rows_since(0, 3000)["rows"]
+                        buf = io.StringIO(); w = csv.writer(buf)
+                        cols = ["docket", "farmer", "village", "surveyor", "verdict", "form_no", "area_form", "loss_form", "area_app", "loss_app", "match",
+                                "farmer_sig", "company_sig", "worker_sig", "photo_is_form", "person", "flags", "remark"]
+                        w.writerow(cols)
+                        for r in rows:
+                            w.writerow([r.get(c, "") for c in cols])
+                        self._send(("\ufeff" + buf.getvalue()).encode("utf-8"), "text/csv; charset=utf-8")
                     elif p == "/progress.json":
                         self._send(json.dumps(prog.snapshot(), ensure_ascii=False).encode("utf-8"), "application/json; charset=utf-8")
                     else:

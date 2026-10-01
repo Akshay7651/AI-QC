@@ -590,6 +590,7 @@ def _field_outputs(Pf, row, n_form, n):
     out = {"crop_present": "no", "crop_present_conf": None, "crop_seen": "unknown", "crop_seen_conf": None, "crop_matches_declared": None,
            "flooded": "no", "water_frac": None, "damage_state": "", "damage_visible": False, "scene_type": "paper form" if n_form == n else "unknown",
            "photo_agree": None, "photo_conf": "low", "remarks": [], "field_photo": "no crop", "field_note": "no field photograph", "photo_loss": None}
+    Pf = [d for d in (Pf or []) if "water" in d and "field_f" in d]     # photos treated as the paper form carry no field features
     if not Pf:
         return out
     heads = _load("heads.pkl")

@@ -141,6 +141,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--max-forms", type=int); ap.add_argument("--steps", type=int, default=3000)
     ap.add_argument("--rebuild", action="store_true"); ap.add_argument("--threads", type=int, default=3)
+    ap.add_argument("--init", action="store_true", help="fine-tune from models/cells_cnn.npz instead of training from scratch")
     a = ap.parse_args()
     torch.set_num_threads(a.threads)
     if a.rebuild or not os.path.exists(DS):
@@ -159,6 +160,14 @@ def main():
         w = w * np.where(np.array([d in human for d in dk[~dev]]), 4.0, 1.0)
     p = torch.tensor(w / w.sum())
     net = make_net()
+    mp = os.path.join(HERE, "models", "cells_cnn.npz")
+    if a.init and os.path.exists(mp):
+        zz = np.load(mp)
+        sd = net.state_dict()
+        for k, n in {"0": "c1", "3": "c2", "6": "c3", "9": "c4", "13": "f1", "16": "f2"}.items():
+            sd[k + ".weight"] = torch.tensor(zz[n + "w"].astype(np.float32)); sd[k + ".bias"] = torch.tensor(zz[n + "b"].astype(np.float32))
+        net.load_state_dict(sd)
+        print("fine-tuning from the current model", flush=True)
     opt = torch.optim.AdamW(net.parameters(), 2e-3, weight_decay=1e-4)
     sched = torch.optim.lr_scheduler.OneCycleLR(opt, 4e-3, total_steps=a.steps)
     lossf = nn.CrossEntropyLoss(label_smoothing=0.05)

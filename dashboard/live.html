@@ -21,7 +21,7 @@
 *{box-sizing:border-box}
 html{-webkit-text-size-adjust:100%}
 body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
-.wrap{max-width:1200px;margin:0 auto;padding:12px 16px 40px}
+.wrap{max-width:1700px;margin:0 auto;padding:12px 16px 40px}
 header{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin:6px 0 12px}
 h1{font-size:20px;margin:0;flex:1 1 auto}
 .pill{display:inline-flex;align-items:center;gap:7px;padding:4px 12px;border-radius:999px;font-weight:600;font-size:14px;color:#fff;background:var(--idle)}
@@ -43,7 +43,7 @@ h2{font-size:15px;margin:18px 0 8px;color:var(--mute);text-transform:uppercase;l
 .tile{padding:10px 12px;border-radius:10px;background:var(--card);border:1px solid var(--line);border-left:5px solid var(--idle)}
 .tile b{font-size:22px;display:block}
 .tile.hot{border-left-color:var(--reject)} .tile.ok{border-left-color:var(--ok)} .tile.review{border-left-color:var(--review)} .tile.reject{border-left-color:var(--reject)} .tile.manual{border-left-color:var(--manual)}
-.agents{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:10px}
+.agents{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:10px}
 .agent{padding:10px 12px;border-radius:10px;background:var(--card);border:1px solid var(--line);border-top:4px solid var(--idle)}
 .agent.busy{border-top-color:var(--busy)} .agent.idle{border-top-color:var(--idle)} .agent.error,.agent.dead{border-top-color:var(--err)} .agent.starting{border-top-color:var(--start)}
 .agent .role{font-weight:700;display:flex;justify-content:space-between;gap:6px}
@@ -51,6 +51,35 @@ h2{font-size:15px;margin:18px 0 8px;color:var(--mute);text-transform:uppercase;l
 .agent.busy .st{color:var(--busy)} .agent.error .st,.agent.dead .st{color:var(--err)} .agent.starting .st{color:var(--start)} .agent.idle .st{color:var(--mute)}
 .agent .doc{font-family:ui-monospace,Consolas,monospace;font-size:13px;min-height:1.3em;color:var(--ink);word-break:break-all}
 .agent .meta{color:var(--mute);font-size:12px;display:flex;justify-content:space-between;margin-top:4px}
+.robot{width:64px;height:64px;flex:none}
+.robot .arm{transform-origin:50% 0}
+.agent{display:flex;gap:10px;align-items:center}
+.agent .body{min-width:0;flex:1}
+.agent.busy .arm.l{animation:wave .5s infinite alternate}
+.agent.busy .arm.r{animation:wave .5s .25s infinite alternate-reverse}
+.agent.busy .eye{animation:blink 2.2s infinite}
+.agent.busy .gear{animation:spin 1.6s linear infinite;transform-origin:center;transform-box:fill-box}
+.agent.busy .ant{animation:pulse .6s infinite}
+.agent.busy{box-shadow:0 0 0 2px color-mix(in srgb,var(--busy) 35%,transparent)}
+.agent.idle .robot{opacity:.55;animation:nod 3s ease-in-out infinite}
+.agent.error .robot,.agent.dead .robot{animation:shake .3s infinite}
+.agent .zzz{font-size:11px;color:var(--mute);margin-left:4px}
+@keyframes wave{from{transform:rotate(-28deg)}to{transform:rotate(28deg)}}
+@keyframes blink{0%,92%,100%{transform:scaleY(1)}96%{transform:scaleY(.1)}}
+@keyframes spin{to{transform:rotate(360deg)}}
+@keyframes nod{50%{transform:translateY(2px)}}
+@keyframes shake{25%{transform:translateX(-2px)}75%{transform:translateX(2px)}}
+.tabw{overflow:auto;max-height:560px;border:1px solid var(--line);border-radius:12px;background:var(--card)}
+table.live{border-collapse:separate;border-spacing:0;font-size:12.5px;width:100%}
+table.live th{position:sticky;top:0;background:var(--chip);text-align:left;padding:6px 8px;border-bottom:1px solid var(--line);white-space:nowrap;z-index:1}
+table.live td{padding:5px 8px;border-bottom:1px solid var(--line);vertical-align:top;white-space:nowrap}
+table.live td.rem{white-space:normal;min-width:480px;max-width:640px;line-height:1.35}
+table.live tr.new td{animation:flash 2s}
+@keyframes flash{from{background:color-mix(in srgb,var(--accent) 25%,transparent)}to{background:transparent}}
+table.live tr:hover td{background:var(--chip)}
+table.live td.num{text-align:right}
+.tools{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:0 0 8px}
+.tools select,.tools input,.tools a{font:inherit;font-size:13px;padding:4px 8px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--ink)}
 .feed{max-height:420px;overflow:auto;padding:0}
 .ev{padding:9px 12px;border-bottom:1px solid var(--line);cursor:pointer}
 .ev:last-child{border-bottom:0}
@@ -88,17 +117,27 @@ h2{font-size:15px;margin:18px 0 8px;color:var(--mute);text-transform:uppercase;l
     </div>
   </section>
 
+  <h2>Agents <span class="note" id="agentnote"></span></h2>
+  <div class="agents" id="agents"></div>
+
   <h2>Verdicts so far</h2>
   <div class="tiles" id="verdicts"></div>
 
   <h2>Issues found (counters)</h2>
   <div class="tiles" id="counters"></div>
 
-  <h2>Agents <span class="note" id="agentnote"></span></h2>
-  <div class="agents" id="agents"></div>
 
-  <h2>Latest remarks</h2>
-  <div class="card feed" id="feed"><div class="ev note">Waiting for the first row...</div></div>
+  <h2>Live results <span class="note" id="tabnote"></span></h2>
+  <div class="tools">
+    <select id="fv"><option value="">All verdicts</option><option>OK</option><option>Review</option><option>Reject-evidence</option><option>Manual-check</option></select>
+    <input id="fq" placeholder="search docket / farmer / remark" size="28">
+    <a id="dl" href="rows.csv" download="live_results.csv">Download live table (opens in Excel)</a>
+    <label class="note"><input type="checkbox" id="auto" checked> follow newest</label>
+  </div>
+  <div class="tabw" id="tabw"><table class="live"><thead><tr>
+    <th>#</th><th>Time</th><th>Docket</th><th>Verdict</th><th>Remark (AI)</th><th>Form No</th><th>Area% form</th><th>Loss% form</th><th>Area% app</th><th>Loss% app</th><th>Match</th>
+    <th>Farmer sig</th><th>Company sig</th><th>Photo=form</th><th>Farmer</th><th>Surveyor</th></tr></thead>
+    <tbody id="tb"></tbody></table></div>
 
   <h2>Output file</h2>
   <div class="card out">
@@ -121,6 +160,14 @@ var COUNTERS=[["form_not_found","Form not found",1],["missing_form_link","Missin
  ["form_unreadable","Form not readable",0],["not_proforma3","Not Proforma-3",0],["po_id_mismatch","PO ID mismatch",0],["gps_cluster","GPS cluster",0]];
 var VERD=[["OK","OK","ok"],["Review","Review","review"],["Reject-evidence","Reject evidence","reject"],["Manual-check","Manual check","manual"]];
 var lastOK=0,fails=0,openEv={},lastEvKey="";
+var ROBOT='<svg class="robot" viewBox="0 0 64 64"><line x1="32" y1="3" x2="32" y2="12" stroke="currentColor" stroke-width="2"/><circle class="ant" cx="32" cy="4" r="3" fill="var(--busy)"/>'+
+ '<rect x="14" y="12" width="36" height="26" rx="7" fill="var(--chip)" stroke="currentColor" stroke-width="2"/>'+
+ '<rect class="eye" x="21" y="21" width="7" height="8" rx="2" fill="var(--accent)"/><rect class="eye" x="36" y="21" width="7" height="8" rx="2" fill="var(--accent)"/>'+
+ '<rect x="22" y="38" width="20" height="16" rx="4" fill="var(--card)" stroke="currentColor" stroke-width="2"/><circle class="gear" cx="32" cy="46" r="4" fill="none" stroke="var(--busy)" stroke-width="2" stroke-dasharray="3 2"/>'+
+ '<g class="arm l"><rect x="12" y="38" width="8" height="13" rx="3" fill="var(--chip)" stroke="currentColor" stroke-width="1.5"/></g>'+
+ '<g class="arm r"><rect x="44" y="38" width="8" height="13" rx="3" fill="var(--chip)" stroke="currentColor" stroke-width="1.5"/></g>'+
+ '<text x="32" y="63" font-size="11" text-anchor="middle">TOOL</text></svg>';
+var seq=0,ALL=[];
 
 function esc(s){return String(s==null?"":s).replace(/[&<>"']/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]})}
 function dur(s){if(s==null)return "-";s=Math.round(s);var h=Math.floor(s/3600),m=Math.floor(s%3600/60),x=s%60;
@@ -148,14 +195,11 @@ function render(d){
   var ag=d.agents||[],busy=ag.filter(function(a){return a.state==="busy"}).length;
   $("agentnote").textContent="("+busy+" busy of "+ag.length+")";
   $("agents").innerHTML=ag.map(function(a){
-    return '<div class="agent '+esc(a.state)+'"><div class="role"><span>'+esc(a.role)+'</span><span class="st">'+esc(a.state)+'</span></div>'+
-      '<div class="doc">'+esc(a.docket||"")+(a.task?' <span class="note">'+esc(a.task)+'</span>':'')+'</div>'+
-      '<div class="meta"><span>'+num(a.rows_done)+' done</span><span>'+(a.avg_sec?a.avg_sec+" s/row":"-")+'</span></div></div>'}).join("");
-  var ev=d.events||[];
-  var key=ev.length?ev[0].t+ev[0].docket+ev.length:"";
-  if(key!==lastEvKey){lastEvKey=key;
-    $("feed").innerHTML=ev.length?ev.map(function(e,i){var k=e.docket;
-      return '<div class="ev'+(openEv[k]?' open':'')+'" data-k="'+esc(k)+'"><div class="h"><span class="badge '+esc(e.verdict)+'">'+esc(e.verdict||"-")+'</span><code>'+esc(e.docket)+'</code><span>'+esc(e.t)+'</span></div><div class="t">'+esc(e.remark)+'</div></div>'}).join(""):'<div class="ev note">Waiting for the first row...</div>';}
+    var doing=a.state==="busy"?(/^form/.test(a.task||"")?"reading the form":/^photo/.test(a.task||"")?"checking the photos":/fetch/.test(a.task||"")?"downloading form + photos":esc(a.task||"working")):a.state==="idle"?"waiting for work":a.state==="starting"?"waking up (loading models)":esc(a.task||a.state);
+    var tool=/Download/i.test(a.role)?"&#128230;":/Photo/i.test(a.role)?"&#128247;":"&#128269;";
+    return '<div class="agent '+esc(a.state)+'">'+ROBOT.replace("TOOL",tool)+'<div class="body"><div class="role"><span>'+esc(a.role)+'</span><span class="st">'+esc(a.state)+(a.state==="idle"?'<span class="zzz">zzz</span>':'')+'</span></div>'+
+      '<div class="doc">'+(a.state==="busy"?esc(a.docket||""):"&nbsp;")+'</div><div class="note">'+doing+'</div>'+
+      '<div class="meta"><span>'+num(a.rows_done)+' done</span><span>'+(a.avg_sec?a.avg_sec+" s/row":"-")+'</span></div></div></div>'}).join("");
   var o=d.output||{};
   $("outpath").textContent=o.path||"-";
   $("outsaved").textContent=o.last_saved?o.last_saved+"  ("+num(o.rows_saved)+" rows written)":"not saved yet (first autosave after the set interval)";
@@ -164,8 +208,27 @@ function render(d){
   $("errlist").innerHTML=er.map(function(e){return '<div class="err">'+esc(e.t)+'  '+esc(e.msg)+'</div>'}).join("");
   $("foot").textContent="Engine: "+(d.engine||"local")+"  |  started "+(d.started_at||"");
 }
-$("feed").addEventListener("click",function(e){var el=e.target.closest(".ev");if(!el)return;var k=el.getAttribute("data-k");openEv[k]=!openEv[k];el.classList.toggle("open")});
 
+function vcls(v){return '<span class="badge '+esc(v)+'">'+esc(v||"-")+'</span>'}
+function drawRows(fresh){
+  var fv=$("fv").value,q=($("fq").value||"").toLowerCase(),tb=$("tb"),html=[];
+  var rows=ALL.filter(function(r){return (!fv||r.verdict===fv)&&(!q||(r.docket+" "+r.farmer+" "+r.remark+" "+r.flags).toLowerCase().indexOf(q)>=0)});
+  rows=rows.slice(-400).reverse();
+  tb.innerHTML=rows.map(function(r){return '<tr'+(fresh&&fresh[r.seq]?' class="new"':'')+'><td>'+r.seq+'</td><td>'+esc(r.t)+'</td><td><code>'+esc(r.docket)+'</code></td><td>'+vcls(r.verdict)+'</td><td class="rem">'+esc(r.remark)+'</td><td>'+esc(r.form_no)+'</td><td class="num">'+esc(r.area_form)+'</td><td class="num">'+esc(r.loss_form)+'</td><td class="num">'+esc(r.area_app)+'</td><td class="num">'+esc(r.loss_app)+'</td><td>'+esc(r.match)+'</td><td>'+esc(r.farmer_sig)+'</td><td>'+esc(r.company_sig)+'</td><td>'+esc(r.photo_is_form)+'</td><td>'+esc(r.farmer)+'</td><td>'+esc(r.surveyor)+'</td></tr>'}).join("");
+  $("tabnote").textContent="("+ALL.length+" rows so far, newest on top)";
+}
+function pollRows(){
+  var x=new XMLHttpRequest();
+  x.open("GET","rows.json?since="+seq+"&t="+Date.now(),true);x.timeout=4000;
+  x.onload=function(){try{var d=JSON.parse(x.responseText);var fr={};
+      d.rows.forEach(function(r){if(r.seq>seq){ALL.push(r);fr[r.seq]=1}});
+      if(d.rows.length){seq=d.last;drawRows(fr);if($("auto").checked)$("tabw").scrollTop=0}}catch(e){}
+    setTimeout(pollRows,1500)};
+  x.onerror=x.ontimeout=function(){setTimeout(pollRows,3000)};
+  x.send();
+}
+$("fv").addEventListener("change",function(){drawRows()});$("fq").addEventListener("input",function(){drawRows()});
+pollRows();
 function setOffline(msg){
   var b=$("banner");b.style.display="block";b.textContent=msg;
   $("pill").className="pill Offline";$("status").textContent="Offline";

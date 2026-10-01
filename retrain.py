@@ -39,10 +39,39 @@ def norm(s):
 
 def find_col(df, *names):
     want = {norm(n) for n in names}
+    for c in df.columns:                      # exact match first, so 'Affected_Area_%' wins over 'Affected area% (Form)'
+        if norm(c) in want:
+            return c
     for c in df.columns:
-        if norm(c) in want or any(norm(c).startswith(w) for w in want):
+        if any(norm(c).startswith(w) for w in want):
             return c
     return None
+
+
+def load_app_values(path, max_rows=3000, zero_share=0.3, seed=7):
+    """Weak labels straight from the CLAP export: the values the surveyor typed into the app (columns pdf_url, affected_area_pct,
+    crop_loss_pct).  The reader is weakest on NON-ZERO handwriting, so every non-zero row is taken first and zero rows are limited
+    to zero_share of the sample.  The hold-out is still never trained on, and the new model is adopted only if it is not worse."""
+    df = pd.read_excel(path, dtype=str) if str(path).lower().endswith((".xlsx", ".xls")) else pd.read_csv(path, dtype=str)
+    d = find_col(df, "Docket_ID", "docketID", "docket")
+    url = find_col(df, "pdf_url", "Signed_Copy_URL", "form_url")
+    a = find_col(df, "affected_area_pct", "Affected_Area_%")
+    l = find_col(df, "crop_loss_pct", "Crop_Loss_%")
+    if None in (d, url, a, l):
+        sys.exit("Need columns docket_id, pdf_url, affected_area_pct, crop_loss_pct. Found: " + ", ".join(map(str, df.columns)))
+    out = pd.DataFrame({"docket_id": df[d].astype(str).str.strip(), "pdf_url": df[url],
+                        "affected_area_pct": pd.to_numeric(df[a].astype(str).str.replace("%", "").str.strip(), errors="coerce"),
+                        "crop_loss_pct": pd.to_numeric(df[l].astype(str).str.replace("%", "").str.strip(), errors="coerce")})
+    out = out.dropna(subset=["affected_area_pct", "crop_loss_pct"]).drop_duplicates("docket_id")
+    out = out[out.pdf_url.notna() & out.pdf_url.astype(str).str.startswith("http")]
+    ok5 = lambda s: (s % 5 == 0) & (s >= 0) & (s <= 100)
+    out = out[ok5(out.affected_area_pct) & ok5(out.crop_loss_pct)]          # the cell model knows multiples of 5 only
+    nz = out[(out.affected_area_pct > 0) | (out.crop_loss_pct > 0)]
+    z = out.drop(nz.index)
+    nz = nz.sample(frac=1, random_state=seed).head(max_rows)
+    z = z.sample(frac=1, random_state=seed).head(int(len(nz) * zero_share / max(1e-9, 1 - zero_share)) + 1)
+    print(f"app-value labels: {len(nz)} non-zero rows + {len(z)} zero rows")
+    return pd.concat([nz, z]).reset_index(drop=True)
 
 
 def load_human(path):
@@ -122,9 +151,12 @@ def main():
     ap.add_argument("--threads", type=int, default=8)
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--no-download", action="store_true")
+    ap.add_argument("--app-values", action="store_true", help="--labels is the raw CLAP export: train on the values typed in the app (weak labels)")
+    ap.add_argument("--max-rows", type=int, default=3000, help="with --app-values: how many non-zero forms to use")
+    ap.add_argument("--init", action="store_true", help="start from the current model instead of from scratch (fine-tune)")
     a = ap.parse_args()
 
-    hum = load_human(a.labels)
+    hum = load_app_values(a.labels, a.max_rows) if a.app_values else load_human(a.labels)
     print(f"human rows with a form link and a value: {len(hum)}")
     ids = sorted(hum.docket_id, key=lambda d: hashlib.md5(d.encode()).hexdigest())
     k = int(len(ids) * a.holdout)
@@ -151,7 +183,7 @@ def main():
     if MODEL.exists():
         shutil.copy2(MODEL, bk)
     print("training new model ...", flush=True)
-    subprocess.run([sys.executable, str(HERE / "train_cells.py"), "--rebuild", "--steps", str(a.steps)], check=True, cwd=HERE)
+    subprocess.run([sys.executable, str(HERE / "train_cells.py"), "--rebuild", "--steps", str(a.steps)] + (["--init"] if a.init else []), check=True, cwd=HERE)
     new = measure(sorted(hold), h)
     print("NEW model on human hold-out:", new, flush=True)
     adopt = new["correct"] >= old["correct"] and (new["precision"] >= 0.95 or new["precision"] >= old["precision"] - 0.01)

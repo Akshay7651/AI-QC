@@ -567,6 +567,21 @@ class LocalRunner:
         if complete:
             self._finalize(i)
 
+    @staticmethod
+    def _live_cells(row, form, photos, ev):
+        def yn(v):
+            return "" if v is None else ("Yes" if v else "No")
+        f = form if isinstance(form, dict) and form.get("_state") not in ("error", "not_found", "no_link", "skipped") else {}
+        p = photos if isinstance(photos, dict) else {}
+        fa, fl = ev.get("form_area"), ev.get("form_loss")
+        return {"docket": row.get("docket_id"), "farmer": row.get("farmer_name"), "village": row.get("village"), "surveyor": row.get("surveyor_name"),
+                "verdict": ev.get("verdict"), "confidence": ev.get("confidence"),
+                "form_no": f.get("form_no") if f.get("form_no_conf", 1) >= 0.9 else "",
+                "area_form": fa, "loss_form": fl, "area_app": row.get("affected_area_pct"), "loss_app": row.get("crop_loss_pct"),
+                "match": ev.get("match"), "farmer_sig": yn(f.get("farmer_signed")), "company_sig": yn(f.get("company_signed")),
+                "worker_sig": yn(f.get("worker_signed")), "photo_is_form": "Yes" if p.get("scene_type") == "paper form" else "",
+                "person": "", "flags": "; ".join(ev.get("flags") or []), "remark": ev.get("remark")}
+
     def _finalize(self, i):
         with self.lock:
             st = self.state[i]
@@ -602,6 +617,10 @@ class LocalRunner:
             self._release(st)
         if self.prog:
             self.prog.row_done(row.get("docket_id"), ev["verdict"], ev["remark"], ev["counters"])
+            try:
+                self.prog.add_row(self._live_cells(row, form, photos, ev))
+            except Exception:       # the live table is cosmetic; never lose a row over it
+                pass
         if self.on_row:
             try:
                 self.on_row(i, res)

@@ -649,7 +649,7 @@ def read_form(path_or_pil, docket=None, debug=False):
             out["is_proforma3"] = False
             notes.append("ruled table found but no form number / field grid / printed header: probably not a Proforma-3")
     # ---- confidence
-    parts = [out["form_no_conf"] if fn else 0.3]
+    parts = [out["form_no_conf"]] if fn else []        # an unreadable form number is reported separately, it must not sink the handwriting confidence
     parts += [c for k, c in fc.items() if k in ("form_area", "form_loss", "row_area", "row_loss")]
     conf = float(np.mean(parts)) if parts else 0.3
     if out["quality"] != "good":
