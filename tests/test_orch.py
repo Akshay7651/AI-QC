@@ -8,6 +8,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
+import ckstore
 import local_engine
 import progress
 import run_qc
@@ -201,7 +202,7 @@ def test_autosave_writes_partial_file_while_running(tmp_path, monkeypatch):
     assert seen is not None, "no partial autosave observed while the run was in progress"
     assert len(seen) == 6 and seen["docket_id"].notna().all()               # unprocessed rows are still present
     assert res["rc"] == 0 and read()["QC Verdict"].notna().all()
-    assert json.load(open("ck/ck.json"))["results"]
+    assert len(ckstore.ResultStore("ck/ck.sqlite")) > 0
 
 
 def test_ctrl_c_saves_partial_and_resume_finishes(tmp_path, monkeypatch):
@@ -222,7 +223,7 @@ def test_ctrl_c_saves_partial_and_resume_finishes(tmp_path, monkeypatch):
     monkeypatch.setattr(local_engine.LocalRunner, "_finalize", real_finalize)
     part = read()
     assert len(part) == 6 and 1 <= part["QC Verdict"].notna().sum() < 6
-    assert json.load(open("ck/ck.json"))["results"]
+    assert len(ckstore.ResultStore("ck/ck.sqlite")) > 0
     assert json.load(open("out/progress.json"))["status"] in ("Stopped", "Done")
     # resume only does the remaining rows
     import fakes_engine

@@ -20,6 +20,9 @@ def _sleep():
 
 def read_form(path, docket=None):
     CALLS["form"] += 1
+    if os.environ.get("FAKE_LOG"):                    # one line per form read (kill/resume test: no finished row may be read again)
+        with open(os.environ["FAKE_LOG"], "a") as f:
+            f.write(f"{docket}\n")
     _sleep()
     d = str(docket)[-1:]
     if d == "9":

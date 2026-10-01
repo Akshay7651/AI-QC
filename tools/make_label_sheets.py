@@ -119,7 +119,8 @@ def _render_row(kind, idx, docket, tiles, width, app=None):
         else:
             ims.append((cap, _fit(arr, hh, avail)))
     if kind == "formno":      # formno window is wide; give it more room
-        ims = [(ims[0][0], _fit(parts[0][1], hh, int((width - lab_w) * 0.55))), (ims[1][0], _fit(parts[1][1], hh, int((width - lab_w) * 0.42)))]
+        ims = [(ims[0][0], _fit(parts[0][1], hh, int((width - lab_w) * 0.55)) if parts[0][1] is not None and parts[0][1].size else ims[0][1]),
+               (ims[1][0], _fit(parts[1][1], hh, int((width - lab_w) * 0.42)) if parts[1][1] is not None and parts[1][1].size else ims[1][1])]
     h = max(i.height for _, i in ims) + 22
     row = Image.new("RGB", (width, h), "white")
     d = ImageDraw.Draw(row)

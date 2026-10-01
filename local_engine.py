@@ -233,7 +233,7 @@ class _Worker:
 class LocalRunner:
     def __init__(self, rows, keys, todo, ck, kinds, local_map, ctx, *, agents=4, downloaders=None, rate=5.0,
                  engine_module=None, inline=False, progress=None, task_timeout=180.0, pause_file=None,
-                 cache_dirs=None, max_inflight=None, on_row=None):
+                 cache_dirs=None, max_inflight=None, on_row=None, discard_media=False):
         self.rows, self.keys, self.todo, self.ck = rows, keys, list(todo), ck
         self.kinds = set(kinds)
         self.local_map = local_map or {}
@@ -248,6 +248,9 @@ class LocalRunner:
         self.cache = cache_dirs or {"form": C.PDF_CACHE_DIR, "photo": C.PHOTO_CACHE_DIR}
         self.max_inflight = max_inflight or max(8, self.n_agents * 4)
         self.on_row = on_row
+        self.discard_media = bool(discard_media)
+        self._refs = collections.Counter()   # downloaded cache file -> rows still using it (discard mode)
+        self.discarded = 0
         self.lock = threading.RLock()
         self.state: dict[int, dict] = {}
         self.pending = {"form": collections.deque(), "photo": collections.deque()}
@@ -269,6 +272,8 @@ class LocalRunner:
         if not self.todo:
             return
         os.environ.setdefault("OMP_THREAD_LIMIT", "1")
+        if self.discard_media:
+            self._purge_stale_cache()
         self._make_workers()
         feeder = threading.Thread(target=self._feeder_main, name="downloaders", daemon=True)
         feeder.start()
@@ -277,9 +282,57 @@ class LocalRunner:
         finally:
             self.stop_evt.set()
             self._shutdown(feeder)
+            if self.discard_media:  # rows that were in flight when we stopped: do not leave their downloads behind
+                with self.lock:
+                    left = list(self.state.values())
+                for st in left:
+                    self._release(st)
 
     def stop(self):
         self.stop_evt.set()
+
+    # ------------------------------------------------------------------ --discard-media (bounded cache)
+    def _purge_stale_cache(self, max_age=6 * 3600):
+        """Orphans of an earlier killed run (older than 6 h) are removed; recent files may belong to another live run."""
+        now = time.time()
+        for d in self.cache.values():
+            try:
+                for p in Path(d).iterdir():
+                    if p.is_file() and now - p.stat().st_mtime > max_age:
+                        p.unlink()
+            except OSError:
+                pass
+
+    def _track(self, st, *paths):
+        """Remember downloaded cache files of this row (never called for --local-media files)."""
+        if not self.discard_media:
+            return
+        with self.lock:
+            for p in {str(x) for x in paths}:
+                if p not in st.setdefault("dl", set()):
+                    st["dl"].add(p)
+                    self._refs[p] += 1
+
+    def _release(self, st):
+        """Delete this row's downloaded files once nothing else uses them. Only files inside the cache dirs are ever removed."""
+        roots = [Path(d).resolve() for d in self.cache.values()]
+        with self.lock:
+            paths = list(st.get("dl", ()))
+            st["dl"] = set()
+            gone = []
+            for p in paths:
+                self._refs[p] -= 1
+                if self._refs[p] <= 0:
+                    del self._refs[p]
+                    gone.append(p)
+        for p in gone:
+            try:
+                rp = Path(p).resolve()
+                if any(r in rp.parents for r in roots):
+                    rp.unlink()
+                    self.discarded += 1
+            except OSError:
+                pass
 
     # ------------------------------------------------------------------ workers
     def _roles(self):
@@ -536,6 +589,8 @@ class LocalRunner:
             self.ck["results"][self.keys[i]] = res
             self.finalized += 1
             self.state.pop(i, None)
+        if self.discard_media:
+            self._release(st)
         if self.prog:
             self.prog.row_done(row.get("docket_id"), ev["verdict"], ev["remark"], ev["counters"])
         if self.on_row:
@@ -617,13 +672,17 @@ class LocalRunner:
                     st["parts"][kind] = {"_state": "error", "_error": f"{type(e).__name__}: {e}"[:160]}
         self._prepared(i)
 
-    async def _get(self, http, url, kind):
+    async def _get(self, http, url, kind, st=None):
         cache = self.cache[kind]
         p = Path(cache) / hashlib.sha1(url.encode()).hexdigest()
         if not (p.exists() and p.stat().st_size):
             await self._gate()
         timeout = C.PDF_TIMEOUT_SEC if kind == "form" else C.PHOTO_TIMEOUT_SEC
-        return _with_ext(await fetch(http, url, cache, timeout))
+        raw = await fetch(http, url, cache, timeout)
+        got = _with_ext(raw)
+        if st is not None:
+            self._track(st, raw, got)
+        return got
 
     async def _prepare(self, i, http):
         from photo_qc import split_urls
@@ -639,7 +698,7 @@ class LocalRunner:
             fpath, err = (forms[0] if forms else None), None
             if fpath is None and has_url:
                 try:
-                    fpath = await self._get(http, url, "form")
+                    fpath = await self._get(http, url, "form", st)
                 except Unavailable as e:
                     err = str(e)
                 except Exception as e:
@@ -657,7 +716,7 @@ class LocalRunner:
             err = None
             for u in urls[:max(0, C.MAX_PHOTOS_PER_ROW - len(paths))] if not paths else []:
                 try:
-                    paths.append(await self._get(http, u, "photo"))
+                    paths.append(await self._get(http, u, "photo", st))
                 except Unavailable as e:
                     err = str(e)
                 except Exception as e:

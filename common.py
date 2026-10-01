@@ -1,6 +1,7 @@
 """Shared helpers: cached downloader, cost tracker, JSON parsing, geo maths."""
 import asyncio
 import hashlib
+import os
 import json
 import math
 import re
@@ -39,7 +40,9 @@ async def fetch(http: httpx.AsyncClient, url: str, cache_dir: str, timeout: floa
         try:
             r = await http.get(url, headers=headers, timeout=timeout, follow_redirects=True)
             if r.status_code == 200 and r.content:
-                path.write_bytes(r.content)
+                tmp = path.with_name(path.name + f".part{os.getpid()}")
+                tmp.write_bytes(r.content)      # atomic: a kill/power loss never leaves a truncated file that looks cached
+                os.replace(tmp, path)
                 return path
             last = f"HTTP {r.status_code}"
             if r.status_code not in (401, 403):

@@ -25,6 +25,8 @@ import pdf_qc
 import local_media
 import report
 import remarks
+import ckstore
+import chunked
 from common import CostTracker
 
 LOCAL = {}
@@ -44,7 +46,14 @@ def parse_args(argv=None):
     p.add_argument("--rate", type=float, default=5.0, help="max new download requests per second (polite limit)")
     p.add_argument("--cost-cap", type=float)
     p.add_argument("--resume", action="store_true")
-    p.add_argument("--limit", type=int, help="only the first N rows (quick test); the output then has N rows")
+    p.add_argument("--limit", type=int, help="only the first N rows (quick test); the output then has N rows. With --offset: N rows from the offset")
+    p.add_argument("--offset", type=int, default=None,
+                   help="start at row M (0-based) of the Excel and process --limit N rows: a batch for one PC/day. GPS/same-location checks "
+                        "still look at the WHOLE file. Use the same --offset/--limit/--output with --resume to continue the batch")
+    p.add_argument("--chunk-rows", type=int, default=0, metavar="N",
+                   help="write the output in parts <output>_part001.xlsx ... of N rows (recommended 20000 for big runs) + one merged <output>.csv; 0 = one Excel file")
+    p.add_argument("--discard-media", action="store_true",
+                   help="delete each row's downloaded forms/photos (cache/pdfs, cache/photos) as soon as the row is processed; never touches --local-media or the input")
     p.add_argument("--filter-state")
     p.add_argument("--filter-dist")
     p.add_argument("--dry-run", action="store_true")
@@ -55,7 +64,8 @@ def parse_args(argv=None):
     p.add_argument("--risk", action="store_true", help="add Risk_Score/Risk_Reasons (on by default for --engine local, full mode)")
     p.add_argument("--no-risk", action="store_true", help="skip the risk score (saves time on very large files)")
     p.add_argument("--ml-model", help="joblib model from `learn_qc.py train`; adds ML_<label> columns")
-    p.add_argument("--checkpoint", default="output/checkpoint.json")
+    p.add_argument("--checkpoint", default=None,
+                   help="resume store (default output/checkpoint.json -> a compact output/checkpoint.sqlite is used; an old .json checkpoint is imported by --resume)")
     p.add_argument("--autosave-sec", type=float, default=60.0, help="write the output Excel + checkpoint every N seconds (0 = only at the end)")
     p.add_argument("--serve-port", type=int, default=8765, help="live dashboard port (default 8765)")
     p.add_argument("--serve-host", default="127.0.0.1", help="127.0.0.1 = this PC only (default, safe); 0.0.0.0 = also reachable from a phone on the same Wi-Fi (exposes docket IDs/remarks to that network)")
@@ -65,11 +75,19 @@ def parse_args(argv=None):
     p.add_argument("--engine-module", help=argparse.SUPPRESS)   # tests: module providing read_form/analyse
     p.add_argument("--inline", action="store_true", help=argparse.SUPPRESS)  # agents as threads (debug/tests)
     a = p.parse_args(argv)
+    if a.offset is not None and a.offset < 0:
+        p.error("--offset must be >= 0")
+    if a.chunk_rows and a.chunk_rows < 1:
+        p.error("--chunk-rows must be >= 1 (or 0 = off)")
+    if a.checkpoint is None:
+        a.checkpoint = "output/checkpoint.json" if a.offset is None else f"output/checkpoint_off{a.offset}.json"
     if a.workers is not None:
         a.workers = max(1, min(a.workers, 20))
     if not a.output:
         a.output = "output/qc_output.xlsx" if a.input.startswith(("http://", "https://")) \
             else str(Path(a.input).with_suffix("")) + "_QC.xlsx"
+    if a.inplace and a.chunk_rows:
+        p.error("--chunk-rows cannot be combined with --inplace")
     if a.inplace and not a.input.startswith(("http://", "https://")):
         a.output = a.input if a.input.lower().endswith(".xlsx") else str(Path(a.input).with_suffix(".xlsx"))
     return a
@@ -289,7 +307,7 @@ def _date_txt(v):
 def assemble_local(df, results, keys):
     """Merge offline-engine results into the output frame: input columns + gps/data/risk + the QC block (see docs/RUN_GUIDE.md)."""
     n = len(df)
-    R = [results.get(k) for k in keys]
+    R = results.get_many(keys) if hasattr(results, "get_many") else [results.get(k) for k in keys]
     R = [r if r and "verdict" in r else None for r in R]
     cols = {c: [None] * n for c in QC_BLOCK}
     slr = df["Same_Location_Remark"].tolist() if "Same_Location_Remark" in df else None
@@ -379,21 +397,26 @@ class Autosaver:
         self._save_lock = threading.Lock()
         self.saves = 0
         self.last_error = None
+        self.last_df = None
 
     def save(self, reason="autosave"):
         with self._save_lock:
             t = time.time()
             try:
+                self.target.final = reason != "autosave"
                 df = self.build()
                 path = self.target.write(df)
-                if self.ck is not None and self.ck_path:
+                self.last_df = df
+                if self.ck is not None and not isinstance(self.ck["results"], dict):
+                    self.ck["results"].meta_set("cost", self.ck.get("cost", 0.0))    # sqlite store: rows are already committed one by one
+                elif self.ck is not None and self.ck_path:
                     with self.lock:
                         snap = {"results": dict(self.ck["results"]), "cost": self.ck.get("cost", 0.0)}
                     save_checkpoint(self.ck_path, snap)
                 self.saves += 1
                 self.last_error = None
                 if self.prog:
-                    self.prog.saved(path, len(df), self.target.last_note)
+                    self.prog.saved(path, getattr(self.target, "rows_saved", 0) or len(df), self.target.last_note)
                     if self.target.last_note:
                         self.prog.error(self.target.last_note)
                 return path
@@ -439,9 +462,35 @@ def _start_progress(args, total, engine_label):
     return prog
 
 
-def _main_local(args, df, modes, ck, keys, prior_done):
+class _ColsView:
+    """Row access over column arrays without building 160,000 dicts up front (rows[i] builds one dict on demand)."""
+
+    def __init__(self, df, cols):
+        self.cols = [c for c in cols if c in df]
+        self.data = {c: df[c].to_numpy(dtype=object) for c in self.cols}
+        self.n = len(df)
+
+    def __len__(self):
+        return self.n
+
+    def __getitem__(self, i):
+        return {c: self.data[c][i] for c in self.cols}
+
+
+class _RowsView(_ColsView):
+    def __init__(self, df, need):
+        super().__init__(df, need)
+        self.need = need
+
+    def __getitem__(self, i):
+        r = {c: self.data[c][i] for c in self.cols}
+        for k in self.need:
+            r.setdefault(k, None)
+        return r
+
+
+def _main_local(args, df, modes, ck, keys, prior_done, sl=None):
     import local_engine
-    n = len(df)
     workers = args.workers or min(os.cpu_count() or 4, 12)
     kinds = [k for k, m in (("form", "pdf"), ("photo", "photo")) if m in modes]
     for step, m in enumerate(modes, 1):
@@ -465,41 +514,59 @@ def _main_local(args, df, modes, ck, keys, prior_done):
     if args.ml_model:
         import learn_qc
         df = learn_qc.add_predictions(df, args.ml_model)
-
-    done_before = [i for i in range(n) if "verdict" in ck["results"].get(keys[i], {}) or prior_done.iloc[i]]
-    done_set = set(done_before)
-    todo = [i for i in range(n) if i not in done_set] if kinds else []
+    if sl is not None:   # --offset/--limit: the checks above saw the whole file; now keep only this batch
+        lo, hi = sl
+        df = df.iloc[lo:hi].reset_index(drop=True)
+        keys, prior_done = keys[lo:hi], prior_done.iloc[lo:hi].reset_index(drop=True)
+        print(f"Batch: rows {lo:,}..{lo + len(df) - 1:,} of the file ({len(df):,} rows)")
+    n = len(df)
+    store = ck["results"]
+    stored_done = store.done_keys()
+    pd_flags = prior_done.to_numpy()
+    done_flags = np.array([(keys[i] in stored_done) or bool(pd_flags[i]) for i in range(n)], dtype=bool)
+    done_before = int(done_flags.sum())
+    todo = np.flatnonzero(~done_flags).tolist() if kinds else []
     engine_label = args.engine_module or "local"
     prog = _start_progress(args, n if kinds else 0, engine_label)
-    prog.preload_done(len(done_before) if kinds else 0)
+    prog.preload_done(done_before if kinds else 0)
     lock = threading.RLock()
-    target = report.ExcelTarget(args.output)
-    build = lambda: assemble_local(df, _snapshot(ck, lock), keys)
+    chunk = None
+    if args.chunk_rows:
+        def build_part(lo, hi):
+            return assemble_local(df.iloc[lo:hi], store, keys[lo:hi])
+        chunk = chunked.ChunkedOutput(args.output, args.chunk_rows, n, store, build_part, done_flags if kinds else np.ones(n, bool),
+                                      needs_ai=bool(kinds), prog=prog)
+        target, build = chunk, (lambda: None)
+        prog.output_path = chunk.stem + "_partNNN.xlsx"
+        print(f"Chunked output: {chunk.nparts} part(s) of {args.chunk_rows:,} rows -> {chunk.stem}_part001.xlsx ... and {chunk.csv_path}")
+    else:
+        target = report.ExcelTarget(args.output)
+        build = lambda: assemble_local(df, store, keys)
     saver = Autosaver(target, build, args.autosave_sec, ck, args.checkpoint, lock, prog)
     rc, runner = 0, None
     try:
         if kinds and todo:
             gcols = [c for c in dict.fromkeys(list(gps_qc.OUT) + ["Same_Location_Remark"]) if c in df]
-            ctx = {"gps": df[gcols].to_dict("records") if gcols else None,
+            ctx = {"gps": _ColsView(df, gcols) if gcols else None,
                    "dflags": df["Data_QC_Flags"].fillna("").tolist() if "Data_QC_Flags" in df else None,
-                   "risk": df[["Risk_Score", "Risk_Reasons"]].to_dict("records") if "Risk_Score" in df else None}
+                   "risk": _ColsView(df, ["Risk_Score", "Risk_Reasons"]) if "Risk_Score" in df else None}
             need = list(dict.fromkeys(list(local_engine.ROW_FIELDS)))
-            rows = df[[c for c in need if c in df]].to_dict("records")
-            for r in rows:
-                for k in need:
-                    r.setdefault(k, None)
+            rows = _RowsView(df, need)
             media = _local_map(df)
             runner = local_engine.LocalRunner(
                 rows, keys, todo, ck, kinds, media, ctx, agents=workers, downloaders=args.downloaders, rate=args.rate,
                 engine_module=args.engine_module, inline=args.inline, progress=prog, task_timeout=args.task_timeout,
-                pause_file=str(Path(args.progress).with_name("PAUSE")))
+                pause_file=str(Path(args.progress).with_name("PAUSE")), discard_media=args.discard_media,
+                on_row=(lambda i, res: chunk.mark_row(i)) if chunk else None)
             runner.lock = lock
             print(f"Agents: {workers} worker processes + {runner.n_dl} downloaders  |  rows to process: {len(todo):,}"
-                  f"  (already done: {len(done_before):,})  |  autosave every {args.autosave_sec:g}s -> {args.output}")
+                  f"  (already done: {done_before:,})  |  autosave every {args.autosave_sec:g}s -> {args.output}"
+                  + ("  |  discarding downloaded media after each row" if args.discard_media else ""))
             saver.start()
             t0 = time.time()
             runner.run()
-            print(f"Processed {runner.finalized:,} rows in {time.time() - t0:.1f}s")
+            print(f"Processed {runner.finalized:,} rows in {time.time() - t0:.1f}s"
+                  + (f" ({runner.discarded:,} downloaded files discarded)" if args.discard_media else ""))
         else:
             saver.start()
         prog.set_status("Done")
@@ -521,18 +588,89 @@ def _main_local(args, df, modes, ck, keys, prior_done):
         prog.stop()
     if path:
         print(f"Wrote {path}" + (f"\n!! {target.last_note}" if target.last_note else ""))
-    out = build()
+    summary = str(Path(args.output).with_name("summary_report.xlsx"))
+    if chunk:
+        if os.path.exists(chunk.csv_path):
+            print(f"Wrote merged CSV {chunk.csv_path}")
+        out = chunk.read_columns(["district", "surveyor_name", "Suggested_Remark", "Data_QC_Flags", "AI_Flags", C.COL_MATCH,
+                                  C.COL_QC_DONE, "QC Verdict"])
+    else:
+        out = saver.last_df if saver.last_df is not None else build()
     try:
-        summary = str(Path(args.output).with_name("summary_report.xlsx"))
         report.build(out, summary)
         print(f"Wrote {summary}")
     except Exception as e:
         print(f"!! summary report failed: {e}")
     v = out["QC Verdict"].value_counts() if "QC Verdict" in out else {}
-    print("Verdicts: " + ", ".join(f"{k}={int(v.get(k, 0))}" for k in remarks.VERDICTS) + f" | rows: {len(out):,} | cost: $0.00")
+    print("Verdicts: " + ", ".join(f"{k}={int(v.get(k, 0))}" for k in remarks.VERDICTS) + f" | rows: {n:,} | cost: $0.00")
     if rc:
         print("Resume with the same command plus --resume")
+    store.close()
     return rc
+
+
+# measured on the 100-row unseen sample, 4 cores, offline engine: ~0.7-0.85 s/row wall = ~3 core-seconds per row
+CORE_SEC_PER_ROW = 3.0
+MB_PER_ROW_MEDIA = 1.45            # form ~0.74 MB + ~3 photos ~0.24 MB each (measured)
+KB_PER_ROW_STORE = 4.6             # checkpoint (sqlite) per finished row
+KB_PER_ROW_XLSX, KB_PER_ROW_CSV = 0.9, 2.3
+
+
+def _fmt_dur(sec):
+    sec = max(0, int(sec))
+    d, r = divmod(sec, 86400)
+    h, r = divmod(r, 3600)
+    return (f"{d} d " if d else "") + f"{h} h {r // 60:02d} min" if (d or h) else f"{r // 60} min"
+
+
+def _fmt_gb(mb):
+    return f"{mb / 1024:.1f} GB" if mb >= 1024 else f"{mb:.0f} MB"
+
+
+def estimate(args, df, plan, local_map=None):
+    """Numbers behind --dry-run for the offline engine (also used by the tests)."""
+    from photo_qc import split_urls
+    rows = sorted({i for v in plan.values() for i in v})
+    n = len(rows)
+    cpu = os.cpu_count() or 4
+    agents = args.workers or min(cpu, 12)
+    eff = min(agents, cpu)
+    t_cpu = n * CORE_SEC_PER_ROW / max(eff, 1)
+    net_files = 0
+    if not args.local_media and rows:
+        sub = df.iloc[rows]
+        if "pdf" in plan:
+            net_files += int(sub["pdf_url"].fillna("").astype(str).str.contains("http", regex=False).sum()) if "pdf_url" in sub else 0
+        if "photo" in plan and "media_urls" in sub:
+            net_files += sum(min(len(split_urls(u)), C.MAX_PHOTOS_PER_ROW) for u in sub["media_urls"].tolist())
+    t_net = net_files / args.rate if (args.rate and net_files) else 0.0
+    t = max(t_cpu, t_net)
+    chunk = args.chunk_rows or 0
+    out_mb = n * (KB_PER_ROW_XLSX + (KB_PER_ROW_CSV if chunk else 0)) / 1024
+    store_mb = n * KB_PER_ROW_STORE / 1024
+    inflight = max(8, agents * 4)
+    media_mb = inflight * MB_PER_ROW_MEDIA if args.discard_media else (0 if args.local_media else n * MB_PER_ROW_MEDIA)
+    return {"rows": n, "agents": agents, "cpu": cpu, "eff": eff, "t_cpu": t_cpu, "t_net": t_net, "net_files": net_files, "t": t,
+            "sec_per_row": (t / n) if n else 0.0, "out_mb": out_mb, "store_mb": store_mb, "media_mb": media_mb,
+            "chunks": (-(-n // chunk) if chunk else 1)}
+
+
+def print_estimate(args, df, plan, local_map=None):
+    e = estimate(args, df, plan, local_map)
+    if not e["rows"]:
+        print("Offline engine estimate: nothing to process.")
+        return e
+    print(f"Offline engine estimate for {e['rows']:,} rows ({e['agents']} agents on {e['cpu']} CPU cores; only {e['eff']} can run at once):")
+    print(f"  time (CPU)      : ~{_fmt_dur(e['t_cpu'])}  (~{e['t_cpu'] / e['rows']:.2f} s/row wall; measured ~0.7-0.85 s/row on 4 cores)")
+    if e["t_net"]:
+        print(f"  time (download) : ~{_fmt_dur(e['t_net'])}  ({e['net_files']:,} files at --rate {args.rate:g}/s)")
+    print(f"  => total        : ~{_fmt_dur(e['t'])}  (~{60 * e['rows'] / max(e['t'], 1):.0f} rows/min; add ~1 min start-up per run)"
+          + ("   [limited by the download rate: raise --rate only if the site allows]" if e["t_net"] > e["t_cpu"] else ""))
+    print(f"  disk: output {_fmt_gb(e['out_mb'])}" + (f" in {e['chunks']} parts + merged CSV" if args.chunk_rows else "")
+          + f", checkpoint {_fmt_gb(e['store_mb'])}"
+          + (f", media cache at most ~{_fmt_gb(e['media_mb'])} (--discard-media)" if args.discard_media
+             else ("" if args.local_media else f", downloaded media ~{_fmt_gb(e['media_mb'])} (use --discard-media to keep it near zero)")))
+    return e
 
 
 def _snapshot(ck, lock):
@@ -553,22 +691,44 @@ def main(argv=None):
         df = df[df["state"].astype(str).str.lower() == args.filter_state.lower()]
     if args.filter_dist:
         df = df[df["district"].astype(str).str.lower() == args.filter_dist.lower()]
-    if args.limit:
+    slice_mode = args.offset is not None
+    if args.limit and not slice_mode:
         df = df.head(args.limit)
     df = df.reset_index(drop=True)
     print(f"Input: {args.input} ({len(df):,} rows)")
+    sl = None
+    if slice_mode:
+        sl = (min(args.offset, len(df)), min(len(df), args.offset + args.limit) if args.limit else len(df))
+        print(f"Batch: --offset {args.offset} --limit {args.limit or 'all'} -> rows {sl[0]:,}..{sl[1] - 1:,}")
     if not args.inplace and not args.input.startswith(("http://", "https://")) \
             and Path(args.output).resolve() == Path(args.input).resolve():
         sys.exit("Refusing to overwrite the input file. Choose another --output, or add --inplace.")
 
     modes = {"full": ["data", "gps", "pdf", "photo"]}.get(args.mode, [args.mode])
     ai_phases = [m for m in modes if m in ("pdf", "photo")]
-    ck = load_checkpoint(args.checkpoint) if args.resume else {"results": {}, "cost": 0.0}
-
-    keys = make_keys(df)
+    keys = make_keys(df)               # keys are made on the whole file so duplicate-docket suffixes do not depend on the batch
     prior_done = _truthy_done(df[C.COL_QC_DONE]) if (args.resume and C.COL_QC_DONE in df) else pd.Series(False, index=df.index)
+    full = (df, keys, prior_done)
+    if sl is not None:                 # plan / dry-run / the claude engine work on the batch only
+        df, keys, prior_done = (df.iloc[sl[0]:sl[1]].reset_index(drop=True), keys[sl[0]:sl[1]],
+                                prior_done.iloc[sl[0]:sl[1]].reset_index(drop=True))
+    api_key = args.api_key or C.ANTHROPIC_API_KEY
+    if args.engine == "auto":
+        args.engine = "claude" if api_key else "local"
+    local_ai = args.engine == "local" and bool(ai_phases)
+    if local_ai:
+        if args.dry_run:      # never wipe or create a store just to estimate
+            sp = ckstore.store_path_for(args.checkpoint)
+            store = ckstore.open_store(args.checkpoint, True) if (args.resume and os.path.exists(sp)) else {}
+        else:
+            store = ckstore.open_store(args.checkpoint, args.resume)
+        ck = {"results": store, "cost": 0.0}
+    else:
+        ck = load_checkpoint(args.checkpoint) if args.resume else {"results": {}, "cost": 0.0}
+        if args.chunk_rows:
+            print("Note: --chunk-rows only applies to the offline engine with forms/photos; writing one Excel file.")
     if args.local_media:
-        LOCAL.update(local_media.index(args.local_media, df))
+        LOCAL.update(local_media.index(args.local_media, full[0] if local_ai else df))
         print(f"Local media: matched {len(LOCAL):,} dockets "
               f"({sum(bool(v['pdfs']) for v in LOCAL.values()):,} with PDF, {sum(bool(v['images']) for v in LOCAL.values()):,} with images)")
     plan = {}
@@ -591,14 +751,17 @@ def main(argv=None):
             print(f"  {k}: {len(v):,} rows to process")
         print(f"  est. cost: ${sum(len(v) * EST_COST[k] for k, v in plan.items()):.2f}"
               f"   est. time: {calls * EST_SEC_PER_CALL / workers / 60:.0f} min ({workers} workers)")
+        if local_ai:
+            print_estimate(args, df, plan, LOCAL)
+            if hasattr(ck["results"], "close"):
+                ck["results"].close()
         return 0
 
-    api_key = args.api_key or C.ANTHROPIC_API_KEY
-    if args.engine == "auto":
-        args.engine = "claude" if api_key else "local"
     if ai_phases:
         print(f"OCR/photo engine: {args.engine}")
-    if args.engine == "local" and ai_phases:
+    if local_ai:
+        if sl is not None:
+            return _main_local(args, full[0], modes, ck, full[1], full[2], sl)
         return _main_local(args, df, modes, ck, keys, prior_done)
     if ai_phases and args.engine == "claude" and not api_key:  # fail fast, before any phase runs
         sys.exit("ANTHROPIC_API_KEY not set (use --api-key or .env, or --engine local). GPS/data modes work without it.")
