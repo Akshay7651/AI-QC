@@ -67,6 +67,45 @@ table.live td.num{text-align:right}
 .badge.OK{background:var(--ok)} .badge.Review{background:var(--review);color:#222} .badge.Reject-evidence{background:var(--reject)} .badge.Manual-check{background:var(--manual)}
 .err{color:var(--err);font-size:12px}
 .banner{display:none;padding:6px 14px;background:var(--review);color:#222;font-weight:600}
+
+body{background:linear-gradient(180deg,#e9eefb 0,#f6f7fb 220px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) body{background:#0f141b}}
+.top{background:linear-gradient(120deg,#1b2a6b 0%,#5b2a86 55%,#c2417a 100%);color:#fff;border:0;padding:12px 16px;box-shadow:0 3px 14px rgba(40,30,90,.35)}
+.top h1{font-size:19px;letter-spacing:.3px}
+.top .note,.top .kv{color:rgba(255,255,255,.8)}
+.top .kv b{color:#fff;font-size:17px}
+.kv span{background:rgba(255,255,255,.14);border-radius:10px;padding:3px 10px}
+.pill{box-shadow:0 0 0 2px rgba(255,255,255,.35)}
+.bar{height:20px;background:rgba(255,255,255,.22);border-radius:10px;margin:10px 0 6px}
+.bar>i{background:repeating-linear-gradient(45deg,#36d399 0 10px,#2bb987 10px 20px);background-size:28px 28px;animation:stripes 1s linear infinite;border-radius:10px}
+@keyframes stripes{to{background-position:28px 0}}
+.bar>span{color:#fff;text-shadow:0 1px 3px rgba(0,0,0,.5);font-size:12px}
+.split{display:flex;height:9px;border-radius:5px;overflow:hidden;margin:2px 0 8px;background:rgba(255,255,255,.2)}
+.split i{display:block;height:100%;transition:width .6s}
+.chip{color:#fff;border:0;font-weight:600;padding:3px 12px;box-shadow:0 1px 3px rgba(0,0,0,.25)}
+.chip.ok{background:#2e9e5b}.chip.review{background:#e0a800;color:#222}.chip.reject{background:#d6336c}.chip.manual{background:#e8590c}
+.chips#counters .chip{background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.35)}
+.chips#counters .chip.hot{background:#d6336c}
+summary{color:#fff;opacity:.85}
+.agent{background:rgba(255,255,255,.95);color:#1b2430;border:0;border-left:5px solid var(--rc,#888);box-shadow:0 1px 4px rgba(0,0,0,.25)}
+.agent.busy{box-shadow:0 0 0 2px #36d399,0 2px 8px rgba(0,0,0,.3)}
+.agent .doc,.agent .note{color:#5b6573}
+.agent.role-dl{--rc:#2f80ed}.agent.role-fr{--rc:#8e44ad}.agent.role-ph{--rc:#f2994a}
+.robot .head{fill:var(--rc,#888);fill-opacity:.25;stroke:var(--rc,#888)}
+.robot .eye{fill:var(--rc,#888)}
+.tools{background:transparent;padding:10px 16px 6px}
+.tools h2{font-size:15px;color:#3b2a86}
+.tabw{margin:0 12px 12px;border:1px solid #cfd6e4;border-radius:12px;box-shadow:0 2px 10px rgba(30,40,90,.12)}
+table.live{border-collapse:collapse}
+table.live th{background:linear-gradient(180deg,#3b2a86,#2b1f66);color:#fff;border:1px solid #4a3a9a;padding:7px 8px}
+table.live td{border:1px solid #d8deea}
+table.live tbody tr:nth-child(even) td{background:#f4f6fc}
+table.live tbody tr:hover td{background:#e7ecfb}
+table.live td.num{font-variant-numeric:tabular-nums}
+.tag{display:inline-block;padding:0 8px;border-radius:999px;font-weight:600;font-size:11.5px}
+.tag.g{background:#d4f1df;color:#16683a}.tag.r{background:#fbd5e3;color:#a1124a}.tag.y{background:#fdf0c2;color:#7a5a00}
+.badge{box-shadow:0 1px 2px rgba(0,0,0,.25)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) table.live tbody tr:nth-child(even) td{background:#1c2633}:root:not([data-theme="light"]) .agent{background:#18202b;color:#e7edf5}:root:not([data-theme="light"]) .tools h2{color:#b9a8ff}}
 </style>
 </head>
 <body>
@@ -80,6 +119,7 @@ table.live td.num{text-align:right}
     <span class="note" id="outline"></span>
   </div>
   <div class="bar"><i id="barfill"></i><span id="barlbl">0%</span></div>
+  <div class="split" id="split"></div>
   <div class="chips" id="verdicts"></div>
   <div class="robots" id="agents"></div>
   <span class="note" id="agentnote" style="display:none"></span>
@@ -111,8 +151,8 @@ var COUNTERS=[["form_not_found","Form not found",1],["missing_form_link","Missin
 var VERD=[["OK","OK","ok"],["Review","Review","review"],["Reject-evidence","Reject evidence","reject"],["Manual-check","Manual check","manual"]];
 var lastOK=0,fails=0,openEv={},lastEvKey="";
 var ROBOT='<svg class="robot" viewBox="0 0 64 64"><line x1="32" y1="3" x2="32" y2="12" stroke="currentColor" stroke-width="2"/><circle class="ant" cx="32" cy="4" r="3" fill="var(--busy)"/>'+
- '<rect x="14" y="12" width="36" height="26" rx="7" fill="var(--chip)" stroke="currentColor" stroke-width="2"/>'+
- '<rect class="eye" x="21" y="21" width="7" height="8" rx="2" fill="var(--accent)"/><rect class="eye" x="36" y="21" width="7" height="8" rx="2" fill="var(--accent)"/>'+
+ '<rect class="head" x="14" y="12" width="36" height="26" rx="7" stroke-width="2"/>'+
+ '<rect class="eye" x="21" y="21" width="7" height="8" rx="2"/><rect class="eye" x="36" y="21" width="7" height="8" rx="2"/>'+
  '<rect x="22" y="38" width="20" height="16" rx="4" fill="var(--card)" stroke="currentColor" stroke-width="2"/><circle class="gear" cx="32" cy="46" r="4" fill="none" stroke="var(--busy)" stroke-width="2" stroke-dasharray="3 2"/>'+
  '<g class="arm l"><rect x="12" y="38" width="8" height="13" rx="3" fill="var(--chip)" stroke="currentColor" stroke-width="1.5"/></g>'+
  '<g class="arm r"><rect x="44" y="38" width="8" height="13" rx="3" fill="var(--chip)" stroke="currentColor" stroke-width="1.5"/></g>'+
@@ -142,12 +182,16 @@ function render(d){
   var c=d.counters||{},v=d.verdicts||{};
   $("verdicts").innerHTML=VERD.map(function(x){return '<span class="chip '+x[2]+'"><b>'+num(v[x[0]])+'</b>'+x[1]+'</span>'}).join("");
   $("counters").innerHTML=COUNTERS.map(function(x){var n=c[x[0]]||0;return '<span class="chip'+(n&&x[2]?' hot':'')+'"><b>'+num(n)+'</b>'+x[1]+'</span>'}).join("");
+  var tot=0;VERD.forEach(function(x){tot+=(v[x[0]]||0)});
+  var CO={"OK":"#2e9e5b","Review":"#f2c230","Reject-evidence":"#d6336c","Manual-check":"#e8590c"};
+  $("split").innerHTML=VERD.map(function(x){return '<i title="'+x[1]+'" style="width:'+(tot?100*(v[x[0]]||0)/tot:0)+'%;background:'+CO[x[0]]+'"></i>'}).join("");
   var ag=d.agents||[],busy=ag.filter(function(a){return a.state==="busy"}).length;
   $("agentnote").textContent="("+busy+" busy of "+ag.length+")";
   $("agents").innerHTML=ag.map(function(a){
     var doing=a.state==="busy"?(/^form/.test(a.task||"")?"reading the form":/^photo/.test(a.task||"")?"checking the photos":/fetch/.test(a.task||"")?"downloading form + photos":esc(a.task||"working")):a.state==="idle"?"waiting for work":a.state==="starting"?"waking up (loading models)":esc(a.task||a.state);
     var tool=/Download/i.test(a.role)?"&#128230;":/Photo/i.test(a.role)?"&#128247;":"&#128269;";
-    return '<div class="agent '+esc(a.state)+'">'+ROBOT.replace("TOOL",tool)+'<div class="body"><div class="role"><span>'+esc(a.role)+'</span><span class="st">'+esc(a.state)+(a.state==="idle"?'<span class="zzz">zzz</span>':'')+'</span></div>'+
+    var rc=/Download/i.test(a.role)?"role-dl":/Photo/i.test(a.role)?"role-ph":"role-fr";
+    return '<div class="agent '+rc+' '+esc(a.state)+'">'+ROBOT.replace("TOOL",tool)+'<div class="body"><div class="role"><span>'+esc(a.role)+'</span><span class="st">'+esc(a.state)+(a.state==="idle"?'<span class="zzz">zzz</span>':'')+'</span></div>'+
       '<div class="doc">'+(a.state==="busy"?esc(a.docket||""):"&nbsp;")+'</div><div class="note">'+doing+'</div>'+
       '<div class="meta"><span>'+num(a.rows_done)+' done</span><span>'+(a.avg_sec?a.avg_sec+" s/row":"-")+'</span></div></div></div>'}).join("");
   var o=d.output||{};
@@ -160,12 +204,13 @@ function render(d){
   $("foot").textContent="Engine: "+(d.engine||"local")+"  |  started "+(d.started_at||"");
 }
 
+function tg(v,good,bad){v=String(v==null?"":v);if(!v)return "";var c=v===good?"g":v===bad?"r":"y";return '<span class="tag '+c+'">'+esc(v)+'</span>'}
 function vcls(v){return '<span class="badge '+esc(v)+'">'+esc(v||"-")+'</span>'}
 function drawRows(fresh){
   var fv=$("fv").value,q=($("fq").value||"").toLowerCase(),tb=$("tb"),html=[];
   var rows=ALL.filter(function(r){return (!fv||r.verdict===fv)&&(!q||(r.docket+" "+r.farmer+" "+r.remark+" "+r.flags).toLowerCase().indexOf(q)>=0)});
   rows=rows.slice(-400).reverse();
-  tb.innerHTML=rows.map(function(r){return '<tr'+(fresh&&fresh[r.seq]?' class="new"':'')+'><td>'+r.seq+'</td><td>'+esc(r.t)+'</td><td><code>'+esc(r.docket)+'</code></td><td>'+vcls(r.verdict)+'</td><td class="rem">'+esc(r.remark)+'</td><td>'+esc(r.form_no)+'</td><td class="num">'+esc(r.area_form)+'</td><td class="num">'+esc(r.loss_form)+'</td><td class="num">'+esc(r.area_app)+'</td><td class="num">'+esc(r.loss_app)+'</td><td>'+esc(r.match)+'</td><td>'+esc(r.farmer_sig)+'</td><td>'+esc(r.company_sig)+'</td><td>'+esc(r.photo_is_form)+'</td><td>'+esc(r.farmer)+'</td><td>'+esc(r.surveyor)+'</td></tr>'}).join("");
+  tb.innerHTML=rows.map(function(r){return '<tr'+(fresh&&fresh[r.seq]?' class="new"':'')+'><td>'+r.seq+'</td><td>'+esc(r.t)+'</td><td><code>'+esc(r.docket)+'</code></td><td>'+vcls(r.verdict)+'</td><td class="rem">'+esc(r.remark)+'</td><td>'+esc(r.form_no)+'</td><td class="num">'+esc(r.area_form)+'</td><td class="num">'+esc(r.loss_form)+'</td><td class="num">'+esc(r.area_app)+'</td><td class="num">'+esc(r.loss_app)+'</td><td>'+tg(r.match,'Match','Mismatch')+'</td><td>'+tg(r.farmer_sig,'Yes','No')+'</td><td>'+tg(r.company_sig,'Yes','No')+'</td><td>'+tg(r.photo_is_form,'','Yes')+'</td><td>'+esc(r.farmer)+'</td><td>'+esc(r.surveyor)+'</td></tr>'}).join("");
   $("tabnote").textContent="("+ALL.length+" rows, newest on top)";
 }
 function pollRows(){
