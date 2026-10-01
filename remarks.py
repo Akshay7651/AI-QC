@@ -364,7 +364,7 @@ def evaluate(row, form=None, photos=None, gps=None, data_flags="", risk=None):
             parts_photo.append("Photo(s) are rotated 90 degrees.")
             flag("Photos rotated", "review")
         # GPS stamp vs app
-        dist = _num(photos.get("stamp_dist_m"))
+        dist = _num(photos.get("stamp_dist_m")) if C.USE_PHOTO_GPS else None
         photo_dist = dist
         if dist is not None:
             if dist > C.GPS_PHOTO_MAX_DISTANCE_M:
@@ -372,7 +372,7 @@ def evaluate(row, form=None, photos=None, gps=None, data_flags="", risk=None):
                 flag("Photo GPS mismatch", "review", f"photo GPS {dist:,.0f} m from app point")
             else:
                 parts_photo.append(f"GPS stamp {dist:,.0f} m from app.")
-        elif not is_form:
+        elif not is_form and C.USE_PHOTO_GPS:
             parts_photo.append("No readable GPS stamp on the photos.")
         # date
         pd_ = _parse_date(photos.get("stamp_date") or photos.get("photo_date"))

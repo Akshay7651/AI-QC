@@ -56,3 +56,7 @@ COL_FORM_REMARKS = "Survey remarks on form"
 COL_FARMER_PHOTO = "Farmer Photo (Yes/No)"
 COL_PHOTO_LOSS = "Loss as per Photo (Yes/No)"
 COL_OTHER_REMARKS = "Any Other Remarks"
+
+# Compare the GPS printed on each photo with the app latitude/longitude (distance column + mismatch flag). ON (user: do not switch off).
+# The photo's own lat/long are NOT added as columns - the app coordinates are already in the input Excel. The photo DATE stamp is always read.
+USE_PHOTO_GPS = True

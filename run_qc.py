@@ -272,7 +272,7 @@ QC_BLOCK = [
     C.COL_SURVEYOR_SIG, C.COL_FARMER_SIG, "Primary Worker Signature (Yes/No)", C.COL_GOVT_SIG, "Officer Stamp Only (Yes/No)",
     C.COL_FORM_STATUS, "Form Quality", "Form Confidence", C.COL_FORM_REMARKS,
     C.COL_PHOTO_DATE, C.COL_FIELD_PHOTO, "Field photo type", "Photo is form image (Yes/No)", "Form-image photos (n)",
-    "Duplicate photos (n)", "Photos rotated (Yes/No)", "Photo GPS distance (m)", "Photos analysed (n)",
+    "Duplicate photos (n)", "Photos rotated (Yes/No)", *(["Photo GPS distance (m)"] if C.USE_PHOTO_GPS else []), "Photos analysed (n)",
     "Photo scene type", "Crop present in photo", "Crop seen in photo", "Crop matches declared", "Flooding/waterlogging seen",
     "Crop damage state",
     C.COL_FARMER_PHOTO, "Farmer/person present in photos (remark)", C.COL_PHOTO_LOSS, "AI_Flags", "Same Location Remark", C.COL_OTHER_REMARKS, "AI Engine",
@@ -388,7 +388,8 @@ def assemble_local(df, results, keys):
             put("Duplicate photos (n)", p.get("n_duplicates"))
             put("Photos rotated (Yes/No)", _yn(bool(p.get("rotated"))))
             d = _nn(p.get("stamp_dist_m"))
-            put("Photo GPS distance (m)", None if d is None else round(float(d), 1))
+            if C.USE_PHOTO_GPS:
+                put("Photo GPS distance (m)", None if d is None else round(float(d), 1))
             put("Photos analysed (n)", r.get("n_photos"))
             put("Photo scene type", p.get("scene_type"))
             put("Crop present in photo", _yn(p.get("crop_present")))
