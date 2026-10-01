@@ -171,7 +171,8 @@ def read_stamps(grays):
     n = len(grays)
     res = [None] * n
     try:
-        masks = [_mask(g) for g in grays]
+        # landscape photos (width > height) carry the same 4-line stamp but it covers a taller, wider part of the frame
+        masks = [_mask(g, frac=(0.50, 0.99, 0.0, 0.62)) if g.shape[1] > g.shape[0] else _mask(g) for g in grays]
         txt = _ocr(_stack(masks))
         blocks = _split_blocks(txt)
         if len(blocks) == n:

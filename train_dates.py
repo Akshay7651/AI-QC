@@ -293,9 +293,9 @@ def run_epochs(net, items, epochs, lr, bs=48, log=print):
         net.train(); t0 = time.time(); tot = 0; n = 0
         for x, idx in dl:
             loss_s = ctc_marginal(net(x), idx.tolist(), items)
-            loss = torch.clamp(loss_s, max=30).mean()
+            loss = loss_s.mean()
             opt.zero_grad(); loss.backward(); torch.nn.utils.clip_grad_norm_(net.parameters(), 5.0); opt.step(); sched.step()
-            tot += float(loss) * len(idx); n += len(idx)
+            tot += float(loss.detach()) * len(idx); n += len(idx)
         log("epoch %d/%d loss %.3f  %.0fs" % (ep + 1, epochs, tot / n, time.time() - t0))
     return net
 
