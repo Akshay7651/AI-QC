@@ -48,7 +48,9 @@ if exe:
     except Exception as e:
         line(False, "tesseract runs", str(e))
 print("Model files (must come with the repo):")
-for f, need in [("models/digits_cnn.npz", "handwritten digit reader (without it handwritten area/loss/dates come out 'not readable')"),
+for f, need in [("models/cells_cnn.npz", "handwritten area/loss reader (without it handwritten values come out 'not readable')"),
+                ("models/sig_clf.joblib", "signature classifier"),
+                ("models/digits_cnn.npz", "handwritten digit reader (without it handwritten area/loss/dates come out 'not readable')"),
                 ("photo_models/heads.pkl", "photo classifiers"), ("photo_models/form.pkl", "photo-is-form detector"),
                 ("photo_models/orient.pkl", "rotation detector"), ("photo_models/crop_visible.pkl", "crop-visible detector"),
                 ("photo_models/yunet.onnx", "face detector"), ("photo_models/image_classification_mobilenetv2_2022apr.onnx", "pretrained image model")]:
