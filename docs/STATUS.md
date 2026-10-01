@@ -134,3 +134,12 @@ PO-ID reading is demoted to a nice-to-have. Until the cell model reaches >=95% p
 - `python retrain.py --labels human_qc.xlsx` retrains the whole-cell model from human rows with a 15% never-trained hold-out and only adopts the new model if it is not worse (tested: a bad 200-step model was rejected and the old file restored byte-identical).
 - Remaining for the next session: (1) get the user's 3,000 human-QC'd rows and run retrain.py; (2) fresh-batch accuracy loop (train on ~2,000 / test on the rest in batches of 100, until 9/10 batches >= 95% on asserted fields);
   (3) streaming mode + chunked output for 160k rows; (4) real overwrite detector, date reader, PO-ID reader (all currently disabled/unreliable); (5) optional: more trees for photo heads, measured.
+
+
+### UPDATE (2026-10-01): FIRST FRESH-BATCH ACCURACY TEST (100 unseen rows, hand-labelled by independent labeller; `tools/accuracy_report.py`)
+Ground truth: `data/eval_unseen100/*.csv` (never trained on, EXCEPT signatures: sig classifier then trained on all 250 labelled forms -> signature numbers optimistic).
+Precision when answered / coverage: area 100% / 57% (non-zero 8 of 25 answered, all correct); loss 100% / 57%; form no 96.8% / 68% (gate: >=3 agreeing OCR passes);
+photo-is-form 100% / 96%; signatures farmer 97.9%, company 96.9%, worker 99.0% (optimistic; CV: 94.7 / 97.5 / 94.7); officer not assessed (1 positive in ~246 forms).
+Before the signature classifier (honest test): farmer 93.8, company 92.9, worker 86.7 (precision of 'yes' only 58.6%), officer 93.8 (precision of 'yes' 14%).
+Weak point = COVERAGE of handwritten values (57%; 28/100 rows -> Manual-check). Verdicts on the 100: OK 8, Review 13, Manual-check 28, Reject-evidence 51 (52 rows upload a photo of the paper form instead of a field photo).
+Still open: the 9-of-10 fresh-batch loop (needs more ground truth - use the user's 3,000 human rows), non-zero handwriting coverage, crop/flood/damage photo claims (weak, gated), dates/PO-ID/overwrite (disabled).
