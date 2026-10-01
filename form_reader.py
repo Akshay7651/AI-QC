@@ -314,8 +314,8 @@ def read_cell(rgb_crop):
 FORMNO_GATE = 0.9   # >=3 agreeing OCR passes (see _ocr_formno)
 CELL_BLANK_INK = 0.006
 # Handwritten area/loss values are only asserted when the cell model's confidence is >= CELL_GATE.
-# Measured on 150 hand-labelled forms: gate 0.8 -> area 97.8% / loss 98.9% precision at ~63-66% coverage (0.7 -> 95.1% / 96.3%).
-CELL_GATE = 0.8
+# Retrained model (human disputed-case labels), 114 never-trained forms: gate 0.7 -> 96.9% precision, 71% of cells answered (non-zero answered: 95% right).
+CELL_GATE = 0.7
 # Dates: handwriting reader is ~0-3% exact on the hand labels -> NOT asserted until a real date reader exists.
 DATES_ENABLED = False
 

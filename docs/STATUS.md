@@ -150,3 +150,12 @@ Still open: the 9-of-10 fresh-batch loop (needs more ground truth - use the user
 `--offset/--limit` batches + `tools/merge_qc.py`, kill -9 resume tested, `--dry-run` time/disk estimate). See docs/RUN_GUIDE.md section 10.
 Measured: ~0.75 s/row on 4 cores -> 160k rows ~33 h (4 cores), ~17 h (8), ~8.5 h (16); orchestration overhead 2.5 ms/row; peak RAM 1.7 GB for 160k synthetic rows. Downloads (--rate 5 files/s) become the bottleneck beyond 4 cores - pre-download with download_media.py or raise --rate only if the site allows.
 Remaining: user's 3,000 human rows -> retrain.py; fresh-batch loop (9/10 >= 95%); non-zero handwriting coverage; real overwrite/date/PO-ID readers.
+
+
+### UPDATE (2026-10-01): retrained cell model on the user's DISPUTED-CASES file (396 dockets, human 'As Per Form' values; `Disputed_Cases-396.xlsx`)
+- Human values agree with app values on 95.1% of rows; 107 rows non-zero (13 distinct values 25-100) -> the data our model lacked. 390 forms downloaded (data/disputed/forms, copied to data/forms).
+  CAUTION: disputed sample = farmers often refused to sign (farmer signature 'No' on 60%): do NOT use it for the signature model.
+- Before retraining, on 328 unseen forms vs the human values: area 97.0% / loss 95.7% precision at ~73% coverage; NON-ZERO only 38% answered, 75-83% right; some real 35/40/50 were read as 0 (false zeros hide discrepancies).
+- `python retrain.py --labels human_disputed.xlsx --holdout 0.3 --steps 4000` (269 train / 114 never-trained hold-out) -> new models/cells_cnn.npz ADOPTED. Real hold-out (114 forms, 228 cells): new model better calibrated;
+  CELL_GATE lowered 0.8 -> 0.7: 71% of cells answered at 96.9% precision; non-zero answered (19) 95% right; false zeros 4 (old model: 5 at its gate, with lower coverage).
+- Still weak: non-zero coverage (~24-45% depending on gate) - small number of non-zero training examples (~80 human non-zero forms). More human non-zero forms (the user's remaining checked rows, staged filled forms) will help most.
