@@ -94,10 +94,9 @@ C1. TEST on the first 100 rows (do this first)
         .\.venv\Scripts\python.exe run_qc.py --input Input\Data.xlsx --limit 100 --agents 6 --output results\test100.xlsx
 
     What happens:
-      Step 1  It downloads the forms and photos of the 100 rows into  media\  (12 downloads at the same time).
-              You see:  downloaded 40/100 rows ...   QC starts only after the download finishes.
-              Files already downloaded are skipped, so running again is fast.
-      Step 2  The robots (agents) read the forms and photos and write the remarks.
+      The downloader robots fetch each docket's form and photos from the links while the other robots read them and write
+      the remarks - so results appear from the first minute.  Downloaded files are kept in the folder  cache\  so running
+      again is fast.  (Optional: add  --predownload  to download EVERYTHING first into  media\  and start the QC afterwards.)
     Open the live dashboard in your browser:   http://localhost:8765
       - small robots show what each agent is doing (reading the form / checking photos / downloading)
       - the table below shows every finished row with its verdict and remark, newest first

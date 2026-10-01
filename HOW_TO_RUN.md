@@ -60,8 +60,8 @@ Use ONE of these layouts (the docket ID must be in the name):
    ```
 3. A folder of ZIP files, one per docket (`<docket>.zip` containing `form\` and `media\`). Works, but needs extra disk space to unpack.
 
-Not downloaded yet? Just run without `--local-media`: the program FIRST downloads every form and photo into the folder `media\` (12 downloads in parallel,
-resumable - files already there are skipped) and ONLY THEN starts the QC. Use `--media-dir D:\media` to choose another folder.
+Not downloaded yet? Just run without `--local-media`: the program downloads each form and photo from the link while it works (files are kept in `cache\`).
+To download everything first, add `--predownload` (files go to `media\`, or `--media-dir D:\media`).
 
 ---------------------------------------------------------------------------------------------------
 
