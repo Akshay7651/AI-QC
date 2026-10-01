@@ -167,3 +167,14 @@ Remaining: user's 3,000 human rows -> retrain.py; fresh-batch loop (9/10 >= 95%)
 - New Excel columns: Sowing/Loss/Intimation/Inspection date (Form); 'Farmer/person present in photos (remark)' ('Farmer available' if ANY photo shows a person with >=25% body visible, else 'Farmer not available'; face detector only: legs/edge-of-frame people are missed by design);
   Form status = correct / incomplete (farmer or company signature missing, or nothing written) - overwrite/whitener NOT detected; 'Date of survey (as per Geo Tagged Image)' from the photo stamp (landscape photos supported); photo GPS vs app check stays ON (config.USE_PHOTO_GPS).
 - ALL photos of a docket are checked (MAX_PHOTOS_PER_ROW 10; data has up to 6). PO ID is skipped by design (user decision).
+
+
+## Update 2026-10-01 (retrain on non-zero forms + gates)
+* Retrained the cell model from the app values of 2,500 non-zero + ~1,000 zero forms of the Level-1 file (retrain.py --app-values --init), 10% hold-out never trained on:
+  hold-out 357 forms / 532 cells: 55.1% coverage @95.9% -> 60.0% @96.2% precision (adopted).
+* On the 154 hand-labelled eval forms, CELL_GATE sweep (precision/coverage): 0.70 -> area 95.2%/81%, loss 94.9%/75%; 0.85 -> area 97.2%/70%, loss 98.0%/65%;
+  0.90 -> 97.0%/66%, 97.9%/62%.  CELL_GATE set to 0.85 (every stated value >= 95%).
+* Form No: fallback scan of the page top (coverage 68% -> 84% on 147 labelled forms, precision 96.7%).
+* Remarks are plain language ('AI Technical Detail' column keeps the technical text); Excel: input columns blue, AI columns green, borders.
+* Non-zero handwriting is still the weak spot (~45% of non-zero cells answered). Next: train on more of the 13k non-zero forms in the Level-1 file
+  (needs ~13k downloads) and add 'verify against the app value' mode.

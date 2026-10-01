@@ -347,7 +347,7 @@ FORMNO_GATE = 0.9   # >=3 agreeing OCR passes (see _ocr_formno)
 CELL_BLANK_INK = 0.006
 # Handwritten area/loss values are only asserted when the cell model's confidence is >= CELL_GATE.
 # Retrained model (human disputed-case labels), 114 never-trained forms: gate 0.7 -> 96.9% precision, 71% of cells answered (non-zero answered: 95% right).
-CELL_GATE = 0.7
+CELL_GATE = 0.85
 # Dates: sequence reader (date_reader.py: CNN+BiGRU+CTC, numpy). Switched on only when its measured precision-at-gate is >=95%
 # per field on held-out forms (see docs / train_dates.py --eval); False = dates stay None ("not readable").
 # Measured on held-out forms (precision when answered / coverage): loss date 95-97% / 45-62% -> ON with a strict gate;
