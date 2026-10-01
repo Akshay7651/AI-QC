@@ -203,5 +203,9 @@ def sig_pred(feats):
         return out
     for nm, m in _SIG["models"].items():
         if m is not None and feats.get(nm):
-            out[nm] = bool(m.predict([[feats[nm][k] for k in _SIG["keys"]]])[0])
+            p = float(m["model"].predict_proba([[feats[nm][k] for k in _SIG["keys"]]])[0][1])
+            if m["t_hi"] is not None and p >= m["t_hi"]:
+                out[nm] = True
+            elif m["t_lo"] is not None and p <= m["t_lo"]:
+                out[nm] = False
     return out

@@ -91,9 +91,15 @@ def main():
             lab[d] = base
     print("forms with a usable signature label:", len(lab), "| of them hand-read by eye:", len(vis))
     from concurrent.futures import ProcessPoolExecutor
+    import pickle
     forms = Path(a.forms)
-    with ProcessPoolExecutor(a.procs) as ex:
-        feats = dict(ex.map(_feat, list(lab), [forms] * len(lab), chunksize=8))
+    cache = ROOT / "data" / "raj_sig_feats.pkl"
+    feats = pickle.load(open(cache, "rb")) if cache.exists() else {}
+    todo = [d for d in lab if d not in feats]
+    if todo:
+        with ProcessPoolExecutor(a.procs) as ex:
+            feats.update(dict(ex.map(_feat, todo, [forms] * len(todo), chunksize=8)))
+        pickle.dump(feats, open(cache, "wb"))
     models, report = {}, {}
     for blk in ("farmer", "company", "aao"):
         X, y, isv = [], [], []
@@ -105,17 +111,25 @@ def main():
         if len(y) < 60 or min(y.sum(), len(y) - y.sum()) < 10:
             print(blk, "too few examples", len(y), int(y.sum()) if len(y) else 0); models[blk] = None; continue
         clf = GradientBoostingClassifier(n_estimators=120, max_depth=3, learning_rate=0.08, subsample=0.8, random_state=0)
-        pred = cross_val_predict(clf, X, y, cv=StratifiedKFold(5, shuffle=True, random_state=0))
+        prob = cross_val_predict(clf, X, y, cv=StratifiedKFold(5, shuffle=True, random_state=0), method="predict_proba")[:, 1]
         m = isv if isv.sum() >= 40 else np.ones(len(y), bool)         # trusted test set = the hand-read forms
-        yt, pt = y[m], pred[m]
-        acc, base = float((pt == yt).mean()), float(max(yt.mean(), 1 - yt.mean()))
-        yes, no = pt == 1, pt == 0
-        prec_yes = float((yt[yes] == 1).mean()) if yes.any() else 0.0
-        prec_no = float((yt[no] == 0).mean()) if no.any() else 0.0
-        print(f"{blk}: n={len(y)} (hand-read {int(isv.sum())}) CV on the {'hand-read' if m is isv else 'all'} forms: acc={acc:.3f} (majority {base:.3f}) precision(yes)={prec_yes:.3f} precision(no)={prec_no:.3f}")
-        report[blk] = (acc, base)
-        models[blk] = clf.fit(X, y) if (acc >= 0.93 and acc >= base + 0.01) else None
-        print("  ->", "TRUSTED" if models[blk] is not None else "not trusted: stays 'not assessed'")
+        yt, pt = y[m], prob[m]
+        t_hi = t_lo = None
+        for t in np.arange(0.5, 0.995, 0.01):                         # smallest threshold at which "present" is >= 95% right
+            sel = pt >= t
+            if sel.sum() >= 15 and (yt[sel] == 1).mean() >= 0.95:
+                t_hi = float(t); break
+        for t in np.arange(0.5, 0.005, -0.01):                        # largest threshold at which "missing" is >= 95% right
+            sel = pt <= t
+            if sel.sum() >= 15 and (yt[sel] == 0).mean() >= 0.95:
+                t_lo = float(t); break
+        n_hi = int((pt >= t_hi).sum()) if t_hi is not None else 0
+        n_lo = int((pt <= t_lo).sum()) if t_lo is not None else 0
+        print(f"{blk}: n={len(y)} (hand-read {int(m.sum())}, present {int(yt.sum())}) | 'present' stated when p>={t_hi}: {n_hi} forms ({100*n_hi/len(yt):.0f}%) | "
+              f"'missing' stated when p<={t_lo}: {n_lo} forms ({100*n_lo/len(yt):.0f}%)", flush=True)
+        report[blk] = (t_lo, t_hi)
+        models[blk] = {"model": clf.fit(X, y), "t_lo": t_lo, "t_hi": t_hi} if (t_hi is not None or t_lo is not None) else None
+        print("  ->", "TRUSTED (asymmetric thresholds)" if models[blk] else "not trusted: stays 'not assessed'", flush=True)
     joblib.dump({"models": models, "keys": KEYS}, ROOT / "models" / "sig_clf_raj.joblib")
     print("saved models/sig_clf_raj.joblib")
 
