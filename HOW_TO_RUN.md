@@ -150,3 +150,34 @@ It splits your rows 85/15 (the 15% are never trained on), trains, compares old v
 | Anything else | Copy the exact error text (or a screenshot) and send it to your Claude session with the file `docs\STATUS.md`. |
 
 More detail: `docs/RUN_GUIDE.md`, `docs/TRAINING_GUIDE.md`, `docs/STATUS.md` (current state, what is done and what is not).
+
+
+---------------------------------------------------------------------------------------------------
+
+## WORKED EXAMPLE - 10,000 rows, forms and photos already on the PC
+
+Assumed paths (change them to yours):
+- Project folder: `C:\ai-qc`            (where you ran `git clone`)
+- Input Excel:    `C:\ai-qc\input\data.xlsx`
+- Forms+photos:   `D:\media\<docket>\form\...jpg` and `D:\media\<docket>\media\...jpg`
+- Results:        `C:\ai-qc\results\`
+
+| Step | What it does | Command (run in `C:\ai-qc`) | Input | Output |
+|---|---|---|---|---|
+| 0 | Open the project, switch the environment on | `cd C:\ai-qc` then `.venv\Scripts\activate.bat` | - | - |
+| 1 | Download forms/photos - **SKIP if already downloaded** | `python download_media.py --input input\data.xlsx --out D:\media` | `input\data.xlsx` (links inside) | `D:\media\<docket>.jpg` (form), `D:\media\<docket>_1.jpg` ... (photos) |
+| 2 | Check the PC is ready | `python tools\selfcheck.py` | - | prints `RESULT: READY` |
+| 3 | Test on the first 100 rows | `python run_qc.py --input input\data.xlsx --local-media D:\media --limit 100 --agents 4 --output results\test100.xlsx` | Excel + `D:\media` | `results\test100.xlsx`, `results\summary_report.xlsx` |
+| 4 | Estimate the time of the full run | `python run_qc.py --input input\data.xlsx --local-media D:\media --agents 8 --dry-run` | Excel + `D:\media` | prints estimated hours and disk use (nothing is processed) |
+| 5 | **Full run, 10,000 rows** | `python run_qc.py --input input\data.xlsx --local-media D:\media --agents 8 --output results\all.xlsx` | Excel + `D:\media` | `results\all.xlsx` (all your columns + AI columns + remarks), `results\summary_report.xlsx` |
+| 6 | Watch it live | open **http://localhost:8765** in the browser while step 5 runs | - | live progress page |
+| 7 | If it stopped | the same command as step 5 plus `--resume` | the same | continues, never redoes finished rows |
+| 8 | Map dashboard of the result | `python dashboard\build.py results\all.xlsx` then open `dashboard\index.html` | `results\all.xlsx` | `dashboard\index.html` |
+| 9 | Review the flagged rows by hand | open `dashboard\CLAP-Survey-QC.html` in the browser, load `results\all.xlsx` | `results\all.xlsx` | your corrected Excel (these become your training data) |
+| 10 | Improve the AI with your corrected rows | `pip install -r requirements-train.txt` then `python retrain.py --labels human_qc.xlsx` | `human_qc.xlsx` | better `models\cells_cnn.npz` (only if it is not worse) |
+
+Notes:
+- `--agents 8` means 8 parallel workers. Use your CPU core count (Task Manager > Performance > CPU > Cores), never more.
+- While it runs, the file `results\all.xlsx` is saved again every minute. Close it in Excel if you open it, or it saves a timestamped copy next to it.
+- The folder `output\` holds the resume state (`checkpoint...`). Do not delete it until the run is finished.
+- For more than ~40,000 rows add `--chunk-rows 20000` (writes `all_part001.xlsx, all_part002.xlsx ...` and `all.csv`).
