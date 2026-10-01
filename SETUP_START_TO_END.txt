@@ -136,6 +136,10 @@ All your original columns are kept; the AI columns are added at the right.
                                         form, uploaded paper is not Proforma-3, ...)
                       Manual-check    = the AI could not decide (form not clear enough to read, files could not be downloaded)
   COLOURS: the columns that came with your input are BLUE; the columns written by the AI are GREEN (dark green header).
+  NO EMPTY CELLS: every AI column is filled. Where the AI could not read or check something it says why: "Not readable",
+                      "No form", "Not checked (...)", "Not assessed", "Not sure", "None".
+  Farmer/person present in photos (remark): short and filterable: Farmer available / Farmer not available /
+                      Not checked (photos are the paper form).  Details are in the column "Farmer photo detail".
   Any Other Remarks . ONE SIMPLE REMARK per row: what is wrong, then FORM / PHOTOS / PLACE facts.  Read this first.
   AI Technical Detail  the longer technical version of the remark (for the technical team only).
   Form No, Affected area% (Form), Crop Loss% (Form), Match/Mismatch .... what the AI read on the form and the comparison

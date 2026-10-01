@@ -151,7 +151,7 @@ def test_one_bad_row_does_not_kill_run_and_dead_worker_is_retried(tmp_path, monk
     assert by.loc["2000000009", "QC Verdict"] == "Manual-check" and "fake engine exploded" in by.loc["2000000009", "Any Other Remarks"] or \
         by.loc["2000000009", "QC Verdict"] in ("Manual-check", "Reject-evidence")
     assert by.loc["2000000008", "Form No"] == "HR0126000008"          # died once, retried OK
-    assert by.loc["2000000004", "Form No"] != by.loc["2000000004", "Form No"] or pd.isna(by.loc["2000000004", "Form No"])
+    assert pd.isna(by.loc["2000000004", "Form No"]) or by.loc["2000000004", "Form No"] in ("No form", "Not readable")   # blank cells now say why
     assert by.loc["2000000004", "QC Verdict"] in ("Manual-check", "Reject-evidence", "Review")
     assert by.loc["2000000000", "QC Verdict"] == "OK"
     pj = json.load(open("out/progress.json"))

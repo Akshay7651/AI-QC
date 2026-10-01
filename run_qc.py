@@ -278,7 +278,7 @@ QC_BLOCK = [
     "Duplicate photos (n)", "Photos rotated (Yes/No)", *(["Photo GPS distance (m)"] if C.USE_PHOTO_GPS else []), "Photos analysed (n)",
     "Photo scene type", "Crop present in photo", "Crop seen in photo", "Crop matches declared", "Flooding/waterlogging seen",
     "Crop damage state",
-    C.COL_FARMER_PHOTO, "Farmer/person present in photos (remark)", C.COL_PHOTO_LOSS, "AI_Flags", "Same Location Remark", C.COL_OTHER_REMARKS, "AI Technical Detail", "AI Engine",
+    C.COL_FARMER_PHOTO, "Farmer/person present in photos (remark)", "Farmer photo detail", C.COL_PHOTO_LOSS, "AI_Flags", "Same Location Remark", C.COL_OTHER_REMARKS, "AI Technical Detail", "AI Engine",
 ]
 # columns written by the AI get the green colour in the Excel; everything that came with the input stays blue
 report.AI_COLS = set(QC_BLOCK) | {"Data_QC_Flags", "Nearby_Same_Surveyor_25m", "Nearby_Any_Surveyor_25m", "Records_On_Same_Field", "Group_ID",
@@ -314,27 +314,97 @@ def _form_status(form, res):
     return "incomplete" if (sig_missing or not written) else "correct"
 
 
-def person_remark(p):
-    """Remark on whether a human being (the farmer, most likely) is visible in the docket's FIELD photos.
-    Counts only photos that are not pictures of the paper form. A face detector is used: it finds people facing the camera
-    (about 6 of 7 in testing); distant people or people seen from behind can be missed, so 'no person detected' is not proof."""
+def _person_state(p):
     each = p.get("person_each")
     if not isinstance(each, (list, tuple)) or not each:
         return None
     isf = p.get("photo_is_form_each") or [False] * len(each)
     field = [i for i in range(len(each)) if not (i < len(isf) and isf[i])]
+    return each, field, [i + 1 for i in field if each[i]]
+
+
+def person_remark(p):
+    """Short, filterable answer: 'Farmer available' / 'Farmer not available' / 'Not checked (photos are the paper form)'.
+    A person counts when at least 25% of a body is visible in ANY field photo of the docket (face-detector based: people facing the camera
+    are found about 6 of 7 times; distant people or people seen from behind can be missed)."""
+    st = _person_state(p)
+    if st is None:
+        return None
+    each, field, seen = st
     if not field:
-        return "Not checked - all photos are pictures of the paper form (no field photo)"
-    seen = [i + 1 for i in field if each[i]]
-    n_all = len(each)
+        return "Not checked (photos are the paper form)"
+    return "Farmer available" if seen else "Farmer not available"
+
+
+def person_detail(p):
+    st = _person_state(p)
+    if st is None:
+        return None
+    each, field, seen = st
+    if not field:
+        return "All photos are pictures of the paper form, so no field photo to look at."
     if seen:
-        return f"Farmer available - person visible in photo {', '.join(map(str, seen))} of {n_all} (not verified who it is)"
-    return f"Farmer not available - no person with at least 25% of the body visible in the {len(field)} field photo(s) of {n_all}"
+        return f"A person is visible in photo {', '.join(map(str, seen))} of {len(each)} (not verified who it is)."
+    return f"No person with at least 25% of the body visible in the {len(field)} field photo(s) of {len(each)}."
 
 
 def _date_txt(v):
     d = remarks._parse_date(v)
     return d.strftime("%d-%m-%Y") if d else (None if v in (None, "") else str(v))
+
+
+_VALUE_COLS = ("Form No", C.COL_FORM_AREA, C.COL_FORM_LOSS, "Form Row Area %", "Form Row Loss %", "Loss date (Form)")
+_NOT_READ_DATES = ("Sowing date (Form)", "Intimation date (Form)", "Inspection date (Form)")
+_SIG_COLS = (C.COL_SURVEYOR_SIG, C.COL_FARMER_SIG, "Primary Worker Signature (Yes/No)")
+_PHOTO_COLS = (C.COL_PHOTO_DATE, C.COL_FIELD_PHOTO, "Field photo type", "Photo is form image (Yes/No)", "Form-image photos (n)", "Duplicate photos (n)",
+               "Photos rotated (Yes/No)", "Photo GPS distance (m)", "Photos analysed (n)", "Photo scene type", "Crop present in photo", "Crop seen in photo",
+               "Crop matches declared", "Flooding/waterlogging seen", "Crop damage state", C.COL_FARMER_PHOTO, "Farmer/person present in photos (remark)",
+               "Farmer photo detail", C.COL_PHOTO_LOSS)
+
+
+def _fill_blanks(cols, R):
+    """No empty cell in the AI columns: every blank gets a word that says why (Not readable / No form / Not checked ...)."""
+    for i, r in enumerate(R):
+        if r is None:
+            continue
+        f, p = r.get("form") or {}, r.get("photo") or {}
+        form_ok = f.get("_state") == "ok" and f.get("is_proforma3") is not False
+        why_form = "Not readable" if form_ok else ("Not a Proforma-3" if f.get("_state") == "ok" else "No form")
+        photo_ok = p.get("_state") == "ok"
+        for c in QC_BLOCK:
+            if cols[c][i] not in (None, ""):
+                continue
+            if c in _VALUE_COLS:
+                v = why_form
+            elif c in _NOT_READ_DATES:
+                v = "Not read" if form_ok else why_form
+            elif c in (C.COL_MATCH, "Form vs App (Match/Mismatch/NA)"):
+                v = "Not checked (form values not readable)" if form_ok else "Not checked (" + why_form.lower() + ")"
+            elif c in _SIG_COLS:
+                v = "Not assessed" if form_ok else why_form
+            elif c == C.COL_GOVT_SIG:
+                v = "Not assessed"
+            elif c in ("PO ID matches docket",):
+                v = "Not checked"
+            elif c == "Form Total Row Blank":
+                v = "Not checked" if form_ok else why_form
+            elif c == C.COL_FORM_STATUS:
+                v = "Not checked" if form_ok else why_form
+            elif c in ("Officer Stamp Only (Yes/No)", "Form Quality", "Form Confidence"):
+                v = why_form
+            elif c == C.COL_FORM_REMARKS:
+                v = "None"
+            elif c in _PHOTO_COLS:
+                v = ("Not sure" if c in ("Crop matches declared", "Crop damage state") else
+                     "Not read" if c in ("Photo GPS distance (m)", C.COL_PHOTO_DATE) else
+                     "Not assessed" if c == C.COL_PHOTO_LOSS else "No photos") if photo_ok else "No photos"
+                if photo_ok and p.get("photo_is_form") and c in ("Crop matches declared", "Crop damage state", "Crop seen in photo", C.COL_PHOTO_LOSS):
+                    v = "NA (photo is the paper form)"
+            elif c in ("AI_Flags", "Same Location Remark"):
+                v = "None"
+            else:
+                v = "Not available"
+            cols[c][i] = v
 
 
 def assemble_local(df, results, keys):
@@ -362,7 +432,8 @@ def assemble_local(df, results, keys):
         put("AI Engine", r.get("engine"))
         if f and f.get("_state") not in ("skipped",):
             put("Form vs App (Match/Mismatch/NA)", r.get("match"))
-            put(C.COL_MATCH, r.get("match"))
+            if r.get("match") not in (None, "NA"):
+                put(C.COL_MATCH, r.get("match"))
         if fok:
             ok3 = f.get("is_proforma3") is not False
             put("Form No", f.get("form_no") if ok3 else None)
@@ -406,7 +477,9 @@ def assemble_local(df, results, keys):
             put("Crop damage state", p.get("damage_state"))
             put(C.COL_FARMER_PHOTO, _yn(p.get("farmer_photo")) if p.get("farmer_photo") is not None else None)
             put("Farmer/person present in photos (remark)", person_remark(p))
+            put("Farmer photo detail", person_detail(p))
             put(C.COL_PHOTO_LOSS, p.get("photo_loss"))
+    _fill_blanks(cols, R)
     out = df.copy()
     has = pd.Series([r is not None for r in R], index=out.index)
     for c in QC_BLOCK:
