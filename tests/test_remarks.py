@@ -234,4 +234,4 @@ def test_person_in_photos_remark():
     e = ev(p=photos(person_each=[False, True, False], photo_is_form_each=[False, False, False]))
     assert "Person visible in photo 2 of 3 (farmer present)." in e["remark"]
     e = ev(p=photos(person_each=[False, False], photo_is_form_each=[False, False]))
-    assert "No person detected in the 2 field photo(s) (farmer not seen)." in e["remark"]
+    assert "No person detected in the 2 field photo(s) (farmer not seen; a partly visible or distant person can be missed)." in e["remark"]

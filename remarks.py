@@ -354,7 +354,7 @@ def evaluate(row, form=None, photos=None, gps=None, data_flags="", risk=None):
             if seen_:
                 parts_photo.append(f"Person visible in photo {', '.join(map(str, seen_))} of {len(each)} (farmer present).")
             elif field_:
-                parts_photo.append(f"No person detected in the {len(field_)} field photo(s) (farmer not seen).")
+                parts_photo.append(f"No person detected in the {len(field_)} field photo(s) (farmer not seen; a partly visible or distant person can be missed).")
         # duplicates / rotation
         nd = int(_num(photos.get("n_duplicates")) or 0)
         if nd:
