@@ -107,7 +107,7 @@ def test_chunked_never_rewrites_finished_parts_and_resume_is_a_noop(tmp_path, mo
         st_path = Path("ck/ck.sqlite")
         if p1.exists() and st_path.exists():
             st = ckstore.ResultStore(st_path)
-            fin = st.meta_get(f"part:{Path('out/o').resolve() if False else 'out/o'}:0")
+            fin = st.meta_get("part:out/o:0")
             st.close()
             if fin == "done":
                 seen_m = p1.stat().st_mtime_ns

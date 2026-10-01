@@ -12,3 +12,4 @@ data/*
 data/eval/sheets/
 photo_models/image_classification_ppresnet50*.onnx
 models/backup/
+!data/eval_unseen100/
