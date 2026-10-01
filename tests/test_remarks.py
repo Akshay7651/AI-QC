@@ -228,3 +228,10 @@ def test_dates_on_form_are_listed_and_compared_with_app():
     e = ev(r=row(survey_start_date="2026-09-18", survey_end_date="2026-09-21"), f=f)
     assert "Form date differs from app" in e["flags"] and "differs from the app (18-09-2026)" in e["remark"]
     assert "Dates on form" not in ev(f=form(inspection_date=None))["remark"]        # no dates read at all -> no sentence
+
+
+def test_person_in_photos_remark():
+    e = ev(p=photos(person_each=[False, True, False], photo_is_form_each=[False, False, False]))
+    assert "Person visible in photo 2 of 3 (farmer present)." in e["remark"]
+    e = ev(p=photos(person_each=[False, False], photo_is_form_each=[False, False]))
+    assert "No person detected in the 2 field photo(s) (farmer not seen)." in e["remark"]

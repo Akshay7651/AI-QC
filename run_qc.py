@@ -275,7 +275,7 @@ QC_BLOCK = [
     "Duplicate photos (n)", "Photos rotated (Yes/No)", "Photo GPS distance (m)", "Photos analysed (n)",
     "Photo scene type", "Crop present in photo", "Crop seen in photo", "Crop matches declared", "Flooding/waterlogging seen",
     "Crop damage state",
-    C.COL_FARMER_PHOTO, C.COL_PHOTO_LOSS, "AI_Flags", "Same Location Remark", C.COL_OTHER_REMARKS, "AI Engine",
+    C.COL_FARMER_PHOTO, "Farmer/person present in photos (remark)", C.COL_PHOTO_LOSS, "AI_Flags", "Same Location Remark", C.COL_OTHER_REMARKS, "AI Engine",
 ]
 _AI_PREFIX = ("OK:", "REJECT-EVIDENCE:", "MANUAL-CHECK:", "REVIEW:", "FORM:", "PHOTOS:", "GPS:", "DATA:", "RISK ")
 
@@ -306,6 +306,24 @@ def _form_status(form, res):
     written = any(not c.get("blank", True) for k, c in cells.items() if k.startswith(("area_", "loss_")))
     sig_missing = form.get("farmer_signed") is False or form.get("company_signed") is False
     return "incomplete" if (sig_missing or not written) else "correct"
+
+
+def person_remark(p):
+    """Remark on whether a human being (the farmer, most likely) is visible in the docket's FIELD photos.
+    Counts only photos that are not pictures of the paper form. A face detector is used: it finds people facing the camera
+    (about 6 of 7 in testing); distant people or people seen from behind can be missed, so 'no person detected' is not proof."""
+    each = p.get("person_each")
+    if not isinstance(each, (list, tuple)) or not each:
+        return None
+    isf = p.get("photo_is_form_each") or [False] * len(each)
+    field = [i for i in range(len(each)) if not (i < len(isf) and isf[i])]
+    if not field:
+        return "Not checked - all photos are pictures of the paper form (no field photo)"
+    seen = [i + 1 for i in field if each[i]]
+    n_all = len(each)
+    if seen:
+        return f"Yes - person visible in photo {', '.join(map(str, seen))} of {n_all} (farmer present, not verified who)"
+    return f"No person detected in the {len(field)} field photo(s) of {n_all} (farmer not seen)"
 
 
 def _date_txt(v):
@@ -379,6 +397,7 @@ def assemble_local(df, results, keys):
             put("Flooding/waterlogging seen", _yn(p.get("flooded")))
             put("Crop damage state", p.get("damage_state"))
             put(C.COL_FARMER_PHOTO, _yn(p.get("farmer_photo")) if p.get("farmer_photo") is not None else None)
+            put("Farmer/person present in photos (remark)", person_remark(p))
             put(C.COL_PHOTO_LOSS, p.get("photo_loss"))
     out = df.copy()
     has = pd.Series([r is not None for r in R], index=out.index)

@@ -345,6 +345,16 @@ def evaluate(row, form=None, photos=None, gps=None, data_flags="", risk=None):
             elif scene == "blurry-dark-irrelevant":
                 parts_photo.append("Photo too blurry/dark/irrelevant to judge.")
                 flag("Photo not of the field", "manual", "photos unusable (blurry/dark/irrelevant)")
+        # is a person (the farmer) visible in any field photo of this docket?
+        each = photos.get("person_each")
+        if isinstance(each, (list, tuple)) and each and not is_form:
+            isf_ = photos.get("photo_is_form_each") or []
+            field_ = [i for i in range(len(each)) if not (i < len(isf_) and isf_[i])]
+            seen_ = [i + 1 for i in field_ if each[i]]
+            if seen_:
+                parts_photo.append(f"Person visible in photo {', '.join(map(str, seen_))} of {len(each)} (farmer present).")
+            elif field_:
+                parts_photo.append(f"No person detected in the {len(field_)} field photo(s) (farmer not seen).")
         # duplicates / rotation
         nd = int(_num(photos.get("n_duplicates")) or 0)
         if nd:
