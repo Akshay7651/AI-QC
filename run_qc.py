@@ -280,6 +280,9 @@ QC_BLOCK = [
     "Crop damage state",
     C.COL_FARMER_PHOTO, "Farmer/person present in photos (remark)", C.COL_PHOTO_LOSS, "AI_Flags", "Same Location Remark", C.COL_OTHER_REMARKS, "AI Technical Detail", "AI Engine",
 ]
+# columns written by the AI get the green colour in the Excel; everything that came with the input stays blue
+report.AI_COLS = set(QC_BLOCK) | {"Data_QC_Flags", "Nearby_Same_Surveyor_25m", "Nearby_Any_Surveyor_25m", "Records_On_Same_Field", "Group_ID",
+                                  "Cluster_Size", "Suggested_Remark", "Suggest_%", "Same_Location_Remark", "Risk_Score", "Risk_Reasons"}
 _AI_PREFIX = ("OK:", "REJECT-EVIDENCE:", "MANUAL-CHECK:", "REVIEW:", "FORM:", "PHOTOS:", "GPS:", "DATA:", "RISK ")
 
 

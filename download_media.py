@@ -53,7 +53,7 @@ def download_all(df, out, threads=12, max_photos=10, log=print):
         d = str(r["docket_id"]).strip()
         if d and d.lower() != "nan":
             rows.append((d, str(r["pdf_url"] or "").replace("_x000D_", "").strip(), split_urls(r["media_urls"])[:max_photos]))
-    st = {"done": 0, "fail": 0, "noform": 0, "t0": time.time()}
+    st = {"done": 0, "fail": 0, "noform": 0, "bytes": 0, "t0": time.time()}
     lock = threading.Lock()
 
     def have(folder, stem):
@@ -72,7 +72,19 @@ def download_all(df, out, threads=12, max_photos=10, log=print):
                     continue
                 data = get(c, url)
                 if data:
-                    (folder / f"{stem}{ext_for(data, dflt)}").write_bytes(data)
+                    with lock:
+                        st["bytes"] += len(data)
+                    ext = ext_for(data, dflt)
+                    if ext == ".png" and folder.name == "media":       # photos come as ~5 MB PNG: store as JPEG (about 10x smaller on disk)
+                        try:
+                            import io
+                            from PIL import Image
+                            buf = io.BytesIO()
+                            Image.open(io.BytesIO(data)).convert("RGB").save(buf, "JPEG", quality=92)
+                            data, ext = buf.getvalue(), ".jpg"
+                        except Exception:
+                            pass
+                    (folder / f"{stem}{ext}").write_bytes(data)
                 else:
                     bad += 1
         with lock:
@@ -82,7 +94,7 @@ def download_all(df, out, threads=12, max_photos=10, log=print):
             n = st["done"]
             if n % 10 == 0 or n == len(rows):
                 el = time.time() - st["t0"]
-                log(f"  downloaded {n}/{len(rows)} rows  ({n / max(el, 1e-6) * 60:.0f} rows/min, {st['fail']} files failed)")
+                log(f"  downloaded {n}/{len(rows)} rows  ({n / max(el, 1e-6) * 60:.0f} rows/min, {st['bytes'] / max(el, 1e-6) / 1048576:.1f} MB/s from the server, {st['fail']} files failed)")
 
     with ThreadPoolExecutor(threads) as ex:
         list(ex.map(one, rows))

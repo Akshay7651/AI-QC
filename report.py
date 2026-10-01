@@ -220,6 +220,7 @@ def _col_letters(n):
     return s
 
 
+AI_COLS = set()      # names of the columns written by the AI (set by run_qc); they get the green colour family
 _DXF = {"red": "F8BBD0", "amber": "FFE0B2", "yellow": "FFF9C4", "green": "C8E6C9"}
 
 
@@ -242,8 +243,13 @@ def _write_fast(df, path, remarks_col):
         s = sample[c].astype(str).str.len() if nr else pd.Series([0])
         widths.append(max(8, min(60, max(len(c) * 0.9, float(s.quantile(0.9)) if len(s) else 8) + 2)))
     rem_j = cols.index(remarks_col) if remarks_col in cols else -1
-    colxml = "".join(f'<col min="{j + 1}" max="{j + 1}" width="{110 if j == rem_j else widths[j]:.1f}" customWidth="1"'
-                     + (' style="2"' if j == rem_j else "") + "/>" for j in range(nc))
+    # two colour families: the original (raw) columns are blue, the columns written by the AI are green
+    is_ai = [c in AI_COLS for c in cols]
+    body = [(5 if (j == rem_j or cols[j] == "AI Technical Detail") else 4) if is_ai[j] else 3 for j in range(nc)]
+    SA = [f' s="{x}"' for x in body]
+    HS = [6 if is_ai[j] else 1 for j in range(nc)]
+    colxml = "".join(f'<col min="{j + 1}" max="{j + 1}" width="{110 if j == rem_j else (80 if cols[j] == "AI Technical Detail" else widths[j]):.1f}" customWidth="1" style="{body[j]}"/>'
+                     for j in range(nc))
     # conditional formats: (column index, value, dxf id)
     dxf_ids = {k: i for i, k in enumerate(_DXF)}
     rules = []
@@ -279,13 +285,20 @@ def _write_fast(df, path, remarks_col):
             f'<cols>{colxml}</cols><sheetData>')
     styles = ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
               '<fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><color rgb="FFFFFFFF"/><name val="Calibri"/></font></fonts>'
-              '<fills count="3"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill>'
-              '<fill><patternFill patternType="solid"><fgColor rgb="FF1F3A5F"/><bgColor indexed="64"/></patternFill></fill></fills>'
+              '<fills count="6"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill>'
+              '<fill><patternFill patternType="solid"><fgColor rgb="FF1F3A5F"/><bgColor indexed="64"/></patternFill></fill>'
+              '<fill><patternFill patternType="solid"><fgColor rgb="FFE3EEFB"/><bgColor indexed="64"/></patternFill></fill>'
+              '<fill><patternFill patternType="solid"><fgColor rgb="FFE6F4EA"/><bgColor indexed="64"/></patternFill></fill>'
+              '<fill><patternFill patternType="solid"><fgColor rgb="FF1E7B4F"/><bgColor indexed="64"/></patternFill></fill></fills>'
               '<borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>'
               '<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>'
-              '<cellXfs count="3"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>'
+              '<cellXfs count="7"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>'
               '<xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1" applyAlignment="1"><alignment vertical="top" wrapText="1"/></xf>'
-              '<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0" applyAlignment="1"><alignment vertical="top" wrapText="1"/></xf></cellXfs>'
+              '<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0" applyAlignment="1"><alignment vertical="top" wrapText="1"/></xf>'
+              '<xf numFmtId="0" fontId="0" fillId="3" borderId="0" xfId="0" applyFill="1" applyAlignment="1"><alignment vertical="top"/></xf>'
+              '<xf numFmtId="0" fontId="0" fillId="4" borderId="0" xfId="0" applyFill="1" applyAlignment="1"><alignment vertical="top"/></xf>'
+              '<xf numFmtId="0" fontId="0" fillId="4" borderId="0" xfId="0" applyFill="1" applyAlignment="1"><alignment vertical="top" wrapText="1"/></xf>'
+              '<xf numFmtId="0" fontId="1" fillId="5" borderId="0" xfId="0" applyFont="1" applyFill="1" applyAlignment="1"><alignment vertical="top" wrapText="1"/></xf></cellXfs>'
               '<cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>'
               f'<dxfs count="{len(_DXF)}">' + "".join(f'<dxf><fill><patternFill patternType="solid"><fgColor rgb="FF{v}"/><bgColor rgb="FF{v}"/></patternFill></fill></dxf>'
                                                     for v in _DXF.values()) + '</dxfs></styleSheet>')
@@ -306,7 +319,7 @@ def _write_fast(df, path, remarks_col):
     def rows():
         yield head
         yield '<row r="1" ht="45" customHeight="1">' + "".join(
-            f'<c r="{L[j]}1" s="1" t="inlineStr"><is><t>{esc(c)}</t></is></c>' for j, c in enumerate(cols)) + "</row>"
+            f'<c r="{L[j]}1" s="{HS[j]}" t="inlineStr"><is><t>{esc(c)}</t></is></c>' for j, c in enumerate(cols)) + "</row>"
         arr = df.astype(object).to_numpy()
         buf = []
         for r in range(nr):
@@ -325,23 +338,23 @@ def _write_fast(df, path, remarks_col):
                         v = ctrl.sub("", v)
                     if len(v) > 32000:
                         v = v[:32000]
-                    cells.append(f'<c r="{L[j]}{rn}" t="inlineStr"><is><t xml:space="preserve">{esc(v)}</t></is></c>')
+                    cells.append(f'<c r="{L[j]}{rn}"{SA[j]} t="inlineStr"><is><t xml:space="preserve">{esc(v)}</t></is></c>')
                 elif t is bool:
-                    cells.append(f'<c r="{L[j]}{rn}" t="b"><v>{int(v)}</v></c>')
+                    cells.append(f'<c r="{L[j]}{rn}"{SA[j]} t="b"><v>{int(v)}</v></c>')
                 elif t is int or t is float:
                     if v != v or v in (float("inf"), float("-inf")):
                         continue
-                    cells.append(f'<c r="{L[j]}{rn}"><v>{v!r}</v></c>')
+                    cells.append(f'<c r="{L[j]}{rn}"{SA[j]}><v>{v!r}</v></c>')
                 else:
                     v = _cell_value(v)
                     if v is None:
                         continue
                     if isinstance(v, bool):
-                        cells.append(f'<c r="{L[j]}{rn}" t="b"><v>{int(v)}</v></c>')
+                        cells.append(f'<c r="{L[j]}{rn}"{SA[j]} t="b"><v>{int(v)}</v></c>')
                     elif isinstance(v, (int, float)):
-                        cells.append(f'<c r="{L[j]}{rn}"><v>{v!r}</v></c>')
+                        cells.append(f'<c r="{L[j]}{rn}"{SA[j]}><v>{v!r}</v></c>')
                     else:
-                        cells.append(f'<c r="{L[j]}{rn}" t="inlineStr"><is><t xml:space="preserve">{esc(str(v))}</t></is></c>')
+                        cells.append(f'<c r="{L[j]}{rn}"{SA[j]} t="inlineStr"><is><t xml:space="preserve">{esc(str(v))}</t></is></c>')
             buf.append(f'<row r="{rn}">' + "".join(cells) + "</row>")
             if len(buf) >= 2000:
                 yield "".join(buf)
