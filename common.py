@@ -104,7 +104,12 @@ def parse_dates(s):
     iso = txt.fillna("").str.match(r"^\d{4}[-/.]\d{1,2}[-/.]\d{1,2}")
     a = pd.to_datetime(txt.where(iso), errors="coerce", format="mixed")
     b = pd.to_datetime(txt.where(~iso), errors="coerce", dayfirst=True, format="mixed")
-    return a.fillna(b)
+    out = a.fillna(b)
+    # years beyond the datetime64[ns] range (e.g. 2999) are NaT on pandas 2.x: keep them as "far future"
+    far = out.isna() & txt.fillna("").str.contains(r"(?<!\d)(?:2[3-9]|[3-9]\d)\d\d(?!\d)")
+    if far.any():
+        out = out.where(~far, pd.Timestamp.max)
+    return out
 
 
 def haversine_m(lat1, lng1, lat2, lng2) -> float:
