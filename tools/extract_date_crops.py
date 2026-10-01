@@ -36,11 +36,17 @@ if __name__ == "__main__":
     for d, src in (("forms", "main"), ("disputed/forms", "disp")):
         dd = os.path.join(ROOT, "data", d)
         paths += [(os.path.join(dd, f), src) for f in sorted(os.listdir(dd)) if f.endswith(".jpg")]
+    import csv, random
+    hand = {r["docket"].zfill(18) for r in csv.DictReader(open(os.path.join(ROOT, "data", "eval", "dates.csv")))}
+    random.Random(0).shuffle(paths)          # priority: disputed + hand-labelled first, then the rest in random order
+    paths.sort(key=lambda t: 0 if (t[1] == "disp" or os.path.basename(t[0])[:-4] in hand) else 1)
     res = {}
     with ProcessPoolExecutor(4) as ex:
-        for i, (p, o) in enumerate(ex.map(work, [p for p, _ in paths], chunksize=8)):
+        for i, (p, o) in enumerate(ex.map(work, [p for p, _ in paths], chunksize=4)):
             src = paths[i][1]
             res[(src, os.path.basename(p)[:-4])] = o
-            if i % 500 == 0: print(i, len(paths), flush=True)
+            if i % 250 == 249:
+                print(i, len(paths), flush=True)
+                pickle.dump(res, open(a.out + ".tmp", "wb")); os.replace(a.out + ".tmp", a.out)
     pickle.dump(res, open(a.out, "wb"))
     print("done", sum(v is not None for v in res.values()), len(res))

@@ -289,14 +289,23 @@ def _nn(v):
 
 
 def _form_status(form, res):
-    if not form or form.get("_state") != "ok":
+    """correct / incomplete / overwrite (None when the form could not be read).
+
+    incomplete = the farmer or company signature is missing, or nothing is written in the value table.
+    The primary worker and the block officer almost never sign (officer 0 of 149 forms), so they do not count.
+    Unreadable handwriting is NOT 'incomplete'. 'overwrite' needs a real detector (none yet): it only appears if the
+    form reader ever sets overwrite_suspected. Whitener / other correction types are not detected yet.
+    """
+    if not form or form.get("_state") != "ok" or form.get("is_proforma3") is False:
         return None
     if form.get("overwrite_suspected"):
         return "overwrite"
-    sigs = [form.get(k) for k in ("farmer_signed", "company_signed", "worker_signed", "officer_signed")]
-    if res.get("form_area") is None or any(v is False for v in sigs):
-        return "incomplete"
-    return "correct"
+    cells = form.get("_cells") or {}
+    if not cells:
+        return None
+    written = any(not c.get("blank", True) for k, c in cells.items() if k.startswith(("area_", "loss_")))
+    sig_missing = form.get("farmer_signed") is False or form.get("company_signed") is False
+    return "incomplete" if (sig_missing or not written) else "correct"
 
 
 def _date_txt(v):
