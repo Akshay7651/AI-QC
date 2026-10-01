@@ -560,10 +560,16 @@ def read_form(path_or_pil, docket=None, debug=False):
     else:
         out["quality"] = "good"
     lay = P.analyse_layout(rgb)
-    if lay.get("ok") and lay.get("rgb") is not None and not os.environ.get("AIQC_NO_RAJ"):
+    if lay.get("rgb") is not None and not os.environ.get("AIQC_NO_RAJ"):
         try:
             import form_raj
-            if form_raj.is_rajasthan(lay["rgb"]):
+            r0 = lay["rgb"]
+            upright = form_raj.is_rajasthan(r0)
+            if not upright and form_raj.is_rajasthan(np.ascontiguousarray(r0[::-1, ::-1])):      # photographed upside down
+                r1 = np.ascontiguousarray(r0[::-1, ::-1])
+                lay = P._layout(r1, dict(lay.get("info") or {}, rot=((lay.get("info") or {}).get("rot", 0) + 180) % 360))
+                upright = True
+            if upright and lay.get("ok"):
                 out["quality_metrics"] = {k: round(v, 1) for k, v in q.items()}
                 if form_raj.read_form_raj(lay, out, CELL_GATE, notes):
                     out["confidence"] = round(float(np.mean([c for c in out["field_conf"].values()] or [0.3])) * (1.0 if out["quality"] == "good" else 0.7), 3)
