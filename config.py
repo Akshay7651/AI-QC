@@ -12,7 +12,7 @@ CLAUDE_MODEL_PHOTO = "claude-sonnet-5-5"
 MODEL_PRICING = {"default": (3.0, 15.0)}
 
 MAX_PARALLEL_WORKERS = 5
-MAX_PHOTOS_PER_ROW = 5
+MAX_PHOTOS_PER_ROW = 10   # data has up to 6 photos per docket; all of them must be checked (e.g. a person may appear in only one)
 PDF_RENDER_DPI = 150
 PDF_MAX_PAGES = 2
 PDF_TIMEOUT_SEC = 10

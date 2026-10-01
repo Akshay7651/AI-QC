@@ -255,7 +255,7 @@ def test_photo_invalid_url_does_not_raise():
 def test_photo_max_photos(tmp_path):
     import config as C
     imgs = []
-    for i in range(8):
+    for i in range(C.MAX_PHOTOS_PER_ROW + 3):
         p = tmp_path / f"{i}.png"
         p.write_bytes(PNG)
         imgs.append(p)
@@ -287,3 +287,9 @@ def test_per_docket_zip_and_folder_layouts(tmp_path, monkeypatch):
     f1, p1 = E.classify_local(m[d1], d1, None)
     f2, p2 = E.classify_local(m[d2], d2, None)
     assert (len(f1), len(p1)) == (1, 2) and (len(f2), len(p2)) == (1, 1)
+
+
+def test_all_six_photos_of_a_docket_are_checked():
+    """the data has up to 6 photos per docket; a person may appear in only one of them, so none may be skipped"""
+    import config as C
+    assert C.MAX_PHOTOS_PER_ROW >= 6

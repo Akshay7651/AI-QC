@@ -246,6 +246,53 @@ def export(net, path, meta):
     np.savez_compressed(path, **out)
 
 
+def load_npz(net, path):
+    """initialise the torch net from an exported npz (BN folded -> identity BN with the folded bias)"""
+    import torch
+    z = np.load(path)
+    idx = [k for k in range(len(net.cnn)) if isinstance(net.cnn[k], torch.nn.Conv2d)]
+    sd = net.state_dict()
+    T = lambda a: torch.from_numpy(np.asarray(a, np.float32))
+    for name, k2 in zip(("c1", "c2", "c3", "c4", "c5"), idx):
+        sd["cnn.%d.weight" % k2].copy_(T(z[name + "w"]))
+        o = z[name + "b"].shape[0]
+        sd["cnn.%d.weight" % (k2 + 1)].copy_(torch.ones(o)); sd["cnn.%d.bias" % (k2 + 1)].copy_(T(z[name + "b"]))
+        sd["cnn.%d.running_mean" % (k2 + 1)].copy_(torch.zeros(o)); sd["cnn.%d.running_var" % (k2 + 1)].copy_(torch.full((o,), 1 - 1e-5))
+    sd["fc.weight"].copy_(T(z["fw"])); sd["fc.bias"].copy_(T(z["fb"]))
+    for suf, nm in (("", "g0"), ("_reverse", "g0r")):
+        for a, tn in (("wih", "weight_ih"), ("whh", "weight_hh"), ("bih", "bias_ih"), ("bhh", "bias_hh")):
+            sd["gru.%s_l0%s" % (tn, suf)].copy_(T(z["%s_%s" % (nm, a)]))
+    sd["out.weight"].copy_(T(z["ow"])); sd["out.bias"].copy_(T(z["ob"]))
+    return net
+
+
+def relabel(items, log=print, gate=0.7, max_days=10):
+    """self-training: replace the (noisy) app label by the model's own reading when the reading is a valid, confident date
+    within +-max_days of the app label (loss/intim/sow) or, where no label exists (insp), whenever it is confident."""
+    changed = kept = fresh = dropped = 0
+    out = []
+    for it in items:
+        r = DR.read_date(it["crop"], it["field"])
+        rd = datetime.datetime.strptime(r["date"], "%d%m%Y").date() if r["date"] else None
+        lab = it["date"]
+        if rd is not None and r["conf"] >= gate:
+            if lab is None:
+                it = dict(it, date=rd); fresh += 1
+            elif rd == lab:
+                kept += 1
+            elif abs((rd - lab).days) <= max_days:
+                it = dict(it, date=rd); changed += 1
+            else:
+                dropped += 1; continue
+        elif lab is None:
+            continue
+        else:
+            dropped += 1; continue          # unreadable / uncertain / blank box: unknown whether label is right
+        out.append(it)
+    log("relabel: kept %d changed %d fresh %d dropped %d" % (kept, changed, fresh, dropped))
+    return out
+
+
 # ------------------------------------------------------------------ training
 class DS:
     def __init__(self, items, aug=True):
@@ -356,6 +403,7 @@ def main():
     ap.add_argument("--crops", default=os.path.join(ROOT, "data", "date_crops.pkl"))
     ap.add_argument("--epochs", type=int, default=40)
     ap.add_argument("--lr", type=float, default=1e-3)
+    ap.add_argument("--relabel", action="store_true", help="start from --out, self-label (see relabel()), fine-tune")
     ap.add_argument("--round2", action="store_true", help="drop the worst 12%% (label/form disagree) and fine-tune")
     ap.add_argument("--eval", action="store_true")
     ap.add_argument("--out", default=DR.MODEL_PATH)
@@ -371,6 +419,10 @@ def main():
     train = [i for i in items if i["role"] == "train" and i["date"] is not None]
     print("train samples", len(train), "by field", {f: sum(i["field"] == f for i in train) for f in FIELDS})
     net = make_model()
+    if a.relabel:
+        load_npz(net, a.out)
+        train = relabel([i for i in items if i["role"] == "train"])
+        print("relabelled train samples", len(train), {f: sum(i["field"] == f for i in train) for f in FIELDS})
     net = run_epochs(net, train, a.epochs, a.lr)
     if a.round2:
         L = sample_losses(net, train)
