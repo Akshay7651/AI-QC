@@ -60,8 +60,8 @@ Use ONE of these layouts (the docket ID must be in the name):
    ```
 3. A folder of ZIP files, one per docket (`<docket>.zip` containing `form\` and `media\`). Works, but needs extra disk space to unpack.
 
-Not downloaded yet? If your PC can open the PMFBY links, the program downloads them itself when no `--local-media` is given
-(slower; use `python download_media.py --input data.xlsx --out D:\media` to fetch everything first).
+Not downloaded yet? Just run without `--local-media`: the program FIRST downloads every form and photo into the folder `media\` (12 downloads in parallel,
+resumable - files already there are skipped) and ONLY THEN starts the QC. Use `--media-dir D:\media` to choose another folder.
 
 ---------------------------------------------------------------------------------------------------
 

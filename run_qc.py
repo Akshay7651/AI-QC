@@ -57,6 +57,9 @@ def parse_args(argv=None):
     p.add_argument("--filter-state")
     p.add_argument("--filter-dist")
     p.add_argument("--dry-run", action="store_true")
+    p.add_argument("--media-dir", default="media", help="where the forms/photos are downloaded FIRST (default: .\\media); QC starts after the download")
+    p.add_argument("--no-predownload", action="store_true", help="do not download first; fetch each row's files while processing (old behaviour)")
+    p.add_argument("--download-threads", type=int, default=12)
     p.add_argument("--local-media", help="ZIP or folder of downloaded forms/photos, matched to rows by docket id or mediaID")
     p.add_argument("--api-key")
     p.add_argument("--engine", choices=["auto", "claude", "local"], default="auto",
@@ -760,6 +763,14 @@ def main(argv=None):
         ck = load_checkpoint(args.checkpoint) if args.resume else {"results": {}, "cost": 0.0}
         if args.chunk_rows:
             print("Note: --chunk-rows only applies to the offline engine with forms/photos; writing one Excel file.")
+    if (local_ai and not args.local_media and not args.no_predownload and not args.discard_media and not args.dry_run
+            and df["pdf_url"].fillna("").astype(str).str.contains("http", regex=False).any()):
+        import download_media
+        print(f"Step 1: downloading forms + photos to {args.media_dir}\\  (QC starts when this is finished; already downloaded files are skipped) ...", flush=True)
+        t_dl = time.time()
+        okf, nof, bad = download_media.download_all(df, args.media_dir, args.download_threads, C.MAX_PHOTOS_PER_ROW)
+        print(f"Download finished in {time.time() - t_dl:.0f}s: {okf} rows with a form link, {nof} without, {bad} files could not be fetched. Step 2: QC.", flush=True)
+        args.local_media = args.media_dir
     if args.local_media:
         LOCAL.update(local_media.index(args.local_media, full[0] if local_ai else df))
         print(f"Local media: matched {len(LOCAL):,} dockets "

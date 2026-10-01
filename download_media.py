@@ -41,6 +41,54 @@ def get(client, url):
     return None
 
 
+def download_all(df, out, threads=12, max_photos=10, log=print):
+    """Download every row's signed form and photos to  <out>/<docket>/form/<docket>.<ext>  and  <out>/<docket>/media/<docket>_<n>.<ext>.
+    Resumable (existing files are skipped) and parallel.  Returns (rows_with_form, rows_without_form, files_failed)."""
+    import threading
+    from concurrent.futures import ThreadPoolExecutor
+    out = Path(out)
+    out.mkdir(parents=True, exist_ok=True)
+    rows = []
+    for _, r in df.iterrows():
+        d = str(r["docket_id"]).strip()
+        if d and d.lower() != "nan":
+            rows.append((d, str(r["pdf_url"] or "").replace("_x000D_", "").strip(), split_urls(r["media_urls"])[:max_photos]))
+    st = {"done": 0, "fail": 0, "noform": 0, "t0": time.time()}
+    lock = threading.Lock()
+
+    def have(folder, stem):
+        return folder.exists() and any(f.stem == stem and f.stat().st_size > 0 for f in folder.iterdir())
+
+    def one(job):
+        d, pdf, photos = job
+        fo, me = out / d / "form", out / d / "media"
+        fo.mkdir(parents=True, exist_ok=True)
+        me.mkdir(parents=True, exist_ok=True)
+        todo = ([(fo, d, pdf, ".pdf")] if pdf.startswith("http") else []) + [(me, f"{d}_{i}", u, ".jpg") for i, u in enumerate(photos, 1) if u]
+        bad = 0
+        with httpx.Client() as c:
+            for folder, stem, url, dflt in todo:
+                if have(folder, stem):
+                    continue
+                data = get(c, url)
+                if data:
+                    (folder / f"{stem}{ext_for(data, dflt)}").write_bytes(data)
+                else:
+                    bad += 1
+        with lock:
+            st["done"] += 1
+            st["fail"] += bad
+            st["noform"] += 0 if pdf.startswith("http") else 1
+            n = st["done"]
+            if n % 10 == 0 or n == len(rows):
+                el = time.time() - st["t0"]
+                log(f"  downloaded {n}/{len(rows)} rows  ({n / max(el, 1e-6) * 60:.0f} rows/min, {st['fail']} files failed)")
+
+    with ThreadPoolExecutor(threads) as ex:
+        list(ex.map(one, rows))
+    return len(rows) - st["noform"], st["noform"], st["fail"]
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--input", required=True)
