@@ -25,8 +25,18 @@ def num(v):
         return None
 
 
+CACHE = None
+
+
 def one(args):
     d, path = args
+    import pickle
+    cf = Path(CACHE) / f"{d}.pkl" if CACHE else None
+    if cf is not None and cf.exists():
+        try:
+            return d, pickle.load(open(cf, "rb"))
+        except Exception:     # noqa: BLE001
+            pass
     import form_reader as FR
     try:
         r = FR.read_form(path, d)
@@ -36,6 +46,9 @@ def one(args):
                                   "farmer_signed", "company_signed", "officer_signed", "quality", "notes")}
     keep["raj_rows"] = r.get("raj_rows")
     keep["field_conf"] = r.get("field_conf")
+    if cf is not None:
+        cf.parent.mkdir(parents=True, exist_ok=True)
+        pickle.dump(keep, open(cf, "wb"))
     return d, keep
 
 
@@ -46,8 +59,11 @@ def main():
     ap.add_argument("--out", required=True)
     ap.add_argument("--limit", type=int)
     ap.add_argument("--procs", type=int, default=4)
+    ap.add_argument("--cache", help="directory that keeps one result per form, so an interrupted run resumes (delete it after changing a model)")
     ap.add_argument("--app-cols", default="affectedAreaPercentage,cropLossPercentage")
     a = ap.parse_args()
+    global CACHE
+    CACHE = a.cache
     df = pd.read_excel(a.labels, dtype=str) if a.labels.lower().endswith(("xlsx", "xls")) else pd.read_csv(a.labels, dtype=str)
     low = {c.lower().replace("_", "").replace(" ", ""): c for c in df.columns}
     dc = low.get("docketid") or low.get("docket")

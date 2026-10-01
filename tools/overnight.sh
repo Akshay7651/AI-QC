@@ -22,11 +22,21 @@ fi
 # ---- blind comparison
 if [ ! -f results/compare_raj_baseline.xlsx ] && ! running "compare_human.py"; then
   mkdir -p results
-  setsid nohup python tools/compare_human.py --labels "$T/raj_qc.csv" --forms data/forms_raj --out results/compare_raj_baseline.xlsx --procs 3 >> "$T/compare_base.log" 2>&1 < /dev/null &
+  setsid nohup python tools/compare_human.py --labels "$T/raj_qc.csv" --forms data/forms_raj --out results/compare_raj_baseline.xlsx --procs 3 --cache data/compare_cache_base >> "$T/compare_base.log" 2>&1 < /dev/null &
+fi
+# ---- signature classifier (hand-read labels + weak labels)
+if ! grep -q "^saved" "$T/train_sig_raj.log" 2>/dev/null && ! running "train_sig_raj.py"; then
+  setsid nohup python tools/train_sig_raj.py --labels "$T/raj_qc.csv" --procs 2 >> "$T/train_sig_raj.log" 2>&1 < /dev/null &
+fi
+# ---- Rajasthan area/loss training: only after the Haryana retrain has finished (both write cell models)
+if grep -qE "ADOPTED|NOT adopted" "$T/retrain4.log" 2>/dev/null && ! grep -q "^done" "$T/train_raj_final.log" 2>/dev/null && ! running "train_raj.py"; then
+  setsid nohup python train_raj.py --labels "$T/raj_qc.csv" --steps 3000 --rounds 2 --procs 3 --threads 6 --init-model models/cells_cnn.npz --out models/cells_raj_new.npz >> "$T/train_raj_final.log" 2>&1 < /dev/null &
 fi
 sleep 1
 echo "== status $(date)"
 echo "raj forms on disk : $(ls data/forms_raj 2>/dev/null | wc -l)  | $(grep -c DONE $T/dl_raj2.log 2>/dev/null) done-marker"
 echo "haryana retrain   : $(grep -v WARN $T/retrain4.log 2>/dev/null | tail -1)"
 echo "raj compare       : $( [ -f results/compare_raj_baseline.xlsx ] && echo finished || echo 'running/not finished')"
-for p in "dl_raj.py" "retrain.py --labels" "compare_human.py" "train_raj.py"; do printf "  %-22s %s\n" "$p" "$(running "$p" && echo RUNNING || echo -)"; done
+echo "sig classifier    : $(grep -v WARN $T/train_sig_raj.log 2>/dev/null | tail -1)"
+echo "raj cell training  : $(grep -v WARN $T/train_raj_final.log 2>/dev/null | tail -1)"
+for p in "dl_raj.py" "retrain.py --labels" "compare_human.py" "train_sig_raj.py" "train_raj.py"; do printf "  %-22s %s\n" "$p" "$(running "$p" && echo RUNNING || echo -)"; done
