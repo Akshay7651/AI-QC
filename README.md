@@ -1,3 +1,5 @@
+**New here? Read [HOW_TO_RUN.md](HOW_TO_RUN.md) - step-by-step guide (setup, run, read the output, retrain).**
+
 # CLAP Survey AI QC
 
 Data-agnostic QC for PMFBY CLAP survey exports. `pip install -r requirements.txt`, put `ANTHROPIC_API_KEY` in `.env`.
