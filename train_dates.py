@@ -283,7 +283,7 @@ def ctc_marginal(net_out, idxs, items, drop_set=None):
     return -torch.logsumexp(-M, 1)
 
 
-def run_epochs(net, items, epochs, lr, bs=48, log=print):
+def run_epochs(net, items, epochs, lr, bs=16, log=print):
     import torch
     opt = torch.optim.AdamW(net.parameters(), lr=lr, weight_decay=1e-4)
     steps = epochs * ((len(items) + bs - 1) // bs)
@@ -354,8 +354,8 @@ def evaluate(items, gates=(0.0, 0.5, 0.7, 0.8, 0.9, 0.95), log=print):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--crops", default=os.path.join(ROOT, "data", "date_crops.pkl"))
-    ap.add_argument("--epochs", type=int, default=25)
-    ap.add_argument("--lr", type=float, default=2e-3)
+    ap.add_argument("--epochs", type=int, default=40)
+    ap.add_argument("--lr", type=float, default=1e-3)
     ap.add_argument("--round2", action="store_true", help="drop the worst 12%% (label/form disagree) and fine-tune")
     ap.add_argument("--eval", action="store_true")
     ap.add_argument("--out", default=DR.MODEL_PATH)

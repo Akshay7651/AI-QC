@@ -352,9 +352,9 @@ def evaluate(row, form=None, photos=None, gps=None, data_flags="", risk=None):
             field_ = [i for i in range(len(each)) if not (i < len(isf_) and isf_[i])]
             seen_ = [i + 1 for i in field_ if each[i]]
             if seen_:
-                parts_photo.append(f"Person visible in photo {', '.join(map(str, seen_))} of {len(each)} (farmer present).")
+                parts_photo.append(f"Farmer available: person visible in photo {', '.join(map(str, seen_))} of {len(each)}.")
             elif field_:
-                parts_photo.append(f"No person detected in the {len(field_)} field photo(s) (farmer not seen; a partly visible or distant person can be missed).")
+                parts_photo.append(f"Farmer not available: no person with at least 25% of the body visible in the {len(field_)} field photo(s).")
         # duplicates / rotation
         nd = int(_num(photos.get("n_duplicates")) or 0)
         if nd:

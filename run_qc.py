@@ -322,8 +322,8 @@ def person_remark(p):
     seen = [i + 1 for i in field if each[i]]
     n_all = len(each)
     if seen:
-        return f"Yes - person visible in photo {', '.join(map(str, seen))} of {n_all} (farmer present, not verified who)"
-    return f"No person detected in the {len(field)} field photo(s) of {n_all} (farmer not seen; a partly visible or distant person can be missed)"
+        return f"Farmer available - person visible in photo {', '.join(map(str, seen))} of {n_all} (not verified who it is)"
+    return f"Farmer not available - no person with at least 25% of the body visible in the {len(field)} field photo(s) of {n_all}"
 
 
 def _date_txt(v):
