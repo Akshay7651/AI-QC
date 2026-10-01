@@ -102,8 +102,9 @@ def parse_dates(s):
     s = pd.Series(s) if not isinstance(s, pd.Series) else s
     txt = s.astype(object).where(s.notna(), None).map(lambda v: None if v is None else str(v).strip())
     iso = txt.fillna("").str.match(r"^\d{4}[-/.]\d{1,2}[-/.]\d{1,2}")
-    a = pd.to_datetime(txt.where(iso), errors="coerce", format="mixed")
-    b = pd.to_datetime(txt.where(~iso), errors="coerce", dayfirst=True, format="mixed")
+    # utc=True makes mixed time-zone strings safe; the zone is then dropped so the result is always tz-naive
+    a = pd.to_datetime(txt.where(iso), errors="coerce", format="mixed", utc=True).dt.tz_localize(None)
+    b = pd.to_datetime(txt.where(~iso), errors="coerce", dayfirst=True, format="mixed", utc=True).dt.tz_localize(None)
     out = a.fillna(b)
     # years beyond the datetime64[ns] range (e.g. 2999) are NaT on pandas 2.x: keep them as "far future"
     far = out.isna() & txt.fillna("").str.contains(r"(?<!\d)(?:2[3-9]|[3-9]\d)\d\d(?!\d)")
