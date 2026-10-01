@@ -236,6 +236,16 @@ def test_discard_media_shared_url_is_kept_until_last_row_done(tmp_path):
     assert f.exists()
     r._release(s2)
     assert not f.exists()
+    ph = cache / "deadbeef.png"                  # photo + its analyser feature-cache sidecar (<name>.<size>.<mtime>.<ver>.pkl)
+    ph.write_bytes(PNG)
+    side = cache / "deadbeef.png.123.456.m1.pkl"
+    side.write_bytes(b"x")
+    keep = cache / "other.png.1.2.m1.pkl"
+    keep.write_bytes(b"x")
+    s4 = {}
+    r._track(s4, ph)
+    r._release(s4)
+    assert not ph.exists() and not side.exists() and keep.exists()
     other = tmp_path / "elsewhere.jpg"          # a file outside the cache dirs is never deleted, even if tracked by mistake
     other.write_bytes(PNG)
     s3 = {}
@@ -324,3 +334,19 @@ def test_dry_run_prints_time_and_disk(tmp_path, capsys):
     o = capsys.readouterr().out
     assert "Offline engine estimate for 12 rows" in o and "total" in o and "disk:" in o and "3 parts" in o
     assert not Path("o.xlsx").exists() and not Path("output/checkpoint.sqlite").exists()
+
+
+# ------------------------------------------------------------------------------------------------ merge tool
+def test_merge_tool_joins_batches(tmp_path):
+    sys.path.insert(0, str(ROOT / "tools"))
+    import merge_qc
+    n = 6
+    inp = n_rows_file(tmp_path, n)
+    m = media(tmp_path, dockets(n))
+    for k, (off, lim) in enumerate([(0, 3), (3, 3)]):
+        assert run_qc.main(argv(inp, "--local-media", m, "--inline", "--no-risk", "--offset", str(off), "--limit", str(lim),
+                                "--chunk-rows", "2", out=f"out/b{k}.xlsx")) == 0
+    assert merge_qc.main(["out/b0.csv", "out/b1.csv", "--output", "out/all.csv", "--check-dupes"]) == 0
+    c = pd.read_csv("out/all.csv", dtype=str, encoding="utf-8-sig")
+    assert c["docket_id"].tolist() == dockets(n) and Path("out/all.csv").read_bytes().startswith(b"\xef\xbb\xbf")
+    assert Path("out/all.csv").read_bytes().count(b"\xef\xbb\xbf") == 1

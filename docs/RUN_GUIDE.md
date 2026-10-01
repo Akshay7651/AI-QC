@@ -79,6 +79,10 @@ python run_qc.py --input Level_1_GEO_Tagged_QC_Done.xlsx --resume
 | Option | Meaning |
 |---|---|
 | `--limit N` | only the first N rows (test); output has N rows |
+| `--offset M --limit N` | a batch: rows M..M+N-1 of the Excel (for several PCs / nights); GPS/same-location checks still see the whole file (section 10) |
+| `--chunk-rows N` | write the output in parts `<output>_part001.xlsx ...` of N rows + one merged `<output>.csv` (recommended 20000 for big files) |
+| `--discard-media` | delete each row's downloaded forms/photos right after the row is processed (disk use stays tiny) |
+| `--dry-run` | print the plan, the time estimate (CPU and download) and the disk estimate; processes nothing |
 | `--agents N` (alias `--workers`) | parallel agents (default = number of CPU cores, at most 12) |
 | `--local-media zip_or_folder` | use downloaded forms/photos instead of the links |
 | `--output file.xlsx` | where to write (default `<input>_QC.xlsx`); `--inplace` writes into the input file |
@@ -205,7 +209,7 @@ The text only states what was read; a value that could not be read reliably is w
 | Phone cannot open the dashboard | Same Wi-Fi? Use the `http://192.168...` address printed at start; allow Python in the firewall (private network). |
 | Port 8765 busy | `--serve-port 8800` (the program also tries the next ports automatically). |
 | Run stopped / PC restarted | Run the same command with `--resume`. |
-| Want to redo everything | Delete `output/checkpoint.json` (or run without `--resume`). |
+| Want to redo everything | Run without `--resume` (this starts a fresh `output/checkpoint.sqlite`; the old `checkpoint.json` is not used unless you add `--resume`). |
 | Excel looks empty in QC columns | Those rows are not processed yet (partial autosave) - wait for the next autosave. |
 
 ---------------------------------------------------------------------------------------------------
@@ -231,3 +235,77 @@ Anything inside a folder named `form`, `forms`, `pdf`, `pdfs`, `signed`, `signed
 2. Windows: double-click `setup_windows.bat`. Linux/macOS: `bash setup.sh`. (Creates a virtual environment, installs `requirements.txt`, downloads any missing model, runs the self-check.)
 3. `python tools/selfcheck.py` must print **RESULT: READY**. It lists exactly what is missing if not (e.g. Hindi language data, a model file).
 4. Retraining the digit model also needs `pip install -r requirements-train.txt` (PyTorch); normal QC runs do not.
+
+
+---------------------------------------------------------------------------------------------------
+
+## 10. Running 160,000 rows (big, overnight, several days / several PCs)
+
+Why special care: at ~1.45 MB of forms+photos per row, 160,000 rows are **~230 GB of downloads** (do not keep them), a single Excel
+with 160,000 rows x 80 columns is slow to write and unusable to open, and the old checkpoint grew to ~4.6 KB per row as one JSON file.
+The program therefore has: **`--discard-media`** (delete each row's downloads when the row is done), **`--chunk-rows`** (output in
+parts + one merged CSV), **`--offset/--limit`** (batches), and a **crash-proof checkpoint** (a small SQLite file, one commit per finished row).
+
+### Step 1 - ask for an estimate (does nothing, takes seconds)
+```
+python run_qc.py --input Level_1_all.xlsx --agents 4 --chunk-rows 20000 --discard-media --dry-run
+```
+It prints rows, CPU time, download time (rows x files / `--rate`), total, rows/minute, and disk needs.
+
+### Step 2 - one long run (a PC that stays on, e.g. over several nights)
+```
+python run_qc.py --input Level_1_all.xlsx --agents 4 --chunk-rows 20000 --discard-media --output results/all.xlsx
+```
+Output: `results/all_part001.xlsx ... all_part008.xlsx` (20,000 rows each, normal formatted Excel), **`results/all.csv`** (all rows,
+UTF-8 with BOM: double-click opens in Excel with Hindi text intact; 160,000 rows may exceed what is comfortable in Excel - use
+Power BI / pandas or the part files) and `results/summary_report.xlsx`. A finished part is written once and **never rewritten**;
+the part in progress is saved every 60 s.
+
+**Stop / power cut / Ctrl-C / crash at any moment**: run the identical command again with `--resume`. Rows already finished are never
+processed again (only the rows that were in flight, at most ~`agents x 4`, are redone). A power cut during a save cannot corrupt
+the Excel files (they are written to a temp file and swapped in) or the checkpoint (SQLite, one commit per row).
+Pause without stopping: create an empty file `PAUSE` in the `output` folder.
+
+### Step 2b - batches for several PCs or several days
+Cut the file by row numbers; every PC uses the **same input file** and its own `--offset`:
+```
+PC-1: python run_qc.py --input Level_1_all.xlsx --offset 0      --limit 40000 --chunk-rows 20000 --discard-media --output results/batch0.xlsx
+PC-2: python run_qc.py --input Level_1_all.xlsx --offset 40000  --limit 40000 --chunk-rows 20000 --discard-media --output results/batch1.xlsx
+PC-3: python run_qc.py --input Level_1_all.xlsx --offset 80000  --limit 40000 --chunk-rows 20000 --discard-media --output results/batch2.xlsx
+PC-4: python run_qc.py --input Level_1_all.xlsx --offset 120000 --limit 40000 --chunk-rows 20000 --discard-media --output results/batch3.xlsx
+```
+* GPS "same location" and the risk score are still computed on the **whole** file, so a batch gives the same remarks as one big run.
+* Each batch keeps its own checkpoint (`output/checkpoint_off<offset>.sqlite`), so batches never disturb each other.
+  Continue a batch with exactly the same command plus `--resume`. Use a different `--progress` file / `--serve-port` if two batches run on one PC.
+* Keep `--offset/--limit/--chunk-rows` unchanged between a run and its `--resume` (if you do change `--chunk-rows`, the parts are rewritten from the checkpoint - nothing is reprocessed - but delete the old `_partNNN.xlsx` files first).
+* The Excel must be the same file in every batch (the row numbers must match).
+
+### Step 3 - merge the batches
+```
+python tools/merge_qc.py results/batch0.csv results/batch1.csv results/batch2.csv results/batch3.csv --output results/ALL_160k.csv --check-dupes
+```
+(or `"results/batch*.csv"`). The merge copies files byte by byte (seconds, no memory). The part files `batchN_partNNN.xlsx` stay as they are -
+open any of them in Excel.
+
+### How long, how much disk (measured on a 4-core PC with the offline engine: about 0.7-0.85 s per row wall time, ~3 CPU-seconds per row)
+| Cores actually used (`--agents`, at most the CPU cores) | 160,000 rows | 41,000 rows |
+|---|---|---|
+| 4 | ~34 h (about 1.5 days, e.g. 3 nights of 12 h) | ~9 h |
+| 8 | ~17 h | ~4.3 h |
+| 16 | ~8.5 h | ~2.1 h |
+| 4 PCs x 4 cores in batches | ~8.5 h each (parallel) | - |
+
+Downloads are polite-limited by `--rate` (default 5 files/s; a row has 1 form + up to 5 photos, usually ~4 files = ~0.8 s/row), so with downloading
+from the web the **download rate is the limit once you have more than ~4 cores**: 160,000 rows x 4 files / 5 per s = ~36 h. Raise `--rate`
+only if the site allows it, or download once with `download_media.py` on a fast connection and use `--local-media`. `--dry-run` shows both numbers.
+
+Disk (160,000 rows): output Excel parts ~140 MB + merged CSV ~370 MB, checkpoint ~740 MB, `summary_report.xlsx` small,
+**downloaded media: ~0 with `--discard-media` (cache stays below ~100 MB)** versus ~230 GB without it. Plan **2 GB free** (not counting the input).
+With `--local-media` your own folder is never changed or deleted by the program. RAM: the table itself (~1-2 GB for 160,000 rows) plus ~100 MB per agent.
+
+### Hints
+* Do a 100-row run first with the exact options you will use for the big one.
+* Overnight on Windows: disable sleep (Settings > Power) and use `--no-serve` if you do not need the dashboard.
+* `--discard-media` only deletes files the program downloaded itself into `cache/pdfs` and `cache/photos`; a run that was killed (power cut, kill -9) may leave the downloads of the rows that were in flight (at most ~`agents x 4` rows, ~50 MB) - delete the contents of `cache/pdfs` and `cache/photos` any time you like.
+* An old `output/checkpoint.json` from earlier versions is imported automatically by `--resume` (written to `checkpoint.sqlite`); the JSON file is left untouched.
+* `--chunk-rows` is for the offline engine with forms/photos; `--mode gps`/`data` runs still write one Excel file.

@@ -143,3 +143,10 @@ photo-is-form 100% / 96%; signatures farmer 97.9%, company 96.9%, worker 99.0% (
 Before the signature classifier (honest test): farmer 93.8, company 92.9, worker 86.7 (precision of 'yes' only 58.6%), officer 93.8 (precision of 'yes' 14%).
 Weak point = COVERAGE of handwritten values (57%; 28/100 rows -> Manual-check). Verdicts on the 100: OK 8, Review 13, Manual-check 28, Reject-evidence 51 (52 rows upload a photo of the paper form instead of a field photo).
 Still open: the 9-of-10 fresh-batch loop (needs more ground truth - use the user's 3,000 human rows), non-zero handwriting coverage, crop/flood/damage photo claims (weak, gated), dates/PO-ID/overwrite (disabled).
+
+
+### UPDATE (2026-10-01): 160k-row mode DONE (165 tests pass)
+`run_qc.py --chunk-rows 20000 --discard-media` (chunked output parts + merged UTF-8-BOM CSV, deletes downloaded media per row, sqlite checkpoint with auto-import of old JSON checkpoints,
+`--offset/--limit` batches + `tools/merge_qc.py`, kill -9 resume tested, `--dry-run` time/disk estimate). See docs/RUN_GUIDE.md section 10.
+Measured: ~0.75 s/row on 4 cores -> 160k rows ~33 h (4 cores), ~17 h (8), ~8.5 h (16); orchestration overhead 2.5 ms/row; peak RAM 1.7 GB for 160k synthetic rows. Downloads (--rate 5 files/s) become the bottleneck beyond 4 cores - pre-download with download_media.py or raise --rate only if the site allows.
+Remaining: user's 3,000 human rows -> retrain.py; fresh-batch loop (9/10 >= 95%); non-zero handwriting coverage; real overwrite/date/PO-ID readers.

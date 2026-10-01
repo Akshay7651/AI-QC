@@ -292,12 +292,12 @@ class LocalRunner:
         self.stop_evt.set()
 
     # ------------------------------------------------------------------ --discard-media (bounded cache)
-    def _purge_stale_cache(self, max_age=6 * 3600):
-        """Orphans of an earlier killed run (older than 6 h) are removed; recent files may belong to another live run."""
+    def _purge_stale_cache(self, max_age=3600):
+        """Only half-written download temp files (`*.part<pid>`) of an earlier killed run are removed - never other cached files."""
         now = time.time()
         for d in self.cache.values():
             try:
-                for p in Path(d).iterdir():
+                for p in Path(d).glob("*.part*"):
                     if p.is_file() and now - p.stat().st_mtime > max_age:
                         p.unlink()
             except OSError:
@@ -325,12 +325,21 @@ class LocalRunner:
                 if self._refs[p] <= 0:
                     del self._refs[p]
                     gone.append(p)
+        import glob
+        sidecar_dirs = {str(r) for r in roots} | {str(Path(__file__).resolve().parent / C.PHOTO_CACHE_DIR)}
         for p in gone:
             try:
                 rp = Path(p).resolve()
                 if any(r in rp.parents for r in roots):
                     rp.unlink()
                     self.discarded += 1
+                    # the photo analyser keeps a feature cache `<photo name>.<size>.<mtime>.<ver>.pkl` (~45 KB each): drop it with the photo
+                    for d in sidecar_dirs:
+                        for side in glob.glob(os.path.join(glob.escape(d), glob.escape(rp.name) + ".*.pkl")):
+                            try:
+                                os.remove(side)
+                            except OSError:
+                                pass
             except OSError:
                 pass
 

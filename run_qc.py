@@ -749,8 +749,11 @@ def main(argv=None):
         print(f"Plan: modes={modes}")
         for k, v in plan.items():
             print(f"  {k}: {len(v):,} rows to process")
-        print(f"  est. cost: ${sum(len(v) * EST_COST[k] for k, v in plan.items()):.2f}"
-              f"   est. time: {calls * EST_SEC_PER_CALL / workers / 60:.0f} min ({workers} workers)")
+        if local_ai:
+            print(f"  est. cost: ${sum(len(v) * EST_COST[k] for k, v in plan.items()):.2f} (only if you used --engine claude; the offline engine is free)")
+        else:
+            print(f"  est. cost: ${sum(len(v) * EST_COST[k] for k, v in plan.items()):.2f}"
+                  f"   est. time: {calls * EST_SEC_PER_CALL / workers / 60:.0f} min ({workers} workers)")
         if local_ai:
             print_estimate(args, df, plan, LOCAL)
             if hasattr(ck["results"], "close"):
