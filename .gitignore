@@ -15,3 +15,4 @@ models/backup/
 !data/eval_unseen100/
 !data/eval_raj/
 data/eval_raj/sheets/
+data/eval_raj/row_sheets/
