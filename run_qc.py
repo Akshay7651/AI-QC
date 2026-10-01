@@ -268,7 +268,7 @@ def assemble(df, ck, ran_ai, keys=None):
 QC_BLOCK = [
     C.COL_DONE_BY, C.COL_QC_DONE, C.COL_QC_TIME, "QC Verdict", "AI_Confidence",
     "Form No", "PO ID matches docket", C.COL_FORM_AREA, C.COL_FORM_LOSS, "Form Row Area %", "Form Row Loss %",
-    "Form Total Row Blank", C.COL_MATCH, "Form vs App (Match/Mismatch/NA)",
+    "Form Total Row Blank", "Sowing date (Form)", "Loss date (Form)", "Intimation date (Form)", "Inspection date (Form)", C.COL_MATCH, "Form vs App (Match/Mismatch/NA)",
     C.COL_SURVEYOR_SIG, C.COL_FARMER_SIG, "Primary Worker Signature (Yes/No)", C.COL_GOVT_SIG, "Officer Stamp Only (Yes/No)",
     C.COL_FORM_STATUS, "Form Quality", "Form Confidence", C.COL_FORM_REMARKS,
     C.COL_PHOTO_DATE, C.COL_FIELD_PHOTO, "Field photo type", "Photo is form image (Yes/No)", "Form-image photos (n)",
@@ -338,6 +338,10 @@ def assemble_local(df, results, keys):
             put("Form Row Area %", _nn(f.get("row_area")))
             put("Form Row Loss %", _nn(f.get("row_loss")))
             put("Form Total Row Blank", _yn(f.get("total_row_blank")))
+            for col_, key_ in (("Sowing date (Form)", "sow_date"), ("Loss date (Form)", "loss_date"),
+                               ("Intimation date (Form)", "intimation_date"), ("Inspection date (Form)", "inspection_date")):
+                v_ = f.get(key_)
+                put(col_, f"{str(v_)[:2]}-{str(v_)[2:4]}-{str(v_)[4:8]}" if v_ and len(str(v_)) == 8 and str(v_).isdigit() else None)
             put(C.COL_SURVEYOR_SIG, _yn(f.get("company_signed")))
             put(C.COL_FARMER_SIG, _yn(f.get("farmer_signed")))
             put("Primary Worker Signature (Yes/No)", _yn(f.get("worker_signed")))

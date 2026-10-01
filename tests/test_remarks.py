@@ -218,3 +218,13 @@ def test_worker_and_officer_absence_is_informational_only():
     assert "Signature missing" not in e["flags"] and e["verdict"] == "OK"
     e = ev(f=form(farmer_signed=False))
     assert "Signature missing" in e["flags"]
+
+
+def test_dates_on_form_are_listed_and_compared_with_app():
+    f = form(sow_date="01052026", loss_date="17092026", intimation_date="21092026", inspection_date=None)
+    e = ev(r=row(survey_start_date="2026-09-17", survey_end_date="2026-09-21"), f=f)
+    assert "Dates on form: sowing 01-05-2026, loss 17-09-2026, intimation 21-09-2026, inspection not readable." in e["remark"]
+    assert "Form date differs from app" not in e["flags"]
+    e = ev(r=row(survey_start_date="2026-09-18", survey_end_date="2026-09-21"), f=f)
+    assert "Form date differs from app" in e["flags"] and "differs from the app (18-09-2026)" in e["remark"]
+    assert "Dates on form" not in ev(f=form(inspection_date=None))["remark"]        # no dates read at all -> no sentence
