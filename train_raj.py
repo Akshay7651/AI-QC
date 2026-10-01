@@ -150,6 +150,8 @@ def main():
     ap.add_argument("--rounds", type=int, default=2)
     ap.add_argument("--procs", type=int, default=4)
     ap.add_argument("--threads", type=int, default=6)
+    ap.add_argument("--init-model", default=os.path.join(HERE, "models", "cells_cnn.npz"))
+    ap.add_argument("--out", default=os.path.join(HERE, "models", "cells_cnn.npz"), help="where the trained model is written")
     ap.add_argument("--min-score", type=float, default=0.02)
     ap.add_argument("--haryana-share", type=float, default=0.5, help="share of each batch drawn from the Haryana cell set (keeps it from forgetting)")
     a = ap.parse_args()
@@ -163,10 +165,9 @@ def main():
     hold, train_ids = ids[:k], ids[k:]
     print(f"train {len(train_ids)} | hold-out {len(hold)} (never trained on)", flush=True)
     har = np.load(TC.DS) if os.path.exists(TC.DS) else None
-    mp = os.path.join(HERE, "models", "cells_cnn.npz")
-    bk = mp + ".before_raj"
-    import shutil
-    shutil.copy2(mp, bk)
+    mp = a.init_model
+    D.CELL_MODEL_PATH = mp
+    D._CELL = None
     before = evaluate(hold, lab, 0.85)
     print("CURRENT model on Rajasthan hold-out:", before, flush=True)
     for rnd in range(a.rounds):
@@ -200,11 +201,13 @@ def main():
             opt.zero_grad(); l = lossf(net(TC.augment(xb)), yb); l.backward(); opt.step(); sched.step()
             if (s + 1) % 500 == 0:
                 print(f"  step {s + 1} loss {l.item():.3f} ({time.time() - t0:.0f}s)", flush=True)
-        TC.export(net, mp)
+        TC.export(net, a.out)
+        mp = a.out                                  # the next round starts from this round's model
+        D.CELL_MODEL_PATH = a.out
         D._CELL = None
         new = evaluate(hold, lab, 0.85)
         print(f"NEW model (round {rnd + 1}) on Rajasthan hold-out:", new, flush=True)
-    print("done; models/cells_cnn.npz updated (previous copy: models/cells_cnn.npz.before_raj). Check Haryana accuracy before committing.")
+    print("done; model written to", a.out, "- check Haryana accuracy before using it as models/cells_cnn.npz")
 
 
 if __name__ == "__main__":
