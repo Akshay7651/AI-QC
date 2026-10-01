@@ -560,6 +560,17 @@ def read_form(path_or_pil, docket=None, debug=False):
     else:
         out["quality"] = "good"
     lay = P.analyse_layout(rgb)
+    if lay.get("ok") and lay.get("rgb") is not None and not os.environ.get("AIQC_NO_RAJ"):
+        try:
+            import form_raj
+            if form_raj.is_rajasthan(lay["rgb"]):
+                out["quality_metrics"] = {k: round(v, 1) for k, v in q.items()}
+                if form_raj.read_form_raj(lay, out, CELL_GATE, notes):
+                    out["confidence"] = round(float(np.mean([c for c in out["field_conf"].values()] or [0.3])) * (1.0 if out["quality"] == "good" else 0.7), 3)
+                    out["elapsed"] = round(time.time() - t0, 3)
+                    return out
+        except Exception as e:     # noqa: BLE001
+            notes.append(f"Rajasthan reader failed: {type(e).__name__}")
     out["quality_metrics"] = {k: round(v, 1) for k, v in q.items()}
     out["rotation_deg"] = lay["info"].get("rot", 0) if "info" in lay else 0
     out["skew_deg"] = round(lay["info"].get("skew", 0.0), 2) if "info" in lay else 0.0

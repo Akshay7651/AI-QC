@@ -148,6 +148,8 @@ def _plain(row, form, photos, gps, flags, verdict, ev):
     miss = []
     if ok_form:
         miss = [n for n, k in (("farmer", "farmer_signed"), ("company", "company_signed")) if form.get(k) is False]
+        if form.get("template") == "rajasthan" and form.get("officer_signed") is False:
+            miss.append("agriculture supervisor (AAO)")
     reasons = []
     for f in flags:
         if f == "Signature missing":
@@ -191,7 +193,7 @@ def _plain(row, form, photos, gps, flags, verdict, ev):
             f.append(s)
         else:
             f.append("Area / loss on the form could not be read.")
-        sg = [n for n, k in (("Farmer", "farmer_signed"), ("Company", "company_signed")) if form.get(k)]
+        sg = [n for n, k in (("Farmer", "farmer_signed"), ("Company", "company_signed")) + ((("Supervisor (AAO)", "officer_signed"),) if form.get("template") == "rajasthan" else ()) if form.get(k)]
         if sg:
             f.append(" and ".join(sg).capitalize() + (" signature present." if len(sg) == 1 else " signatures present."))
     if form and form.get("_state") in (None, "ok") and form.get("is_proforma3") is False:
@@ -293,7 +295,7 @@ def evaluate(row, form=None, photos=None, gps=None, data_flags="", risk=None):
                 parts_form.append(f"Form image quality: {q}.")
             # identity
             fn, fn_ok = form.get("form_no"), _readable(form, form.get("form_no"), "form_no")
-            s = f"Form No {fn}" if fn and fn_ok else "Form No not readable"
+            s = f"Form No {fn}" if fn and fn_ok else ("Form No not applicable (Rajasthan form)" if form.get("template") == "rajasthan" else "Form No not readable")
             po = form.get("po_id_matches")
             if po is True:
                 s += "; PO ID matches docket"
@@ -313,6 +315,16 @@ def evaluate(row, form=None, photos=None, gps=None, data_flags="", risk=None):
                 f_area, f_loss, source = fa, fl, "total row"
             elif ra is not None and rl is not None and ra_ok and rl_ok:
                 f_area, f_loss, source = ra, rl, "table row"
+            raj = form.get("template") == "rajasthan"
+            pairs = form.get("raj_pairs")
+            if f_area is None and raj and pairs and app_area is not None and app_loss is not None:
+                hit = [(a_, l_) for a_, l_ in pairs if abs(a_ - app_area) <= C.AREA_MATCH_TOLERANCE_PCT and abs(l_ - app_loss) <= C.LOSS_MATCH_TOLERANCE_PCT]
+                if hit:
+                    f_area, f_loss, source = hit[0][0], hit[0][1], "one of several rows"
+                elif form.get("raj_all_read"):
+                    parts_form.append(f"None of the {len(pairs)} filled rows on the form shows the app values {_fmt(app_area)}% / {_fmt(app_loss)}%.")
+                    flag("Form vs app mismatch", "review", f"no row on the form equals the app values {_fmt(app_area)}/{_fmt(app_loss)}")
+                    match = "Mismatch"
             if f_area is None:
                 parts_form.append("Affected area % / loss % not readable on the form.")
                 if not conf_low:
@@ -320,6 +332,10 @@ def evaluate(row, form=None, photos=None, gps=None, data_flags="", risk=None):
             else:
                 if source == "total row":
                     s = f"Form total affected area {_fmt(f_area)}% / loss {_fmt(f_loss)}%"
+                elif source == "one of several rows":
+                    s = f"One of the {len(pairs)} rows on the form shows affected area {_fmt(f_area)}% / loss {_fmt(f_loss)}%"
+                elif raj:
+                    s = f"Form row shows affected area {_fmt(f_area)}% / loss {_fmt(f_loss)}%"
                 else:
                     s = f"Form total row not usable; table row shows affected area {_fmt(f_area)}% / loss {_fmt(f_loss)}%"
                 if app_area is None or app_loss is None:
@@ -340,13 +356,17 @@ def evaluate(row, form=None, photos=None, gps=None, data_flags="", risk=None):
             if total_blank and source != "table row":
                 parts_form.append("Total row blank on form.")
             # signatures
-            sig = [("farmer", form.get("farmer_signed")), ("company", form.get("company_signed")),
-                   ("primary worker", form.get("worker_signed")), ("block officer", form.get("officer_signed"))]
+            if form.get("template") == "rajasthan":
+                sig = [("farmer", form.get("farmer_signed")), ("insurance company", form.get("company_signed")),
+                       ("agriculture supervisor (AAO)", form.get("officer_signed"))]
+            else:
+                sig = [("farmer", form.get("farmer_signed")), ("company", form.get("company_signed")),
+                       ("primary worker", form.get("worker_signed")), ("block officer", form.get("officer_signed"))]
             bits = []
             missing = []
             for name, v in sig:
                 if v is None:
-                    bits.append(f"{name} not assessed" if name == "block officer" else f"{name} not readable")
+                    bits.append(f"{name} not assessed" if name in ("block officer", "agriculture supervisor (AAO)") else f"{name} not readable")
                 else:
                     bits.append(f"{name} {'Yes' if v else 'NO'}")
                     if not v:
@@ -372,7 +392,7 @@ def evaluate(row, form=None, photos=None, gps=None, data_flags="", risk=None):
                     flag("Form dates out of order", None)
             # The primary worker and the block officer almost never sign (officer: 0 of 149 labelled forms; worker: ~17%), so their
             # absence is informational only. A missing FARMER or COMPANY signature is what needs a review.
-            core_missing = [m for m in missing if m in ("farmer", "company")]
+            core_missing = [m for m in missing if m in ("farmer", "company", "insurance company", "agriculture supervisor (AAO)")]
             if core_missing:
                 flag("Signature missing", "review", "signature missing: " + ", ".join(core_missing))
             if form.get("officer_stamp_only"):
