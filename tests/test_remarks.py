@@ -223,7 +223,7 @@ def test_worker_and_officer_absence_is_informational_only():
 def test_dates_on_form_are_listed_and_compared_with_app():
     f = form(sow_date="01052026", loss_date="17092026", intimation_date="21092026", inspection_date=None)
     e = ev(r=row(survey_start_date="2026-09-17", survey_end_date="2026-09-21"), f=f)
-    assert "Dates on form: sowing 01-05-2026, loss 17-09-2026, intimation 21-09-2026, inspection not readable." in e["remark"]
+    assert "Dates on form: sowing 01-05-2026, loss 17-09-2026, intimation 21-09-2026 (1 other date(s) not readable)." in e["remark"]
     assert "Form date differs from app" not in e["flags"]
     e = ev(r=row(survey_start_date="2026-09-18", survey_end_date="2026-09-21"), f=f)
     assert "Form date differs from app" in e["flags"] and "differs from the app (18-09-2026)" in e["remark"]

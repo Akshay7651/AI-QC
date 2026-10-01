@@ -231,14 +231,16 @@ def evaluate(row, form=None, photos=None, gps=None, data_flags="", risk=None):
             fd = {k: _parse_date(form.get(k)) for k in ("sow_date", "loss_date", "intimation_date", "inspection_date")}
             if any(fd.values()):
                 nm = {"sow_date": "sowing", "loss_date": "loss", "intimation_date": "intimation", "inspection_date": "inspection"}
-                parts_form.append("Dates on form: " + ", ".join(f"{nm[k]} {v:%d-%m-%Y}" if v else f"{nm[k]} not readable" for k, v in fd.items()) + ".")
+                got = [f"{nm[k]} {v:%d-%m-%Y}" for k, v in fd.items() if v]
+                n_missing = sum(1 for v in fd.values() if not v)
+                parts_form.append("Dates on form: " + ", ".join(got) + (f" ({n_missing} other date(s) not readable)" if n_missing else "") + ".")
                 a_loss, a_int = _parse_date(row.get("survey_start_date")), _parse_date(row.get("survey_end_date"))
                 if fd["loss_date"] and a_loss and fd["loss_date"] != a_loss:
                     parts_form.append(f"Loss date on form {fd['loss_date']:%d-%m-%Y} differs from the app ({a_loss:%d-%m-%Y}).")
-                    flag("Form date differs from app", "review", "loss date on the form differs from the app")
+                    flag("Form date differs from app", None)   # informational: loss-date reading is ~96% precise, so no verdict change
                 if fd["intimation_date"] and a_int and fd["intimation_date"] != a_int:
                     parts_form.append(f"Intimation date on form {fd['intimation_date']:%d-%m-%Y} differs from the app ({a_int:%d-%m-%Y}).")
-                    flag("Form date differs from app", "review", "intimation date on the form differs from the app")
+                    flag("Form date differs from app", None)
                 seq = [fd[k] for k in ("sow_date", "loss_date", "intimation_date", "inspection_date") if fd[k]]
                 if any(b < a for a, b in zip(seq, seq[1:])):
                     parts_form.append("Dates on the form are not in the usual order (sowing, loss, intimation, inspection).")

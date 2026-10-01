@@ -217,7 +217,10 @@ def read_date(crop_img, field=None):
     g = to_gray(crop_img)
     if g.size == 0 or min(g.shape) < 6:
         return dict(_BLANK)
-    P = forward(prep(g), M)
+    x = prep(g)
+    if float((x > 0.5).sum()) < 30:            # (almost) no ink at all: empty box
+        return dict(_BLANK)
+    P = forward(x, M)
     text, confs = ctc_greedy(P)
     conf = float(min(confs)) if confs else 0.0
     if not any(ch.isdigit() for ch in text):

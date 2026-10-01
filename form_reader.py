@@ -316,8 +316,27 @@ CELL_BLANK_INK = 0.006
 # Handwritten area/loss values are only asserted when the cell model's confidence is >= CELL_GATE.
 # Retrained model (human disputed-case labels), 114 never-trained forms: gate 0.7 -> 96.9% precision, 71% of cells answered (non-zero answered: 95% right).
 CELL_GATE = 0.7
-# Dates: handwriting reader is ~0-3% exact on the hand labels -> NOT asserted until a real date reader exists.
-DATES_ENABLED = False
+# Dates: sequence reader (date_reader.py: CNN+BiGRU+CTC, numpy). Switched on only when its measured precision-at-gate is >=95%
+# per field on held-out forms (see docs / train_dates.py --eval); False = dates stay None ("not readable").
+# Measured on held-out forms (precision when answered / coverage): loss date 95-97% / 45-62% -> ON with a strict gate;
+# intimation 73-90%, inspection 67-79%, sowing 43-74% -> OFF (weak labels: the app intimation date equals the form's only 19% of the time;
+# month-name dates; rare sowing months). Turn a field on only after it reaches >=95% on held-out human-labelled dates.
+DATES_ENABLED = {"loss_date": True, "sow_date": False, "intimation_date": False, "inspection_date": False}
+DATE_GATE = {"loss_date": 0.95}
+DATE_FIELD = {"sow_date": "sow", "loss_date": "loss", "intimation_date": "intim", "inspection_date": "insp"}
+
+
+def read_date_box(rgb_crop, field, gate=0.0):
+    """handwritten date box -> (DDMMYYYY|None, conf, note); blank box -> (None, 1.0, 'blank'); below the gate -> (None, conf, note)"""
+    import date_reader as DR
+    r = DR.read_date(rgb_crop, field)
+    if r.get("blank"):
+        return None, 1.0, "blank"
+    if r["date"] is None:
+        return None, 0.0, ("ambiguous date '%s'" % r["text"]) if r.get("ambiguous") else ("date '%s' not parsable" % r["text"])
+    if r["conf"] < max(DR.CONF_GATE, gate):
+        return None, float(r["conf"]), "date '%s' low confidence" % r["text"]
+    return r["date"], float(r["conf"]), ""
 
 
 def _digit_probs(rgb_crop):
@@ -591,8 +610,11 @@ def read_form(path_or_pil, docket=None, debug=False):
     out["cells_low_conf"] = bool(low)
     # ---- dates
     for key, box in (("sow_date", "sow_date"), ("loss_date", "loss_date"), ("intimation_date", "intim_date"), ("inspection_date", "insp_date")):
-        if box in B and DATES_ENABLED:
-            d, dc, dn = parse_date(P.crop(r, B[box], 2))
+        if box in B and DATES_ENABLED.get(key):
+            try:
+                d, dc, dn = read_date_box(P.crop(r, B[box], 2), DATE_FIELD[key], DATE_GATE.get(key, 0.0))
+            except Exception as e:     # noqa: BLE001
+                d, dc, dn = None, 0.0, "date reading failed: %s" % type(e).__name__
             out[key] = d
             fc[key] = round(float(dc), 3)
             if dn and dn != "blank":

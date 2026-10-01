@@ -111,11 +111,35 @@ def build(crops_pkl, round_labels=None):
                 lab = hand[dk].get(f) if dk in hand else None
             else:
                 lab = info["labels"].get(f) if info else None
-            items.append(dict(src=src, dk=dk, field=f, crop=c, date=lab, role=role))
+            if role == "eval_main" and f != "loss":
+                lab = None          # the app intimation date differs from the form's in ~80% of forms: not a usable truth
+            it = dict(src=src, dk=dk, field=f, crop=c, date=lab, role=role)
+            if role == "train" and info:
+                L = info["labels"]
+                D = datetime.timedelta
+                if f == "intim" and L.get("intim"):          # form date = app intimation date + 0..3 days (hand labels: 19/47/16/9 %)
+                    it["dates"] = [L["intim"] + D(days=k) for k in range(-1, 6)]
+                elif f == "insp" and L.get("intim"):         # committee inspection happens after the intimation, within ~3 weeks
+                    it["dates"] = [L["intim"] + D(days=k) for k in range(0, 24)]
+                elif f in ("loss", "sow") and lab:
+                    it["dates"] = [lab]
+            items.append(it)
     return items
 
 
 # ------------------------------------------------------------------ targets
+_VC = {}
+
+
+def variants_multi(dates):
+    out = set()
+    for d in dates:
+        if d not in _VC:
+            _VC[d] = [tuple(v) for v in variants(d)]
+        out.update(_VC[d])
+    return [list(v) for v in sorted(out)]
+
+
 def variants(d):
     """date -> list of distinct int-lists (CTC classes) for the writing variants; digits 1..10, separator 11"""
     out = set()
@@ -128,11 +152,11 @@ def variants(d):
 
 
 # ------------------------------------------------------------------ augmentation
-def augment(g, rng):
+def augment(g, rng, trim=True):
     """grey uint8 crop -> grey uint8 crop (random geometry/photometry)"""
     h, w = g.shape
     # random margin trim / pad
-    t = [int(rng.uniform(-0.08, 0.10) * s) for s in (h, h, w, w)]
+    t = [int(rng.uniform(-0.08, 0.10 if trim else 0.0) * s) for s in (h, h, w, w)]
     y0, y1, x0, x1 = max(0, t[0]), min(h, h - t[1]), max(0, t[2]), min(w, w - t[3])
     if y1 - y0 > 8 and x1 - x0 > 8:
         g = g[y0:y1, x0:x1]
@@ -192,6 +216,86 @@ def augment(g, rng):
         x = int(rng.integers(0, w)); ww = int(rng.integers(4, max(5, w // 8)))
         g[:, x:x + ww] = g[:, x:x + ww] * rng.uniform(0.6, 1.0) + rng.uniform(0, 40)
     return np.clip(g, 0, 255).astype(np.uint8)
+
+
+# ------------------------------------------------------------------ synthetic dates (MNIST digits): breaks the language prior
+_MN = None
+
+
+def _mnist():
+    global _MN
+    if _MN is None:
+        import gzip
+        base = os.path.join(ROOT, "data", "mnist")
+        with gzip.open(os.path.join(base, "train-images-idx3-ubyte.gz")) as f:
+            X = np.frombuffer(f.read(), np.uint8, offset=16).reshape(-1, 28, 28)
+        with gzip.open(os.path.join(base, "train-labels-idx1-ubyte.gz")) as f:
+            y = np.frombuffer(f.read(), np.uint8, offset=8)
+        _MN = ([X[y == k] for k in range(10)])
+    return _MN
+
+
+def synth_item(rng):
+    """-> dict(date, tgt (exact CTC target), style, synthetic=True)"""
+    mo = int(rng.integers(3, 13)) if rng.random() < 0.8 else int(rng.integers(1, 13))
+    d = datetime.date(2026, mo, int(rng.integers(1, 29)))
+    dd = "%02d" % d.day if rng.random() < 0.55 else str(d.day)
+    mm = "%02d" % d.month if rng.random() < 0.55 else str(d.month)
+    yy = "26" if rng.random() < 0.55 else "2026"
+    sep = ["-", "/", "."][int(rng.integers(0, 3))] if rng.random() < 0.9 else "-"
+    txt = dd + sep + mm + sep + yy
+    tgt = [DR.SEP if ch in "-/." else int(ch) + 1 for ch in txt]
+    return dict(date=d, tgt=tgt, text=txt, synthetic=True, field="synth", role="train", dk="synth", src="synth")
+
+
+def render_synth(it, rng):
+    M = _mnist()
+    H = 96
+    ink = rng.uniform(10, 90)
+    glyphs = []
+    for ch in it["text"]:
+        if ch.isdigit():
+            g = M[int(ch)][rng.integers(0, len(M[int(ch)]))]
+            ys, xs = np.nonzero(g > 60)
+            g = g[ys.min():ys.max() + 1, xs.min():xs.max() + 1].astype(np.float32) / 255
+            hh = int(H * rng.uniform(0.45, 0.8))
+            ww = max(3, int(g.shape[1] * hh / g.shape[0] * rng.uniform(0.7, 1.2)))
+            g = cv2.resize(g, (ww, hh), interpolation=cv2.INTER_AREA)
+            if rng.random() < 0.7:                                  # thicken / thin strokes to match pen width
+                g = cv2.dilate(g, np.ones((2, 2), np.uint8)) if rng.random() < 0.6 else g
+            glyphs.append((g, rng.uniform(-0.1, 0.45)))
+        else:
+            hh = int(H * rng.uniform(0.4, 0.8))
+            g = np.zeros((hh, max(4, hh // 3)), np.float32)
+            if ch == "-":
+                g = np.zeros((6, int(H * rng.uniform(0.25, 0.5))), np.float32); g[2:4] = 1
+            elif ch == "/":
+                cv2.line(g, (g.shape[1] - 1, 0), (0, hh - 1), 1.0, 2)
+            else:
+                g = np.zeros((6, 6), np.float32); g[1:5, 1:5] = 1
+            glyphs.append((g, 0.0))
+    gap = [int(rng.integers(2, 22)) for _ in glyphs]
+    W = sum(g.shape[1] for g, _ in glyphs) + sum(gap) + 40
+    cv = np.zeros((H, W), np.float32)
+    x = int(rng.integers(5, 25))
+    base = rng.uniform(0.0, 0.2)
+    for (g, sl), gp in zip(glyphs, gap):
+        h, w = g.shape
+        if h < 8:           # '-' / '.' sit mid-height or low
+            y0 = int(H * (0.55 if g.shape[0] == 6 and g.shape[1] > 8 else 0.7))
+        else:
+            y0 = int(H * (1 - base) - h) - int(rng.integers(-4, 5))
+        y0 = int(np.clip(y0, 0, H - h)); w = min(w, W - x)
+        if w > 0:
+            cv[y0:y0 + h, x:x + w] = np.maximum(cv[y0:y0 + h, x:x + w], g[:, :w])
+        x += w + gp
+    sh = rng.uniform(-0.2, 0.2)
+    cv = cv2.warpAffine(cv, np.array([[1, sh, -sh * H / 2], [0, 1, 0]], np.float32), (W, H))
+    paper = rng.uniform(150, 245)
+    img = paper - cv * (paper - ink) + rng.normal(0, 4, cv.shape)
+    for _ in range(int(rng.integers(0, 3))):                      # ruled lines
+        y = int(rng.choice([2, H - 3])); cv2.line(img, (0, y), (W, y), paper * rng.uniform(0.4, 0.8), 2)
+    return np.clip(img, 0, 255).astype(np.uint8)
 
 
 # ------------------------------------------------------------------ model
@@ -304,7 +408,10 @@ class DS:
     def __getitem__(self, i):
         it = self.items[i]
         rng = np.random.default_rng((i * 7919 + int(time.time() * 1000)) % (2 ** 32))
-        g = augment(it["crop"], rng) if self.aug else it["crop"]
+        if it.get("synthetic"):
+            g = augment(render_synth(it, rng), rng, trim=False)
+        else:
+            g = augment(it["crop"], rng) if self.aug else it["crop"]
         import torch
         return torch.from_numpy(DR.prep(g))[None], i
 
@@ -317,7 +424,7 @@ def ctc_marginal(net_out, idxs, items, drop_set=None):
     T = lp.shape[0]
     tgts, lens, owner = [], [], []
     for bi, i in enumerate(idxs):
-        for v in variants(items[i]["date"]):
+        for v in ([items[i]["tgt"]] if items[i].get("synthetic") else variants_multi(items[i]["dates"])):
             tgts += v; lens.append(len(v)); owner.append(bi)
     owner_t = torch.tensor(owner)
     lpv = lp[:, owner_t]
@@ -403,6 +510,8 @@ def main():
     ap.add_argument("--crops", default=os.path.join(ROOT, "data", "date_crops.pkl"))
     ap.add_argument("--epochs", type=int, default=40)
     ap.add_argument("--lr", type=float, default=1e-3)
+    ap.add_argument("--synth", type=int, default=0, help="number of synthetic MNIST-digit dates per epoch set")
+    ap.add_argument("--init", default=None, help="warm start from this npz")
     ap.add_argument("--relabel", action="store_true", help="start from --out, self-label (see relabel()), fine-tune")
     ap.add_argument("--round2", action="store_true", help="drop the worst 12%% (label/form disagree) and fine-tune")
     ap.add_argument("--eval", action="store_true")
@@ -416,9 +525,14 @@ def main():
     if a.eval:
         evaluate([i for i in items if i["role"] != "train"])
         return
-    train = [i for i in items if i["role"] == "train" and i["date"] is not None]
+    train = [i for i in items if i["role"] == "train" and i.get("dates")]
     print("train samples", len(train), "by field", {f: sum(i["field"] == f for i in train) for f in FIELDS})
     net = make_model()
+    if a.synth:
+        r_ = np.random.default_rng(1)
+        train = train + [synth_item(r_) for _ in range(a.synth)]
+    if a.init:
+        load_npz(net, a.init)
     if a.relabel:
         load_npz(net, a.out)
         train = relabel([i for i in items if i["role"] == "train"])
