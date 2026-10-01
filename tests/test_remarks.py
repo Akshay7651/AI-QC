@@ -25,8 +25,14 @@ def photos(**kw):
     return p
 
 
+def _tech(e):
+    e = dict(e)
+    e["plain"], e["remark"] = e["remark"], e["remark_detail"]      # the old assertions check the technical wording
+    return e
+
+
 def ev(r=None, f=None, p=None, **kw):
-    return R.evaluate(r or row(), f if f is not None else form(), p if p is not None else photos(), **kw)
+    return _tech(R.evaluate(r or row(), f if f is not None else form(), p if p is not None else photos(), **kw))
 
 
 def test_clean_row_is_ok_high():
@@ -42,7 +48,7 @@ def test_the_brief_example_shape():
     p = photos(photo_is_form=True, n_form_photos=5, _n_photos=5, stamp_date="27092026", stamp_dist_m=6.0)
     gps = {"Suggested_Remark": "Same Location - QC Required", "Nearby_Same_Surveyor_25m": 308}
     risk = {"Risk_Score": 72, "Risk_Reasons": "surveyor averages 185 records/day"}
-    e = R.evaluate(row(), f, p, gps, "", risk)
+    e = _tech(R.evaluate(row(), f, p, gps, "", risk))
     t = e["remark"]
     assert e["verdict"] == "Reject-evidence"
     assert "company NO, primary worker NO, block officer NO" in t and "Total row blank on form." in t
@@ -56,14 +62,14 @@ def test_the_brief_example_shape():
 
 
 def test_missing_links_reject():
-    e = R.evaluate(row(pdf_url=None), None, photos())
+    e = _tech(R.evaluate(row(pdf_url=None), None, photos()))
     assert e["verdict"] == "Reject-evidence" and "missing_form_link" in e["counters"] and "No signed-form link" in e["remark"]
-    e = R.evaluate(row(media_urls=""), form(), None)
+    e = _tech(R.evaluate(row(media_urls=""), form(), None))
     assert e["verdict"] == "Reject-evidence" and "missing_photo_link" in e["counters"]
 
 
 def test_download_failed_is_manual_not_reject():
-    e = R.evaluate(row(), {"_state": "not_found", "_error": "HTTP 404"}, photos())
+    e = _tech(R.evaluate(row(), {"_state": "not_found", "_error": "HTTP 404"}, photos()))
     assert e["verdict"] == "Manual-check" and e["confidence"] == "Low" and "HTTP 404" in e["remark"] and "form_not_found" in e["counters"]
 
 
@@ -151,14 +157,14 @@ def test_priority_reject_beats_manual_beats_review():
 
 
 def test_skipped_parts_are_not_reported():
-    e = R.evaluate(row(), {"_state": "skipped"}, photos())
+    e = _tech(R.evaluate(row(), {"_state": "skipped"}, photos()))
     assert "FORM:" not in e["remark"] and e["confidence"] == "Medium"
 
 
 def test_build_remark_matches_evaluate_and_handles_garbage():
-    assert R.build_remark(row(), form(), photos()) == ev()["remark"]
+    assert R.build_remark(row(), form(), photos()) == ev()["plain"]
     assert isinstance(R.build_remark({}, None, None), str)
-    e = R.evaluate({"affected_area_pct": float("nan")}, form(), photos(stamp_dist_m=float("nan")), {"Nearby_Same_Surveyor_25m": float("nan")}, None, {"Risk_Score": float("nan")})
+    e = _tech(R.evaluate({"affected_area_pct": float("nan")}, form(), photos(stamp_dist_m=float("nan")), {"Nearby_Same_Surveyor_25m": float("nan")}, None, {"Risk_Score": float("nan")}))
     assert e["verdict"] in R.VERDICTS
 
 
@@ -235,3 +241,20 @@ def test_person_in_photos_remark():
     assert "Farmer available: person visible in photo 2 of 3." in e["remark"]
     e = ev(p=photos(person_each=[False, False], photo_is_form_each=[False, False]))
     assert "Farmer not available: no person with at least 25% of the body visible in the 2 field photo(s)." in e["remark"]
+
+
+def test_plain_remark_is_simple_and_has_no_jargon():
+    e = R.evaluate(row(), form(), photos())
+    txt = e["remark"]
+    for jargon in ("heuristic", "confidence", "cluster G-", "not assessed", "low confidence", "RISK", "Total row", "dates not readable"):
+        assert jargon.lower() not in txt.lower()
+    assert txt.startswith(("OK", "Please check", "Evidence not acceptable", "AI could not decide"))
+    assert "FORM:" in txt or "PHOTOS:" in txt
+    assert e["remark_detail"] and e["remark_detail"] != txt
+
+
+def test_plain_remark_explains_reject_and_manual():
+    e = R.evaluate(row(), form(farmer_signed=False), photos(scene_type="paper form", photo_is_form=True, _n_photos=3, n_form_photos=3))
+    assert e["verdict"] == "Reject-evidence" and "pictures of the paper form" in e["remark"] and "farmer signature missing" in e["remark"]
+    e = R.evaluate(row(), form(confidence=0.3, form_area=None, form_loss=None, row_area=None, row_loss=None), photos())
+    assert e["verdict"] == "Manual-check" and "could not decide" in e["remark"] and "could not be read" in e["remark"]

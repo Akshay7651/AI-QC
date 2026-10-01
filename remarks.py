@@ -118,6 +118,129 @@ def _readable(form, value, *names):
 
 
 # ---------------------------------------------------------------- core
+# ---------------------------------------------------------------- plain-language remark (for non-technical readers)
+_REASON = {
+    "Form link missing": "the signed form link is missing",
+    "Photo link missing": "the photo link is missing",
+    "Form not found": "the signed form could not be downloaded",
+    "Photos not found": "the photos could not be downloaded",
+    "Not Proforma-3": "the uploaded paper is not the Proforma-3 form",
+    "Form vs app mismatch": "the values on the form are different from the app",
+    "Form row/total inconsistent": "the row and total on the form do not agree",
+    "Form overwrite": "there is overwriting / cutting on the form",
+    "Form not readable": "the handwriting (area / loss) on the form is not clear enough for the AI to read",
+    "Low confidence - manual review": "the form is not clear enough for the AI to read",
+    "Photo GPS mismatch": "the photo was taken far from the app location",
+    "Photo date outside survey period": "the photo date is outside the survey period",
+    "Same location": "several surveys were done at the same spot",
+    "GPS cluster": "many surveys by the same surveyor at one spot",
+    "Field state vs reported loss": "the field in the photo does not match the reported loss",
+    "Crop mismatch": "the crop in the photo is different from the declared crop",
+    "No crop in photo": "no crop is visible in the photo but the reported loss is low",
+    "Photo not of the field": "the photos do not show the field",
+    "Officer stamp only": "the officer block has only a stamp, no signature",
+}
+
+
+def _plain(row, form, photos, gps, flags, verdict, ev):
+    ok_form = bool(form) and form.get("_state") in (None, "ok") and form.get("is_proforma3") is not False
+    miss = []
+    if ok_form:
+        miss = [n for n, k in (("farmer", "farmer_signed"), ("company", "company_signed")) if form.get(k) is False]
+    reasons = []
+    for f in flags:
+        if f == "Signature missing":
+            if miss:
+                reasons.append(" and ".join(miss) + " signature missing")
+        elif f == "Photo is form image":
+            n, nf = int(_num((photos or {}).get("_n_photos")) or 0), int(_num((photos or {}).get("n_form_photos")) or 0)
+            reasons.append("all photos are pictures of the paper form, no field photo" if (not n or nf >= n) else "some photos are pictures of the paper form")
+        elif f.startswith("Data: "):
+            reasons.append("the record data looks unusual (" + f[6:].lower() + ")")
+        elif f.startswith("High risk score"):
+            reasons.append("the record has a high risk score")
+        elif f in _REASON:
+            err = ((form if f == "Form not found" else photos) or {}).get("_error") if f in ("Form not found", "Photos not found") else None
+            reasons.append(_REASON[f] + (f" ({err})" if err else ""))
+    if "Form not readable" in flags and "Low confidence - manual review" in flags:
+        reasons = [r for r in reasons if r != _REASON["Low confidence - manual review"]]
+    reasons = list(dict.fromkeys(reasons))
+    head = {"OK": "OK - no problem found.",
+            "Review": "Please check: " + "; ".join(reasons) + ".",
+            "Reject-evidence": "Evidence not acceptable: " + "; ".join(reasons) + ".",
+            "Manual-check": "AI could not decide, please check by hand: " + "; ".join(reasons) + "."}[verdict]
+    if verdict != "OK" and not reasons:
+        head = {"Review": "Please check.", "Reject-evidence": "Evidence not acceptable.", "Manual-check": "AI could not decide, please check by hand."}[verdict]
+    out = [head[0].upper() + head[1:]]
+    # ---- form
+    f = []
+    if ok_form:
+        fn = form.get("form_no")
+        if fn and _readable(form, fn, "form_no"):
+            f.append(f"Form no {fn}.")
+        fa, fl, m = ev.get("form_area"), ev.get("form_loss"), ev.get("match")
+        if fa is not None and fl is not None:
+            s = f"Form says affected area {_fmt(fa)}% and crop loss {_fmt(fl)}%"
+            if m == "Match":
+                s += " (same as the app)."
+            elif m == "Mismatch":
+                s += f" but the app says {_fmt(row.get('affected_area_pct'))}% and {_fmt(row.get('crop_loss_pct'))}% (different)."
+            else:
+                s += "."
+            f.append(s)
+        else:
+            f.append("Area / loss on the form could not be read.")
+        sg = [n for n, k in (("Farmer", "farmer_signed"), ("Company", "company_signed")) if form.get(k)]
+        if sg:
+            f.append(" and ".join(sg).capitalize() + (" signature present." if len(sg) == 1 else " signatures present."))
+    if form and form.get("_state") in (None, "ok") and form.get("is_proforma3") is False:
+        f.append("The uploaded paper is not a Proforma-3 form.")
+    if f:
+        out.append("FORM: " + " ".join(f))
+    # ---- photos
+    p = photos if isinstance(photos, dict) and photos.get("_state") in (None, "ok") else None
+    ph = []
+    if p:
+        n = int(_num(p.get("_n_photos")) or _num(p.get("n_photos")) or 0)
+        nf = int(_num(p.get("n_form_photos")) or 0)
+        is_form = bool(p.get("photo_is_form")) or p.get("scene_type") == "paper form"
+        if is_form:
+            ph.append(f"{'All ' + str(n) if n and nf >= n else str(nf) + ' of ' + str(n)} photos are pictures of the paper form, no field photo.")
+        else:
+            ph.append(f"{n} field photo(s).")
+            each = p.get("person_each")
+            if isinstance(each, (list, tuple)) and each:
+                isf = p.get("photo_is_form_each") or []
+                field_ = [i for i in range(len(each)) if not (i < len(isf) and isf[i])]
+                seen = [i + 1 for i in field_ if each[i]]
+                ph.append(f"Farmer is visible in photo {', '.join(map(str, seen))}." if seen else "Farmer is not visible in any photo.")
+            trusted = p.get("photo_conf") == "high" and p.get("photo_agree") is not False
+            if trusted:
+                if p.get("crop_seen"):
+                    ph.append(f"Crop seen: {p['crop_seen']}.")
+                if p.get("flooded") in (True, "yes"):
+                    ph.append("Water-logging is visible.")
+                if p.get("damage_state"):
+                    ph.append(f"Crop looks {p['damage_state']}.")
+        dist = _num(p.get("stamp_dist_m")) if C.USE_PHOTO_GPS else None
+        if dist is not None:
+            ph.append(f"Photo location is {dist:,.0f} m from the app location" + (" (OK)." if dist <= C.GPS_PHOTO_MAX_DISTANCE_M else " (too far)."))
+        d = _parse_date(p.get("stamp_date") or p.get("photo_date"))
+        if d:
+            ph.append(f"Photo date {d:%d-%m-%Y}.")
+        nd = int(_num(p.get("n_duplicates")) or 0)
+        if nd:
+            ph.append(f"{nd} photo(s) are repeated.")
+    if ph:
+        out.append("PHOTOS: " + " ".join(ph))
+    # ---- same place
+    gps = gps or {}
+    anyn, same = int(_num(gps.get("Nearby_Any_Surveyor_25m")) or 0), int(_num(gps.get("Nearby_Same_Surveyor_25m")) or 0)
+    if anyn:
+        out.append(f"PLACE: {anyn} other survey(s) within 25 m ({same} by the same surveyor, {anyn - same} by others).")
+    return " ".join(out)
+
+
 def evaluate(row, form=None, photos=None, gps=None, data_flags="", risk=None):
     """Return dict(remark, verdict, confidence, flags, counters, match, form_area, form_loss, form_source)."""
     row = row or {}
@@ -363,7 +486,7 @@ def evaluate(row, form=None, photos=None, gps=None, data_flags="", risk=None):
             flag("Duplicate photos", None)   # usually the same scene re-shot, not fraud: informational
         if photos.get("rotated"):
             parts_photo.append("Photo(s) are rotated 90 degrees.")
-            flag("Photos rotated", "review")
+            flag("Photos rotated", None)   # auto-rotated for analysis: informational
         # GPS stamp vs app
         dist = _num(photos.get("stamp_dist_m")) if C.USE_PHOTO_GPS else None
         photo_dist = dist
@@ -486,10 +609,14 @@ def evaluate(row, form=None, photos=None, gps=None, data_flags="", risk=None):
         head = f"{verdict.upper()}: " + "; ".join(dict.fromkeys(headline[:3])) + ". "
     elif verdict == "OK":
         head = "OK: no issues found. "
-    remark = head + (" | ".join(sections))
+    detail = head + (" | ".join(sections))
     flags = list(dict.fromkeys(flags))
     counters = sorted({COUNTER_OF[f] for f in flags if f in COUNTER_OF})
-    return {"remark": remark.strip(), "verdict": verdict, "confidence": confidence, "flags": flags, "counters": counters,
+    try:
+        remark = _plain(row, form, photos, gps, flags, verdict, {"form_area": f_area, "form_loss": f_loss, "match": match})
+    except Exception:       # the plain text is cosmetic; fall back to the detailed one
+        remark = detail
+    return {"remark": remark.strip(), "remark_detail": detail.strip(), "verdict": verdict, "confidence": confidence, "flags": flags, "counters": counters,
             "match": match, "form_area": f_area, "form_loss": f_loss, "form_source": source,
             "field_photo": field_photo, "photo_dist_m": photo_dist}
 

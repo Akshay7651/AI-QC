@@ -167,7 +167,7 @@ def test_no_media_rows_get_missing_link_remarks(tmp_path):
     assert run_qc.main(argv(str(p), "--inline", "--no-risk")) == 0
     df = read()
     assert set(df["QC Verdict"]) == {"Reject-evidence"}
-    assert df["Any Other Remarks"].str.contains("No signed-form link").all() and df["Any Other Remarks"].str.contains("No photo link").all()
+    assert df["AI Technical Detail"].str.contains("No signed-form link").all() and df["AI Technical Detail"].str.contains("No photo link").all() and df["Any Other Remarks"].str.contains("link is missing").all()
     assert json.load(open("out/progress.json"))["counters"]["missing_form_link"] == 3
 
 

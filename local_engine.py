@@ -605,7 +605,7 @@ class LocalRunner:
                 self.prog.error(f"remark build failed for {row.get('docket_id')}: {e}")
         res = {"engine": "local", "form": form, "photo": photos,
                "pdf_status": _status(form), "photo_status": _status(photos),
-               "verdict": ev["verdict"], "confidence": ev["confidence"], "flags": ev["flags"], "remark": ev["remark"],
+               "verdict": ev["verdict"], "confidence": ev["confidence"], "flags": ev["flags"], "remark": ev["remark"], "remark_detail": ev.get("remark_detail", ""),
                "match": ev["match"], "form_area": ev["form_area"], "form_loss": ev["form_loss"],
                "n_photos": st.get("n_photos", 0), "secs": round(st["secs"], 2),
                "ts": time.strftime("%Y-%m-%d %H:%M:%S")}

@@ -278,7 +278,7 @@ QC_BLOCK = [
     "Duplicate photos (n)", "Photos rotated (Yes/No)", *(["Photo GPS distance (m)"] if C.USE_PHOTO_GPS else []), "Photos analysed (n)",
     "Photo scene type", "Crop present in photo", "Crop seen in photo", "Crop matches declared", "Flooding/waterlogging seen",
     "Crop damage state",
-    C.COL_FARMER_PHOTO, "Farmer/person present in photos (remark)", C.COL_PHOTO_LOSS, "AI_Flags", "Same Location Remark", C.COL_OTHER_REMARKS, "AI Engine",
+    C.COL_FARMER_PHOTO, "Farmer/person present in photos (remark)", C.COL_PHOTO_LOSS, "AI_Flags", "Same Location Remark", C.COL_OTHER_REMARKS, "AI Technical Detail", "AI Engine",
 ]
 _AI_PREFIX = ("OK:", "REJECT-EVIDENCE:", "MANUAL-CHECK:", "REVIEW:", "FORM:", "PHOTOS:", "GPS:", "DATA:", "RISK ")
 
@@ -354,6 +354,7 @@ def assemble_local(df, results, keys):
         put("AI_Confidence", r.get("confidence"))
         put("AI_Flags", ", ".join(r.get("flags") or []))
         put(C.COL_OTHER_REMARKS, r.get("remark"))
+        put("AI Technical Detail", r.get("remark_detail"))
         put("Same Location Remark", _nn(slr[i]) if slr is not None else None)
         put("AI Engine", r.get("engine"))
         if f and f.get("_state") not in ("skipped",):
@@ -413,7 +414,7 @@ def assemble_local(df, results, keys):
                 keep = old.map(lambda v: isinstance(v, str) and v.strip() != "" and not v.strip().upper().startswith(_AI_PREFIX))
                 new = new.where(~(keep & has), new.astype(str) + " | INPUT REMARK: " + old.astype(str))
             new = new.where(has, old)
-            if c not in ("QC Verdict", "AI_Confidence", "AI_Flags", "AI Engine", C.COL_OTHER_REMARKS):
+            if c not in ("QC Verdict", "AI_Confidence", "AI_Flags", "AI Engine", "AI Technical Detail", C.COL_OTHER_REMARKS):
                 new = new.where(new.notna() | ~has, old)
         elif c == "AI_Flags":
             new = new.where(has, "")
