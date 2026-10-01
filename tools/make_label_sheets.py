@@ -65,9 +65,12 @@ def _fit(arr, h, maxw):
     return im.resize((max(1, w), max(1, h)), Image.LANCZOS)
 
 
+FORMS_DIR = os.path.join(ROOT, "data", "forms")
+
+
 def _tiles(docket):
     """-> dict kind -> list of (caption, np RGB) or None per kind when layout failed; uses form_p3 layout"""
-    path = os.path.join(ROOT, "data", "forms", docket + ".jpg")
+    path = os.path.join(FORMS_DIR, docket + ".jpg")
     rgb = P.load_image(path)
     lay = P.analyse_layout(rgb)
     out = {"ok": lay["ok"], "page": None}
@@ -151,9 +154,13 @@ def main():
     ap.add_argument("--show-app", action="store_true")
     ap.add_argument("--out", default=os.path.join(ROOT, "data", "eval", "sheets"))
     ap.add_argument("--jobs", type=int, default=3)
+    ap.add_argument("--forms-dir", default="")
     a = ap.parse_args()
+    global FORMS_DIR
+    if a.forms_dir:
+        FORMS_DIR = a.forms_dir
     os.makedirs(os.path.join(a.out, "templates"), exist_ok=True)
-    allf = sorted(os.path.basename(f)[:-4] for f in glob.glob(os.path.join(ROOT, "data", "forms", "*.jpg")))
+    allf = sorted(os.path.basename(f)[:-4] for f in glob.glob(os.path.join(FORMS_DIR, "*.jpg")))
     if a.dockets:
         dk = a.dockets.split(",")
     else:
