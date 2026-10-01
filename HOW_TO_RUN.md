@@ -165,7 +165,7 @@ Assumed paths (change them to yours):
 | Step | What it does | Command (run in `C:\ai-qc`) | Input | Output |
 |---|---|---|---|---|
 | 0 | Open the project, switch the environment on | `cd C:\ai-qc` then `.venv\Scripts\activate.bat` | - | - |
-| 1 | Download forms/photos - **SKIP if already downloaded** | `python download_media.py --input input\data.xlsx --out D:\media` | `input\data.xlsx` (links inside) | `D:\media\<docket>.jpg` (form), `D:\media\<docket>_1.jpg` ... (photos) |
+| 1 | Download forms/photos - **SKIP if already downloaded** | `python download_media.py --input input\data.xlsx --out D:\media` | `input\data.xlsx` (links inside) | `D:\media\<docket>.pdf` (form), `D:\media\<docket>_1.jpg` ... (photos) and also `D:\media.zip` |
 | 2 | Check the PC is ready | `python tools\selfcheck.py` | - | prints `RESULT: READY` |
 | 3 | Test on the first 100 rows | `python run_qc.py --input input\data.xlsx --local-media D:\media --limit 100 --agents 4 --output results\test100.xlsx` | Excel + `D:\media` | `results\test100.xlsx`, `results\summary_report.xlsx` |
 | 4 | Estimate the time of the full run | `python run_qc.py --input input\data.xlsx --local-media D:\media --agents 8 --dry-run` | Excel + `D:\media` | prints estimated hours and disk use (nothing is processed) |
