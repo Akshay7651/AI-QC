@@ -14,6 +14,7 @@ import date_reader as DR
 HERE = os.path.dirname(os.path.abspath(__file__))
 MODEL_PATH = os.path.join(HERE, "models", "poid_crnn.npz")
 CONF_GATE = 0.9          # hold-out (526 forms): 37% answered; 87% equal the docket exactly - most of the rest are forms where the surveyor wrote another number (checked by eye)
+VERIFY_NLL = 0.2         # docket accepted when -log p(docket | handwriting) per digit is below this (0 false accepts / 349)
 _M = None
 IH, IW = 48, 512          # twice the date reader's width: 18 handwritten digits need the resolution
 
@@ -101,3 +102,38 @@ def find_line(rgb, box_h):
         if (v.sum(0) > 0).mean() > 0.12:
             return None
     return g[a:b] if b - a >= 8 else None
+
+
+def ctc_nll(P, digits):
+    """-log p(digit string | image) under the CTC model (numpy forward algorithm). P (T, C) softmax; class = digit + 1."""
+    tgt = [int(c) + 1 for c in digits]
+    L = 2 * len(tgt) + 1
+    ext = [0] * L
+    for i, t in enumerate(tgt):
+        ext[2 * i + 1] = t
+    T = P.shape[0]
+    lp = np.log(np.maximum(P, 1e-12))
+    a = np.full(L, -np.inf)
+    a[0] = lp[0, 0]
+    if L > 1:
+        a[1] = lp[0, ext[1]]
+    for t in range(1, T):
+        prev = a.copy()
+        for s in range(L):
+            v = prev[s]
+            if s >= 1:
+                v = np.logaddexp(v, prev[s - 1])
+            if s >= 2 and ext[s] != 0 and ext[s] != ext[s - 2]:
+                v = np.logaddexp(v, prev[s - 2])
+            a[s] = v + lp[t, ext[s]]
+    return float(-np.logaddexp(a[L - 1], a[L - 2]) if L > 1 else -a[0])
+
+
+def verify_po_id(img, docket):
+    """-> dict(nll_per_digit, text, conf): how well the handwriting fits the docket number (lower = better fit)"""
+    M = _load()
+    if M is None or not docket:
+        return None
+    P = DR.forward(prep(DR.to_gray(img)), M)
+    text, confs = DR.ctc_greedy(P)
+    return {"nll": ctc_nll(P, docket) / len(docket), "text": text.replace("-", ""), "conf": float(min(confs)) if confs else 0.0}

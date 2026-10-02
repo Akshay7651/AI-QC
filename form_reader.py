@@ -139,6 +139,29 @@ def _formno_scan(r):
     return f, conf, "", note
 
 
+def _barcode_formno(rgb):
+    """form number (HR0126xxxxxx) decoded from the printed Code-128 barcode with zxing-cpp; None when it does not decode or the
+    library is not installed (pip install zxing-cpp)."""
+    try:
+        import zxingcpp
+    except Exception:     # noqa: BLE001
+        return None
+    g = cv2.cvtColor(rgb, cv2.COLOR_RGB2GRAY) if rgb.ndim == 3 else rgb
+    h, w = g.shape
+    top = g[: int(h * 0.35), int(w * 0.35):]
+    tries = (g, cv2.rotate(g, cv2.ROTATE_180), cv2.resize(top, None, fx=1.5, fy=1.5, interpolation=cv2.INTER_CUBIC),
+             cv2.resize(top, None, fx=2.0, fy=2.0, interpolation=cv2.INTER_CUBIC), cv2.createCLAHE(3.0, (8, 8)).apply(g))
+    for x in tries:
+        try:
+            for res in zxingcpp.read_barcodes(x):
+                t = (res.text or "").strip().upper()
+                if re.fullmatch(r"HR\d{10}", t):
+                    return t
+        except Exception:     # noqa: BLE001
+            return None
+    return None
+
+
 def read_formno(lay):
     """-> (form_no|None, conf, raw_text, note)"""
     r, sc = lay["rgb"], lay["scale"]
@@ -613,11 +636,15 @@ def read_form(path_or_pil, docket=None, debug=False):
     if tab["L"] < 0.02 * P.GW or tab["R"] > 0.985 * P.GW:
         out["quality"] = "cropped" if out["quality"] == "good" else out["quality"]
         notes.append("table touches the image border (page may be cropped)")
-    # ---- FORM NO
-    try:
-        fn, fcf, raw, note = read_formno(lay)
-    except Exception as e:     # noqa: BLE001
-        fn, fcf, raw, note = None, 0.0, "", f"form no reading failed: {type(e).__name__}"
+    # ---- FORM NO: decode the Code-128 barcode first (exact when it decodes, ~50% of photos); printed-number OCR as fallback
+    bc = _barcode_formno(r)
+    if bc:
+        fn, fcf, raw, note = bc, 1.0, bc, None
+    else:
+        try:
+            fn, fcf, raw, note = read_formno(lay)
+        except Exception as e:     # noqa: BLE001
+            fn, fcf, raw, note = None, 0.0, "", f"form no reading failed: {type(e).__name__}"
     if not fn or float(fcf) < FORMNO_GATE:       # second chance: scan the top of the page
         try:
             fn2, fcf2, raw2, note2 = _formno_scan(r)
@@ -649,7 +676,13 @@ def read_form(path_or_pil, docket=None, debug=False):
                     if line is not None:
                         pr = PR.read_po_id(line)
                         fc["po_id"] = round(pr["conf"], 3)
-                        if pr["conf"] >= PR.CONF_GATE and len(pr["text"]) >= 10:
+                        vf = PR.verify_po_id(line, docket) if docket else None
+                        # 1) the handwriting fits the docket number (CTC likelihood): measured on 349 never-trained forms,
+                        #    72% confirmed at 0.2 with 0 of 349 wrong dockets accepted
+                        if vf is not None and vf["nll"] < PR.VERIFY_NLL:
+                            out["po_id"], out["po_id_matches"] = docket, True
+                        # 2) otherwise a confident reading of another number = real mismatch
+                        elif pr["conf"] >= PR.CONF_GATE and len(pr["text"]) >= 10:
                             out["po_id"] = pr["text"]
                             if docket:
                                 out["po_id_matches"] = (pr["text"] == docket)
@@ -719,9 +752,9 @@ def read_form(path_or_pil, docket=None, debug=False):
         if CSR.available():
             from PIL import Image as _Im
             import digits_locate as _L
-            im = path_or_pil if isinstance(path_or_pil, _Im.Image) else _Im.open(path_or_pil)
+            im = _Im.fromarray(rgb)                 # the already-loaded page (works for PDFs too; opening the path again did not)
             if im.width >= 3200:
-                im.draft("L", (im.width // 2, im.height // 2))
+                im = im.resize((im.width // 2, im.height // 2))
             cc = _L.cell_crops(im)
             for tk, rk, kind in (("form_area", "row_area", "area"), ("form_loss", "row_loss", "loss")):
                 crop = cc.get(kind) if cc else None

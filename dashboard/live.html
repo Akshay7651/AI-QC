@@ -28,6 +28,7 @@ h1{font-size:16px;margin:0}
 .chip.hot{border-color:var(--reject)}
 details{margin-top:5px} summary{cursor:pointer;color:var(--mute);font-size:12px}
 .robots{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
+#agents{display:block}.rolerow{margin-top:4px}.rolehead{font-size:12px;font-weight:700;opacity:.85}
 .agent{display:flex;gap:4px;align-items:center;padding:2px 8px 2px 2px;border:1px solid var(--line);border-radius:10px;background:var(--bg);max-width:220px}
 .agent .body{min-width:0;line-height:1.2}
 .agent .role{font-weight:700;font-size:11px;white-space:nowrap}
@@ -187,13 +188,17 @@ function render(d){
   $("split").innerHTML=VERD.map(function(x){return '<i title="'+x[1]+'" style="width:'+(tot?100*(v[x[0]]||0)/tot:0)+'%;background:'+CO[x[0]]+'"></i>'}).join("");
   var ag=d.agents||[],busy=ag.filter(function(a){return a.state==="busy"}).length;
   $("agentnote").textContent="("+busy+" busy of "+ag.length+")";
-  $("agents").innerHTML=ag.map(function(a){
+  function card(a){
     var doing=a.state==="busy"?(/^form/.test(a.task||"")?"reading the form":/^photo/.test(a.task||"")?"checking the photos":/fetch/.test(a.task||"")?"downloading form + photos":esc(a.task||"working")):a.state==="idle"?"waiting for work":a.state==="starting"?"waking up (loading models)":esc(a.task||a.state);
     var tool=/Download/i.test(a.role)?"&#128230;":/Photo/i.test(a.role)?"&#128247;":"&#128269;";
     var rc=/Download/i.test(a.role)?"role-dl":/Photo/i.test(a.role)?"role-ph":"role-fr";
     return '<div class="agent '+rc+' '+esc(a.state)+'">'+ROBOT.replace("TOOL",tool)+'<div class="body"><div class="role"><span>'+esc(a.role)+'</span><span class="st">'+esc(a.state)+(a.state==="idle"?'<span class="zzz">zzz</span>':'')+'</span></div>'+
       '<div class="doc">'+(a.state==="busy"?esc(a.docket||""):"&nbsp;")+'</div><div class="note">'+doing+'</div>'+
-      '<div class="meta"><span>'+num(a.rows_done)+' done</span><span>'+(a.avg_sec?a.avg_sec+" s/row":"-")+'</span></div></div></div>'}).join("");
+      '<div class="meta"><span>'+num(a.rows_done)+' done</span><span>'+(a.avg_sec?a.avg_sec+" s/row":"-")+'</span></div></div></div>'}
+  // one row per role: downloaders, form readers, photo analysts
+  var groups=[["Downloaders",function(a){return /Download/i.test(a.role)}],["Form readers",function(a){return !/Download|Photo/i.test(a.role)}],["Photo analysts",function(a){return /Photo/i.test(a.role)}]];
+  $("agents").innerHTML=groups.map(function(gr){var m=ag.filter(gr[1]);if(!m.length)return "";
+    return '<div class="rolerow"><div class="rolehead">'+gr[0]+' ('+m.filter(function(a){return a.state==="busy"}).length+'/'+m.length+' busy)</div><div class="robots">'+m.map(card).join("")+'</div></div>'}).join("");
   var o=d.output||{};
   $("outpath").textContent=o.path||"-";
   $("outsaved").textContent=o.last_saved?o.last_saved+"  ("+num(o.rows_saved)+" rows written)":"not saved yet (first autosave after the set interval)";
