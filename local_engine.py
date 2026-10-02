@@ -451,12 +451,19 @@ class LocalRunner:
             self._flush_if_no_workers()
 
     def _dispatch(self):
+        # pass 1: every idle worker takes work of its own role (photo analysts get the photo jobs);
+        # pass 2: still-idle workers help with the other role's queue
+        for helping_pass in (False, True):
+            self._dispatch_pass(helping_pass)
+
+    def _dispatch_pass(self, helping_pass):
         for w in self.workers:
             if w.state != "idle":
                 continue
             with self.lock:
                 task = None
-                for kind in (w.role, "photo" if w.role == "form" else "form"):
+                kinds = ("photo" if w.role == "form" else "form",) if helping_pass else (w.role,)
+                for kind in kinds:
                     if self.pending[kind]:
                         task = self.pending[kind].popleft()
                         break
