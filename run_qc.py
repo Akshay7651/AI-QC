@@ -267,6 +267,24 @@ def assemble(df, ck, ran_ai, keys=None):
     return out
 
 
+def _field_photo_yn(p):
+    """Yes = at least one real field photograph | Form image = the photos show the paper form | Other image = neither | No = no photos"""
+    n = p.get("n_photos") if p.get("n_photos") is not None else len(p.get("photo_is_form_each") or [])
+    if not n:
+        return "No"
+    if p.get("photo_is_form"):
+        return "Form image"
+    if p.get("scene_type") in ("field", "person-only") or p.get("crop_present") == "yes":
+        return "Yes" if p.get("scene_type") != "person-only" or p.get("crop_present") == "yes" else "Other image"
+    return "Other image"
+
+
+def _farmer_photo_yn(p):
+    """Yes when any of the docket's photos shows a person or a crop, otherwise No"""
+    person = bool(p.get("farmer_photo")) or any(p.get("person_each") or [])
+    return "Yes" if (person or p.get("crop_present") == "yes") else "No"
+
+
 # ============================================================================ local (offline) engine: output assembly
 QC_BLOCK_MAIN = [
     "QC Verdict", "Form No", "PO ID (Form)",
@@ -283,7 +301,7 @@ QC_BLOCK_DETAIL = [
     "Form Total Row Blank", "Sowing date (Form)", "Loss date (Form)", "Intimation date (Form)", "Inspection date (Form)",
     "Form vs App (Match/Mismatch/NA)",
     "Primary Worker Signature (Yes/No)", "Officer Stamp Only (Yes/No)",
-    "Form Quality", "Form Confidence",
+    "Form Quality", "Form Confidence", "AI notes on form reading",
     "Field photo type", "Photo is form image (Yes/No)", "Form-image photos (n)",
     "Duplicate photos (n)", "Photos rotated (Yes/No)", *(["Photo GPS distance (m)"] if C.USE_PHOTO_GPS else []), "Photos analysed (n)",
     "Photo scene type", "Crop present in photo", "Crop seen in photo", "Crop matches declared", "Flooding/waterlogging seen",
@@ -454,8 +472,8 @@ def assemble_local(df, results, keys):
             put("PO ID matches docket", _yn(f.get("po_id_matches")) if ok3 else "Can't Read")
             fa_v = _nn(r.get("form_area"))
             fl_v = _nn(r.get("form_loss"))
-            put(C.COL_FORM_AREA, fa_v if fa_v is not None else "Not readable")
-            put(C.COL_FORM_LOSS, fl_v if fl_v is not None else "Not readable")
+            put(C.COL_FORM_AREA, fa_v if fa_v is not None else ("Mentioned but can't read" if f.get("area_written", True) else "Blank on form"))
+            put(C.COL_FORM_LOSS, fl_v if fl_v is not None else ("Mentioned but can't read" if f.get("loss_written", True) else "Blank on form"))
             put("Form Row Area %", _nn(f.get("row_area")))
             put("Form Row Loss %", _nn(f.get("row_loss")))
             put("Form Total Row Blank", _yn(f.get("total_row_blank")))
@@ -471,7 +489,8 @@ def assemble_local(df, results, keys):
             put(C.COL_FORM_STATUS, _form_status(f, r))
             put("Form Quality", f.get("quality"))
             put("Form Confidence", _nn(f.get("confidence")))
-            put(C.COL_FORM_REMARKS, "; ".join(str(x) for x in (f.get("notes") or [])) or "No remarks")
+            put(C.COL_FORM_REMARKS, _yn(f.get("remarks_written")) if f.get("remarks_written") is not None else "Can't Read")
+            put("AI notes on form reading", "; ".join(str(x) for x in (f.get("notes") or [])) or None)
         elif r is not None and not fok:
             fst = f.get("_state", "not_found") if f else "not_found"
             why = "N/A (form not found)" if fst in ("not_found", "no_link") else "Not readable"
@@ -488,7 +507,7 @@ def assemble_local(df, results, keys):
             put(C.COL_FORM_REMARKS, f"Form {fst}")
         if pok:
             fp = "form image" if p.get("photo_is_form") else p.get("field_photo")
-            put(C.COL_FIELD_PHOTO, fp)
+            put(C.COL_FIELD_PHOTO, _field_photo_yn(p))
             put("Field photo type", fp)
             put(C.COL_PHOTO_DATE, _date_txt(p.get("stamp_date") or p.get("photo_date")))
             put("Photo is form image (Yes/No)", _yn(bool(p.get("photo_is_form"))))
@@ -505,7 +524,7 @@ def assemble_local(df, results, keys):
             put("Crop matches declared", _yn(p.get("crop_matches_declared")))
             put("Flooding/waterlogging seen", _yn(p.get("flooded")))
             put("Crop damage state", p.get("damage_state"))
-            put(C.COL_FARMER_PHOTO, _yn(p.get("farmer_photo")) if p.get("farmer_photo") is not None else None)
+            put(C.COL_FARMER_PHOTO, _farmer_photo_yn(p))
             put("Farmer/person present in photos (remark)", person_remark(p))
             put("Farmer photo detail", person_detail(p))
             put(C.COL_PHOTO_LOSS, p.get("photo_loss"))

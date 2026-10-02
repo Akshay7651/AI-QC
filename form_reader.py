@@ -654,12 +654,11 @@ def read_form(path_or_pil, docket=None, debug=False):
             out["row_area"], out["row_loss"] = cells["area_" + rr]["value"], cells["loss_" + rr]["value"]
             fc["row_area"], fc["row_loss"] = round(cells["area_" + rr]["conf"], 3), round(cells["loss_" + rr]["conf"], 3)
             break
-    rows_blank = all(cells["area_" + rr]["blank"] and cells["loss_" + rr]["blank"] for rr in ("r1", "r2"))
-    if tot_blank and rows_blank:
-        out["form_area"] = 0.0
-        out["form_loss"] = 0.0
-        fc["form_area"], fc["form_loss"] = 1.0, 1.0
-        notes.append("all value cells blank on form - defaulting to 0%")
+    # is anything written in the area / loss cells at all? (-> 'Blank on form' vs 'Mentioned but can't read')
+    out["area_written"] = not all(cells[k]["blank"] for k in ("area_r1", "area_r2", "area_tot"))
+    out["loss_written"] = not all(cells[k]["blank"] for k in ("loss_r1", "loss_r2", "loss_tot"))
+    if not (out["area_written"] or out["loss_written"]):
+        notes.append("area / loss cells are blank on the form")
     # ---- confidence gate on handwritten values: below the gate the value is withheld ('not readable - verify manually')
     low = []
     for key, which in (("form_area", "area_tot"), ("form_loss", "loss_tot")):
@@ -715,6 +714,11 @@ def read_form(path_or_pil, docket=None, debug=False):
     out["officer_signed"] = bool(sg["officer"] or stamp)
     out["officer_stamp_only"] = bool(stamp and not sg["officer"])
     out["_sig_feats"] = feats
+    # handwritten committee / survey remarks: ink in the band between the table and the signature lines (the farmer block is
+    # left out - farmer signatures often reach up into that band). Threshold from 12 forms checked by eye (remarks: >=1.3,
+    # none: <=0.1); first version, to be refined with more labelled forms.
+    rem = sum(float((feats.get(b) or {}).get("area_top", 0.0)) for b in ("company", "worker", "officer"))
+    out["remarks_written"] = bool(rem >= 0.5)
     # ---- overwrite on cells
     for k, v in cells.items():
         if v["ink"] > 0.30:
