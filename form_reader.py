@@ -355,6 +355,8 @@ CELL_BLANK_INK = 0.006
 # Retrained model (human disputed-case labels), 114 never-trained forms: gate 0.7 -> 96.9% precision, 71% of cells answered (non-zero answered: 95% right).
 # 0.30 (tried on 2026-10-02) let "00%" be read as 20..80 on ~9% of forms (12 of 130 checked by eye, all false mismatches): back to 0.85.
 CELL_GATE = 0.85
+CELL_DISAGREE = 0.5     # row 1 vs total disagreement only counts when both readings are at least this confident
+CELL_AGREE = 0.5        # row 1 and total agreeing: accepted from this confidence
 # Dates: sequence reader (date_reader.py: CNN+BiGRU+CTC, numpy). Switched on only when its measured precision-at-gate is >=95%
 # per field on held-out forms (see docs / train_dates.py --eval); False = dates stay None ("not readable").
 # Measured on held-out forms (precision when answered / coverage): loss date 95-97% / 45-62% -> ON with a strict gate;
@@ -674,31 +676,39 @@ def read_form(path_or_pil, docket=None, debug=False):
     out["loss_written"] = not all(cells[k]["blank"] for k in ("loss_r1", "loss_r2", "loss_tot"))
     if not (out["area_written"] or out["loss_written"]):
         notes.append("area / loss cells are blank on the form")
-    # ---- confidence gate on handwritten values: below the gate the value is withheld ('not readable - verify manually')
+    # ---- decide area / loss from row 1 (first filled row) and the total row:
+    #  * a cell's value is used when its confidence >= CELL_GATE;
+    #  * the two cells disagreeing only blocks the value when BOTH readings are fairly confident (>= CELL_DISAGREE): the total
+    #    row is often empty / struck through and then gives a low-confidence garbage reading that must not veto a clear row 1;
+    #  * the two cells agreeing on the same value is accepted already at CELL_AGREE (two independent readings);
+    # measured on 171/173 hand-labelled forms: area 57%->67% answered, loss 50%->63%, precision 99/100% -> 98/98%.
     low = []
-    for key, which in (("form_area", "area_tot"), ("form_loss", "loss_tot")):
-        if out[key] is not None and cells[which]["conf"] < CELL_GATE:
-            out[key] = None
-            low.append(which)
-    for key, which in (("row_area", "area_"), ("row_loss", "loss_")):
-        if out[key] is not None:
-            for rr in ("r1", "r2"):
-                c = cells[which + rr]
-                if not c["blank"] and c["value"] == out[key] and c["conf"] < CELL_GATE:
-                    out[key] = None
-                    low.append(which + rr)
-                    break
-    # ---- row 1 and the total row normally carry the same value (one field per form): if both were read and disagree,
-    # one of them is a misread - withhold both rather than report a wrong value
-    # (compared on the raw readings, before the gate: a confident misread of one cell is caught by the other cell)
     first = next((rr for rr in ("r1", "r2") if not (cells["area_" + rr]["blank"] and cells["loss_" + rr]["blank"])), None)
     for tk, rk, kind in (("form_area", "row_area", "area"), ("form_loss", "row_loss", "loss")):
-        tv = None if cells[kind + "_tot"]["blank"] else cells[kind + "_tot"]["value"]
-        rv = None if first is None or cells[f"{kind}_{first}"]["blank"] else cells[f"{kind}_{first}"]["value"]
-        if tv is not None and rv is not None and abs(float(tv) - float(rv)) > 0.01:
-            notes.append(f"{kind}: total row reads {tv:g} but row {first[1]} reads {rv:g} - verify manually")
-            out[tk] = out[rk] = None
-            low.append(kind + "_disagree")
+        t = cells[kind + "_tot"]
+        rc = cells[f"{kind}_{first}"] if first else None
+        tv = None if (t["blank"] or t["value"] is None) else t
+        rv = None if (rc is None or rc["blank"] or rc["value"] is None) else rc
+        val, conf = None, 0.0
+        if tv and rv and abs(float(tv["value"]) - float(rv["value"])) > 0.01:
+            if min(tv["conf"], rv["conf"]) >= CELL_DISAGREE:
+                notes.append(f"{kind}: total row reads {tv['value']:g} but row {first[1]} reads {rv['value']:g} - verify manually")
+                low.append(kind + "_disagree")
+            else:
+                strong = max((tv, rv), key=lambda x: x["conf"])
+                if strong["conf"] >= CELL_GATE:                    # (the weak one is < CELL_DISAGREE here)
+                    val, conf = strong["value"], strong["conf"]
+        else:
+            ok = [x for x in (tv, rv) if x and x["conf"] >= CELL_GATE]
+            if ok:
+                best = max(ok, key=lambda x: x["conf"])
+                val, conf = best["value"], best["conf"]
+            elif tv and rv and min(tv["conf"], rv["conf"]) >= CELL_AGREE:
+                val, conf = tv["value"], 0.9                      # two cells agree: accepted
+        if val is None and (tv or rv) and kind + "_disagree" not in low:
+            low.append(kind)
+        out[tk] = out[rk] = val
+        fc[tk] = fc[rk] = round(float(conf), 3)
     if low:
         notes.append("handwritten area/loss not confidently readable (" + ", ".join(low) + ") - verify manually")
     out["cells_low_conf"] = bool(low)
