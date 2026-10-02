@@ -548,7 +548,11 @@ def evaluate(row, form=None, photos=None, gps=None, data_flags="", risk=None):
     dflags = [x.strip() for x in str(data_flags or "").split(",") if x.strip() and x.strip() not in COVERED_DATA_FLAGS]
     if dflags:
         flags.extend("Data: " + x for x in dflags)
-        severity["review"].append("data")
+        place = any(f in flags for f in ("Same location", "GPS cluster", "Same app entry at same spot"))
+        # 'Possible duplicate field' (same khasra in another docket) says the same as the same-location finding when that is
+        # present: then it is informational like the location flags; on its own (or with other data flags) it needs review
+        if [x for x in dflags if not (place and x == "Possible duplicate field")]:
+            severity["review"].append("data")
     # ------------------------------------------------------------ risk
     rscore = _num(risk.get("Risk_Score"))
     rtxt = ""
