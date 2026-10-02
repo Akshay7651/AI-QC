@@ -154,6 +154,7 @@ def main():
     ap.add_argument("--init-model", default=os.path.join(HERE, "models", "cells_cnn.npz"))
     ap.add_argument("--out", default=os.path.join(HERE, "models", "cells_cnn.npz"), help="where the trained model is written")
     ap.add_argument("--min-score", type=float, default=0.02)
+    ap.add_argument("--rows", help="CSV docket,row (1..10): hand-labelled table row of each docket; replaces the automatic row choice")
     ap.add_argument("--haryana-share", type=float, default=0.5, help="share of each batch drawn from the Haryana cell set (keeps it from forgetting)")
     a = ap.parse_args()
     torch.set_num_threads(a.threads)
@@ -178,7 +179,7 @@ def main():
         json.dump(before, open(bf, "w"))
     print("CURRENT model on Rajasthan hold-out:", before, flush=True)
     for rnd in range(a.rounds):
-        dsf = os.path.join(HERE, "data", f"raj_ds_round{rnd + 1}.npz")
+        dsf = os.path.join(HERE, "data", f"raj_ds_{'rows_' if a.rows else ''}round{rnd + 1}.npz")
         if os.path.exists(dsf):
             try:
                 z = np.load(dsf); Xr, yr = z["X"], z["y"]
@@ -187,6 +188,10 @@ def main():
                 os.remove(dsf)
         if not os.path.exists(dsf):
             sel = select_rows(train_ids, lab)
+            if a.rows:
+                rr = pd.read_csv(a.rows, dtype=str)
+                hand = {str(r.docket).strip(): int(float(r.row)) - 1 for r in rr.itertuples() if str(r.row).replace(".", "").isdigit() and 1 <= int(float(r.row)) <= 10}
+                sel = {d: ((hand[d], 1.0) if d in hand else (sel[d][0], 0.0)) for d in train_ids}   # forms without a hand label are left out
             good = sum(1 for v in sel.values() if v[1] >= a.min_score)
             print(f"round {rnd + 1}: {good} of {len(train_ids)} forms have a compatible row (score >= {a.min_score}); row index counts:",
                   np.bincount([v[0] for v in sel.values() if v[1] >= a.min_score], minlength=10).tolist(), flush=True)

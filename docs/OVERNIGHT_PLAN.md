@@ -33,3 +33,9 @@ Rajasthan (National Insurance Company Ltd, Jaipur Regional Office): printed head
 Blind compare on the same 213 hold-out forms: baseline Haryana model 28.2% coverage / 100% precision (8 of 84 non-zero forms stated);
 new model 9.9% coverage / 100% precision (9 of 84 non-zero). Coverage is worse, so models/cells_cnn.npz is unchanged.
 Note: the cloud machine only runs while a turn is active; long jobs stall between keeper ticks (stay in a turn that waits).
+
+## Hand-labelled rows (20 vision agents) and retrain
+data/eval_raj/rows_<k>.csv: row/area/loss per docket read from 546 contact sheets; rows_merged_clean.csv = 1171 forms with row+area+loss all known and a human value
+(vision label == human QC value on 98.5% of them, so the labels are reliable). train_raj.py --rows <csv> trains on exactly those rows.
+Result (same 213 hold-out forms, blind compare): current model 28.2% coverage / 100% precision; trained on hand rows (models/cells_raj_rows.npz) 3.8% / 100%.
+Not adopted. Likely cause: Rajasthan cells are mostly blank/0 (class counts ~3300 blank, ~1070 zero, handful of other values), so fine-tuning lowers confidence on written values below the gate.
