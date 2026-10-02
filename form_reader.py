@@ -356,6 +356,7 @@ CELL_BLANK_INK = 0.006
 # 0.30 (tried on 2026-10-02) let "00%" be read as 20..80 on ~9% of forms (12 of 130 checked by eye, all false mismatches): back to 0.85.
 CELL_GATE = 0.85
 CELL_DISAGREE = 0.5     # row 1 vs total disagreement only counts when both readings are at least this confident
+CELLSEQ_GATE = 0.9      # digit-by-digit reader (cellseq_reader.py): used when its lowest character confidence >= this
 CELL_AGREE = 0.5        # row 1 and total agreeing: accepted from this confidence
 # Dates: sequence reader (date_reader.py: CNN+BiGRU+CTC, numpy). Switched on only when its measured precision-at-gate is >=95%
 # per field on held-out forms (see docs / train_dates.py --eval); False = dates stay None ("not readable").
@@ -709,6 +710,33 @@ def read_form(path_or_pil, docket=None, debug=False):
             low.append(kind)
         out[tk] = out[rk] = val
         fc[tk] = fc[rk] = round(float(conf), 3)
+    # ---- digit-by-digit reader (cellseq_reader.py, train_cellseq.py) on the row-1 cells cut by the same table finder it was
+    # trained on (digits_locate.py). When it is confident it decides; otherwise the whole-cell decision above stands.
+    # Hold-out (2,634 never-trained cells): non-zero answered 79% at gate 0.9 (old reader 53%); the cases where it disagreed with
+    # the app value were mostly real form-vs-app differences (checked by eye).
+    try:
+        import cellseq_reader as CSR
+        if CSR.available():
+            from PIL import Image as _Im
+            import digits_locate as _L
+            im = path_or_pil if isinstance(path_or_pil, _Im.Image) else _Im.open(path_or_pil)
+            if im.width >= 3200:
+                im.draft("L", (im.width // 2, im.height // 2))
+            cc = _L.cell_crops(im)
+            for tk, rk, kind in (("form_area", "row_area", "area"), ("form_loss", "row_loss", "loss")):
+                crop = cc.get(kind) if cc else None
+                if crop is None or np.asarray(crop).size < 500:
+                    continue
+                rd = CSR.read_value(np.asarray(crop))
+                fc["seq_" + kind] = round(rd["conf"], 3)
+                if rd["value"] is not None and rd["conf"] >= CELLSEQ_GATE:
+                    if out[tk] is not None and abs(float(out[tk]) - rd["value"]) > 0.01:
+                        notes.append(f"{kind}: digit reader {rd['value']:g} overrides whole-cell reading {out[tk]:g}")
+                    out[tk] = out[rk] = rd["value"]
+                    fc[tk] = fc[rk] = round(rd["conf"], 3)
+                    low = [x for x in low if not x.startswith(kind)]
+    except Exception as e:     # noqa: BLE001
+        notes.append("digit reader failed: %s" % type(e).__name__)
     if low:
         notes.append("handwritten area/loss not confidently readable (" + ", ".join(low) + ") - verify manually")
     out["cells_low_conf"] = bool(low)
