@@ -574,6 +574,13 @@ class LocalRunner:
         f = form if isinstance(form, dict) and form.get("_state") not in ("error", "not_found", "no_link", "skipped") else {}
         p = photos if isinstance(photos, dict) else {}
         fa, fl = ev.get("form_area"), ev.get("form_loss")
+        if f:                                    # same words as the Excel instead of an empty cell
+            if fa is None:
+                fa = "Can't read" if f.get("area_written", True) else "Blank"
+            if fl is None:
+                fl = "Can't read" if f.get("loss_written", True) else "Blank"
+        elif form is not None:
+            fa = fl = "No form"
         return {"docket": row.get("docket_id"), "farmer": row.get("farmer_name"), "village": row.get("village"), "surveyor": row.get("surveyor_name"),
                 "verdict": ev.get("verdict"), "confidence": ev.get("confidence"),
                 "form_no": f.get("form_no") if f.get("form_no_conf", 1) >= 0.9 else "",
