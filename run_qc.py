@@ -270,7 +270,7 @@ def assemble(df, ck, ran_ai, keys=None):
 # ============================================================================ local (offline) engine: output assembly
 QC_BLOCK = [
     C.COL_DONE_BY, C.COL_QC_DONE, C.COL_QC_TIME, "QC Verdict", "AI_Confidence",
-    "Form No", "PO ID matches docket", C.COL_FORM_AREA, C.COL_FORM_LOSS, "Form Row Area %", "Form Row Loss %",
+    "Form No", "PO ID (Form)", "PO ID matches docket", C.COL_FORM_AREA, C.COL_FORM_LOSS, "Form Row Area %", "Form Row Loss %",
     "Form Total Row Blank", "Sowing date (Form)", "Loss date (Form)", "Intimation date (Form)", "Inspection date (Form)", C.COL_MATCH, "Form vs App (Match/Mismatch/NA)",
     C.COL_SURVEYOR_SIG, C.COL_FARMER_SIG, "Primary Worker Signature (Yes/No)", C.COL_GOVT_SIG, "Officer Stamp Only (Yes/No)",
     C.COL_FORM_STATUS, "Form Quality", "Form Confidence", C.COL_FORM_REMARKS,
@@ -353,7 +353,7 @@ def _date_txt(v):
     return d.strftime("%d-%m-%Y") if d else (None if v in (None, "") else str(v))
 
 
-_VALUE_COLS = ("Form No", C.COL_FORM_AREA, C.COL_FORM_LOSS, "Form Row Area %", "Form Row Loss %", "Loss date (Form)")
+_VALUE_COLS = ("Form No", "PO ID (Form)", C.COL_FORM_AREA, C.COL_FORM_LOSS, "Form Row Area %", "Form Row Loss %", "Loss date (Form)")
 _NOT_READ_DATES = ("Sowing date (Form)", "Intimation date (Form)", "Inspection date (Form)")
 _SIG_COLS = (C.COL_SURVEYOR_SIG, C.COL_FARMER_SIG, "Primary Worker Signature (Yes/No)")
 _PHOTO_COLS = (C.COL_PHOTO_DATE, C.COL_FIELD_PHOTO, "Field photo type", "Photo is form image (Yes/No)", "Form-image photos (n)", "Duplicate photos (n)",
@@ -439,6 +439,7 @@ def assemble_local(df, results, keys):
         if fok:
             ok3 = f.get("is_proforma3") is not False
             put("Form No", f.get("form_no") if (ok3 and f.get("form_no")) else "Can't Read")
+            put("PO ID (Form)", f.get("po_id") if (ok3 and f.get("po_id")) else "Can't Read")
             put("PO ID matches docket", _yn(f.get("po_id_matches")) if ok3 else "Can't Read")
             fa_v = _nn(r.get("form_area"))
             fl_v = _nn(r.get("form_loss"))
@@ -464,6 +465,7 @@ def assemble_local(df, results, keys):
             fst = f.get("_state", "not_found") if f else "not_found"
             why = "N/A (form not found)" if fst in ("not_found", "no_link") else "Not readable"
             put("Form No", why)
+            put("PO ID (Form)", why)
             put("PO ID matches docket", why)
             put(C.COL_FORM_AREA, why)
             put(C.COL_FORM_LOSS, why)
