@@ -431,15 +431,16 @@ def assemble_local(df, results, keys):
         put("Same Location Remark", _nn(slr[i]) if slr is not None else None)
         put("AI Engine", r.get("engine"))
         if f and f.get("_state") not in ("skipped",):
-            put("Form vs App (Match/Mismatch/NA)", r.get("match"))
-            if r.get("match") not in (None, "NA"):
-                put(C.COL_MATCH, r.get("match"))
+            put("Form vs App (Match/Mismatch/NA)", r.get("match") or "NA")
+            put(C.COL_MATCH, r.get("match") or "NA")
         if fok:
             ok3 = f.get("is_proforma3") is not False
             put("Form No", f.get("form_no") if ok3 else None)
             put("PO ID matches docket", _yn(f.get("po_id_matches")) if ok3 else None)
-            put(C.COL_FORM_AREA, _nn(r.get("form_area")))
-            put(C.COL_FORM_LOSS, _nn(r.get("form_loss")))
+            fa_v = _nn(r.get("form_area"))
+            fl_v = _nn(r.get("form_loss"))
+            put(C.COL_FORM_AREA, fa_v if fa_v is not None else "Not readable")
+            put(C.COL_FORM_LOSS, fl_v if fl_v is not None else "Not readable")
             put("Form Row Area %", _nn(f.get("row_area")))
             put("Form Row Loss %", _nn(f.get("row_loss")))
             put("Form Total Row Blank", _yn(f.get("total_row_blank")))
@@ -455,7 +456,17 @@ def assemble_local(df, results, keys):
             put(C.COL_FORM_STATUS, _form_status(f, r))
             put("Form Quality", f.get("quality"))
             put("Form Confidence", _nn(f.get("confidence")))
-            put(C.COL_FORM_REMARKS, "; ".join(str(x) for x in (f.get("notes") or [])) or None)
+            put(C.COL_FORM_REMARKS, "; ".join(str(x) for x in (f.get("notes") or [])) or "No remarks")
+        elif r is not None and not fok:
+            fst = f.get("_state", "not_found") if f else "not_found"
+            put(C.COL_FORM_AREA, "N/A (form not found)" if fst in ("not_found", "no_link") else "Not readable")
+            put(C.COL_FORM_LOSS, "N/A (form not found)" if fst in ("not_found", "no_link") else "Not readable")
+            put(C.COL_MATCH, "NA")
+            put(C.COL_SURVEYOR_SIG, "N/A")
+            put(C.COL_FARMER_SIG, "N/A")
+            put(C.COL_GOVT_SIG, "N/A")
+            put(C.COL_FORM_STATUS, "N/A")
+            put(C.COL_FORM_REMARKS, f"Form {fst}")
         if pok:
             fp = "form image" if p.get("photo_is_form") else p.get("field_photo")
             put(C.COL_FIELD_PHOTO, fp)

@@ -315,6 +315,17 @@ def evaluate(row, form=None, photos=None, gps=None, data_flags="", risk=None):
                 f_area, f_loss, source = fa, fl, "total row"
             elif ra is not None and rl is not None and ra_ok and rl_ok:
                 f_area, f_loss, source = ra, rl, "table row"
+            elif fa is not None and fa_ok and rl is not None and rl_ok:
+                f_area, f_loss, source = fa, rl, "mixed (total area, row loss)"
+            elif ra is not None and ra_ok and fl is not None and fl_ok:
+                f_area, f_loss, source = ra, fl, "mixed (row area, total loss)"
+            else:
+                best_a = fa if (fa is not None and fa_ok) else (ra if (ra is not None and ra_ok) else None)
+                best_l = fl if (fl is not None and fl_ok) else (rl if (rl is not None and rl_ok) else None)
+                if best_a is not None or best_l is not None:
+                    f_area = best_a if best_a is not None else 0.0
+                    f_loss = best_l if best_l is not None else 0.0
+                    source = "partial (missing value defaulted to 0)"
             raj = form.get("template") == "rajasthan"
             pairs = form.get("raj_pairs")
             if f_area is None and raj and pairs and app_area is not None and app_loss is not None:
@@ -332,6 +343,8 @@ def evaluate(row, form=None, photos=None, gps=None, data_flags="", risk=None):
             else:
                 if source == "total row":
                     s = f"Form total affected area {_fmt(f_area)}% / loss {_fmt(f_loss)}%"
+                elif source.startswith("mixed"):
+                    s = f"Form area {_fmt(f_area)}% / loss {_fmt(f_loss)}% ({source})"
                 elif source == "one of several rows":
                     s = f"One of the {len(pairs)} rows on the form shows affected area {_fmt(f_area)}% / loss {_fmt(f_loss)}%"
                 elif raj:

@@ -549,7 +549,8 @@ def analyse(paths, row: dict, form_image=None) -> dict:
     res = {
         "photo_status": "OK", "engine": "local-v3", "n_photos": n,
         "field_photo": field, "field_note": note, "farmer_photo": farmer, "person_each": [bool(d["nfaces"] > 0) for d in P],
-        "photo_loss": est, "photo_loss_note": "rough colour-based hint only; not correlated with app loss in tests" if est is not None else "",
+        "photo_loss": est if not (n_form == n) else "N/A (form image)",
+        "photo_loss_note": "rough colour-based hint only; not correlated with app loss in tests" if est is not None else "",
         "photo_date": photo_date, "photo_quality": qual, "photo_flags": flags,
         "photo_is_form": bool(n_form == n), "n_form_photos": n_form, "photo_is_form_each": is_form,
         "n_duplicates": n_dup, "duplicate_of": [None if x is None else x + 1 for x in dup_of],
@@ -589,7 +590,7 @@ def _field_outputs(Pf, row, n_form, n):
     two argmaxes differ the row is marked photo_agree=False / low confidence."""
     out = {"crop_present": "no", "crop_present_conf": None, "crop_seen": "unknown", "crop_seen_conf": None, "crop_matches_declared": None,
            "flooded": "no", "water_frac": None, "damage_state": "", "damage_visible": False, "scene_type": "paper form" if n_form == n else "unknown",
-           "photo_agree": None, "photo_conf": "low", "remarks": [], "field_photo": "no crop", "field_note": "no field photograph", "photo_loss": None}
+           "photo_agree": None, "photo_conf": "low", "remarks": [], "field_photo": "no crop", "field_note": "no field photograph", "photo_loss": "Uncertain"}
     Pf = [d for d in (Pf or []) if "water" in d and "field_f" in d]     # photos treated as the paper form carry no field features
     if not Pf:
         return out
@@ -623,7 +624,7 @@ def _field_outputs(Pf, row, n_form, n):
     fi = [i for i in range(len(Pf)) if not person_only[i]]
     if not fi:
         out.update(scene_type="person-only", photo_conf="high" if (ag is None or ag.all()) else "low", crop_present="no", field_photo="crop mismatch",
-                   field_note="person only, no crop visible", photo_agree=None if ag is None else bool(ag.all()))
+                   field_note="person only, no crop visible", photo_agree=None if ag is None else bool(ag.all()), photo_loss="No crop visible")
         rem.append("The field photo shows only a person, no crop or field is visible")
         return out
     Xb2 = None if Xb is None else Xb[fi]; Xc2 = Xc[fi]
@@ -665,7 +666,20 @@ def _field_outputs(Pf, row, n_form, n):
     out["field_photo"] = ("crop mismatch" if dstate == "weeds-uncultivated" else "no crop" if dstate in ("bare soil", "harvested") else
                           "cut & spread" if dstate == "cut & spread" else "crop mismatch" if not crop_yes else "standing crop")
     out["field_note"] = "; ".join(x for x in (("flooded" if out["flooded"] == "yes" else ""), dstate if dstate not in ("healthy", "") else "") if x)
-    out["photo_loss"] = None
+    # Estimate photo loss from damage state (rough heuristic for QC column)
+    _LOSS_EST = {"healthy": "0%", "partly damaged": "25-50%", "lodged": "50-75%",
+                 "dried-burnt": "75-100%", "submerged": "75-100%", "cut & spread": "75-100%",
+                 "bare soil": "100%", "harvested": "100%", "weeds-uncultivated": "No crop"}
+    if dconf >= 0.30:
+        out["photo_loss"] = _LOSS_EST.get(dstate)
+    elif dconf >= 0.15 and dstate:
+        out["photo_loss"] = _LOSS_EST.get(dstate, "uncertain") + " (low conf)"
+    elif not crop_yes and out.get("crop_present_conf", 0) >= 0.5:
+        out["photo_loss"] = "No crop visible"
+    elif crop_yes and out.get("crop_present_conf", 0) >= 0.5:
+        out["photo_loss"] = "No" if dstate in ("healthy", "") or not dstate else "Uncertain"
+    else:
+        out["photo_loss"] = "Uncertain"
     # remarks
     dec = f" (declared: {declared})" if declared else ""
     if dstate == "weeds-uncultivated":

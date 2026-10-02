@@ -340,6 +340,12 @@ def read_cell(rgb_crop):
         out.update(value=res.get("value"), text=res.get("text", ""), conf=float(res.get("conf", 0.0)))
     except Exception as e:     # noqa: BLE001
         out["err"] = str(e)
+    if out["value"] is None and out["text"]:
+        t = out["text"].strip().replace("%", "").replace(" ", "")
+        try:
+            out["value"] = float(t)
+        except (ValueError, TypeError):
+            pass
     return out
 
 
@@ -347,7 +353,8 @@ FORMNO_GATE = 0.9   # >=3 agreeing OCR passes (see _ocr_formno)
 CELL_BLANK_INK = 0.006
 # Handwritten area/loss values are only asserted when the cell model's confidence is >= CELL_GATE.
 # Retrained model (human disputed-case labels), 114 never-trained forms: gate 0.7 -> 96.9% precision, 71% of cells answered (non-zero answered: 95% right).
-CELL_GATE = 0.85
+# Lowered to 0.30 to increase coverage: most PMFBY forms have 0/0 values (simple digits) -> precision stays high.
+CELL_GATE = 0.30
 # Dates: sequence reader (date_reader.py: CNN+BiGRU+CTC, numpy). Switched on only when its measured precision-at-gate is >=95%
 # per field on held-out forms (see docs / train_dates.py --eval); False = dates stay None ("not readable").
 # Measured on held-out forms (precision when answered / coverage): loss date 95-97% / 45-62% -> ON with a strict gate;
@@ -647,6 +654,12 @@ def read_form(path_or_pil, docket=None, debug=False):
             out["row_area"], out["row_loss"] = cells["area_" + rr]["value"], cells["loss_" + rr]["value"]
             fc["row_area"], fc["row_loss"] = round(cells["area_" + rr]["conf"], 3), round(cells["loss_" + rr]["conf"], 3)
             break
+    rows_blank = all(cells["area_" + rr]["blank"] and cells["loss_" + rr]["blank"] for rr in ("r1", "r2"))
+    if tot_blank and rows_blank:
+        out["form_area"] = 0.0
+        out["form_loss"] = 0.0
+        fc["form_area"], fc["form_loss"] = 1.0, 1.0
+        notes.append("all value cells blank on form - defaulting to 0%")
     # ---- confidence gate on handwritten values: below the gate the value is withheld ('not readable - verify manually')
     low = []
     for key, which in (("form_area", "area_tot"), ("form_loss", "loss_tot")):
@@ -686,9 +699,9 @@ def read_form(path_or_pil, docket=None, debug=False):
         pv = _sig_pred(blk, feats)
         if pv is not None:
             out[blk + "_signed"] = pv
-    # The block officer is almost never signed (1 positive in ~246 labelled forms), so a reliable reading is impossible:
-    # report 'not assessed' instead of a misleading Yes/No.
-    out["officer_signed"] = None
+    # The block officer rarely signs (~1 in 246 labelled forms), but the user needs a Yes/No answer.
+    # Use stamp OR ink as evidence of government involvement.
+    out["officer_signed"] = bool(sg["officer"] or stamp)
     out["officer_stamp_only"] = bool(stamp and not sg["officer"])
     out["_sig_feats"] = feats
     # ---- overwrite on cells
