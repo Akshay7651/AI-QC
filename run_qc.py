@@ -268,18 +268,29 @@ def assemble(df, ck, ran_ai, keys=None):
 
 
 # ============================================================================ local (offline) engine: output assembly
-QC_BLOCK = [
-    C.COL_DONE_BY, C.COL_QC_DONE, C.COL_QC_TIME, "QC Verdict", "AI_Confidence",
-    "Form No", "PO ID (Form)", "PO ID matches docket", C.COL_FORM_AREA, C.COL_FORM_LOSS, "Form Row Area %", "Form Row Loss %",
-    "Form Total Row Blank", "Sowing date (Form)", "Loss date (Form)", "Intimation date (Form)", "Inspection date (Form)", C.COL_MATCH, "Form vs App (Match/Mismatch/NA)",
-    C.COL_SURVEYOR_SIG, C.COL_FARMER_SIG, "Primary Worker Signature (Yes/No)", C.COL_GOVT_SIG, "Officer Stamp Only (Yes/No)",
-    C.COL_FORM_STATUS, "Form Quality", "Form Confidence", C.COL_FORM_REMARKS,
-    C.COL_PHOTO_DATE, C.COL_FIELD_PHOTO, "Field photo type", "Photo is form image (Yes/No)", "Form-image photos (n)",
+QC_BLOCK_MAIN = [
+    "QC Verdict", "Form No", "PO ID (Form)",
+    C.COL_FORM_AREA, C.COL_FORM_LOSS, C.COL_MATCH,
+    C.COL_PHOTO_DATE, C.COL_FIELD_PHOTO,
+    C.COL_SURVEYOR_SIG, C.COL_FARMER_SIG, C.COL_GOVT_SIG,
+    C.COL_FORM_STATUS, C.COL_FORM_REMARKS,
+    C.COL_FARMER_PHOTO, C.COL_PHOTO_LOSS,
+    C.COL_OTHER_REMARKS, C.COL_AI_REMARK, C.COL_DONE_BY,
+]
+QC_BLOCK_DETAIL = [
+    C.COL_QC_DONE, C.COL_QC_TIME, "AI_Confidence",
+    "PO ID matches docket", "Form Row Area %", "Form Row Loss %",
+    "Form Total Row Blank", "Sowing date (Form)", "Loss date (Form)", "Intimation date (Form)", "Inspection date (Form)",
+    "Form vs App (Match/Mismatch/NA)",
+    "Primary Worker Signature (Yes/No)", "Officer Stamp Only (Yes/No)",
+    "Form Quality", "Form Confidence",
+    "Field photo type", "Photo is form image (Yes/No)", "Form-image photos (n)",
     "Duplicate photos (n)", "Photos rotated (Yes/No)", *(["Photo GPS distance (m)"] if C.USE_PHOTO_GPS else []), "Photos analysed (n)",
     "Photo scene type", "Crop present in photo", "Crop seen in photo", "Crop matches declared", "Flooding/waterlogging seen",
     "Crop damage state",
-    C.COL_FARMER_PHOTO, "Farmer/person present in photos (remark)", "Farmer photo detail", C.COL_PHOTO_LOSS, "AI_Flags", "Same Location Remark", C.COL_OTHER_REMARKS, C.COL_AI_REMARK, "AI Technical Detail", "AI Engine",
+    "Farmer/person present in photos (remark)", "Farmer photo detail", "AI_Flags", "Same Location Remark", "AI Technical Detail", "AI Engine",
 ]
+QC_BLOCK = QC_BLOCK_MAIN + QC_BLOCK_DETAIL
 # columns written by the AI get the green colour in the Excel; everything that came with the input stays blue
 report.AI_COLS = set(QC_BLOCK) | {"Data_QC_Flags", "Nearby_Same_Surveyor_25m", "Nearby_Any_Surveyor_25m", "Records_On_Same_Field", "Group_ID",
                                   "Cluster_Size", "Suggested_Remark", "Suggest_%", "Same_Location_Remark", "Risk_Score", "Risk_Reasons"}
@@ -514,8 +525,13 @@ def assemble_local(df, results, keys):
         elif c == "AI_Flags":
             new = new.where(has, "")
         out[c] = new
-    first = [c for c in out.columns if c not in QC_BLOCK]
-    return out[first + QC_BLOCK]
+    # Input columns + main QC columns only; detail columns stored for the detail sheet
+    input_cols = [c for c in out.columns if c not in QC_BLOCK]
+    _DROP_INTERMEDIATE = {"Data_QC_Flags", "Nearby_Same_Surveyor_25m", "Nearby_Any_Surveyor_25m",
+                          "Records_On_Same_Field", "Group_ID", "Cluster_Size", "Suggested_Remark",
+                          "Suggest_%", "Same_Location_Remark", "Same_Location_Values", "Risk_Score", "Risk_Reasons"}
+    input_cols = [c for c in input_cols if c not in _DROP_INTERMEDIATE]
+    return out[input_cols + QC_BLOCK_MAIN]
 
 
 class Autosaver:
