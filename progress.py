@@ -237,7 +237,7 @@ class Progress:
                         import csv, io
                         rows = prog.rows_since(0, 3000)["rows"]
                         buf = io.StringIO(); w = csv.writer(buf)
-                        cols = ["docket", "farmer", "village", "surveyor", "verdict", "form_no", "area_form", "loss_form", "area_app", "loss_app", "match",
+                        cols = ["docket", "farmer", "village", "surveyor", "verdict", "form_no", "po_id", "area_form", "loss_form", "area_app", "loss_app", "match",
                                 "farmer_sig", "company_sig", "worker_sig", "photo_is_form", "person", "flags", "remark"]
                         w.writerow(cols)
                         for r in rows:

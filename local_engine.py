@@ -577,6 +577,7 @@ class LocalRunner:
         return {"docket": row.get("docket_id"), "farmer": row.get("farmer_name"), "village": row.get("village"), "surveyor": row.get("surveyor_name"),
                 "verdict": ev.get("verdict"), "confidence": ev.get("confidence"),
                 "form_no": f.get("form_no") if f.get("form_no_conf", 1) >= 0.9 else "",
+                "po_id": f.get("po_id") or "",
                 "area_form": fa, "loss_form": fl, "area_app": row.get("affected_area_pct"), "loss_app": row.get("crop_loss_pct"),
                 "match": ev.get("match"), "farmer_sig": yn(f.get("farmer_signed")), "company_sig": yn(f.get("company_signed")),
                 "worker_sig": yn(f.get("worker_signed")), "photo_is_form": "Yes" if p.get("scene_type") == "paper form" else "",
