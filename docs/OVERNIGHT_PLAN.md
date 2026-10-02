@@ -39,3 +39,7 @@ data/eval_raj/rows_<k>.csv: row/area/loss per docket read from 546 contact sheet
 (vision label == human QC value on 98.5% of them, so the labels are reliable). train_raj.py --rows <csv> trains on exactly those rows.
 Result (same 213 hold-out forms, blind compare): current model 28.2% coverage / 100% precision; trained on hand rows (models/cells_raj_rows.npz) 3.8% / 100%.
 Not adopted. Likely cause: Rajasthan cells are mostly blank/0 (class counts ~3300 blank, ~1070 zero, handful of other values), so fine-tuning lowers confidence on written values below the gate.
+
+## Balanced retrain (written cells oversampled), same 213 hold-out forms
+models/cells_raj_bal.npz: 15.5% coverage / 100% precision overall; NON-ZERO forms stated 24 of 84 (current model: 8 of 84), all right.
+But it states fewer all-zero forms (current model reads more zeros). Haryana check not run, so models/cells_cnn.npz is NOT replaced; use cells_raj_bal.npz via CELL_MODEL_PATH for Rajasthan only.

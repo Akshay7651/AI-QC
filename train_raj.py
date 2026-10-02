@@ -154,6 +154,7 @@ def main():
     ap.add_argument("--init-model", default=os.path.join(HERE, "models", "cells_cnn.npz"))
     ap.add_argument("--out", default=os.path.join(HERE, "models", "cells_cnn.npz"), help="where the trained model is written")
     ap.add_argument("--min-score", type=float, default=0.02)
+    ap.add_argument("--balance", action="store_true", help="oversample written (non-blank, non-zero) cells")
     ap.add_argument("--rows", help="CSV docket,row (1..10): hand-labelled table row of each docket; replaces the automatic row choice")
     ap.add_argument("--haryana-share", type=float, default=0.5, help="share of each batch drawn from the Haryana cell set (keeps it from forgetting)")
     a = ap.parse_args()
@@ -210,8 +211,9 @@ def main():
         Xt = torch.tensor(Xr, dtype=torch.float32).div_(255).unsqueeze(1); yt = torch.tensor(yr)
         if har is not None:
             Xh = torch.tensor(har["X"], dtype=torch.float32).div_(255).unsqueeze(1); yh = torch.tensor(har["y"])
+        wr = torch.nonzero(yt >= 2).flatten()
         t0 = time.time()
-        ck = os.path.join(HERE, "data", f"raj_ckpt_round{rnd + 1}.pt")      # the cloud machine can restart: resume an interrupted round
+        ck = os.path.join(HERE, "data", f"raj_ckpt{'_bal' if a.balance else ''}_round{rnd + 1}.pt")      # the cloud machine can restart: resume an interrupted round
         s0 = 0
         if os.path.exists(ck):
             try:
@@ -226,7 +228,10 @@ def main():
         for s in range(s0, a.steps):
             net.train()
             nr = int(round(64 * (1 - a.haryana_share))) if har is not None else 64
-            idx = torch.randint(0, len(yt), (nr,))
+            if a.balance:       # half of each Rajasthan batch from written (non-blank, non-zero) cells
+                idx = torch.cat([wr[torch.randint(0, len(wr), (nr // 2,))], torch.randint(0, len(yt), (nr - nr // 2,))])
+            else:
+                idx = torch.randint(0, len(yt), (nr,))
             xb, yb = Xt[idx], yt[idx]
             if har is not None:
                 ih = torch.randint(0, len(yh), (64 - nr,))
