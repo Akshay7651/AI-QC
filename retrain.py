@@ -186,6 +186,7 @@ def main():
     subprocess.run([sys.executable, str(HERE / "train_cells.py"), "--rebuild", "--steps", str(a.steps)] + (["--init"] if a.init else []), check=True, cwd=HERE)
     new = measure(sorted(hold), h)
     print("NEW model on human hold-out:", new, flush=True)
+    shutil.copy2(MODEL, HERE / "models" / "cells_cnn_candidate.npz")      # kept for a separate comparison whatever is decided below
     adopt = new["correct"] >= old["correct"] and (new["precision"] >= 0.95 or new["precision"] >= old["precision"] - 0.01)
     if adopt:
         print(f"ADOPTED the new model (backup of the old one: {bk.name}).")
