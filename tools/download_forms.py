@@ -8,7 +8,7 @@
 Result:  forms/<docket>.jpg (or .pdf / .png - the real file type is detected)   photos: forms/photos/<docket>_<n>.jpg
 Resumable: files that already exist are skipped, so just run it again after an interruption.  failed.csv lists every docket that
 could not be downloaded (with the reason), so nothing is silently dropped.
-Columns used (change with the options if your Excel differs):  docket_id,  Signed_Copy_URL (form),  Media (photo links, separated by , ; or spaces).
+Columns used (change with the options if your Excel differs):  Docket_ID (a leading ' is removed),  Signed_Copy_URL (form),  Media (photo links, separated by , ; or spaces).
 Run it on a PC/network that can open the pmfby.gov.in links in a browser.
 """
 import argparse
@@ -62,15 +62,18 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--excel", required=True)
     ap.add_argument("--out", default="forms")
-    ap.add_argument("--docket-col", default="docket_id")
+    ap.add_argument("--docket-col", default="Docket_ID")
     ap.add_argument("--form-col", default="Signed_Copy_URL")
     ap.add_argument("--media-col", default="Media")
+    ap.add_argument("--dry-run", action="store_true", help="only read the Excel and print how many forms would be downloaded")
     ap.add_argument("--photos", action="store_true", help="also download the photos")
     ap.add_argument("--threads", type=int, default=8)
     ap.add_argument("--limit", type=int, help="only the first N rows (to test)")
     a = ap.parse_args()
 
     df = pd.read_excel(a.excel, dtype=str) if a.excel.lower().endswith((".xlsx", ".xlsm", ".xls")) else pd.read_csv(a.excel, dtype=str)
+    low = {str(c).strip().lower(): c for c in df.columns}      # column names are matched ignoring upper/lower case
+    a.docket_col, a.form_col, a.media_col = (low.get(x.lower(), x) for x in (a.docket_col, a.form_col, a.media_col))
     for c in (a.docket_col, a.form_col):
         if c not in df.columns:
             sys.exit(f"column '{c}' not found. Columns are: {', '.join(map(str, df.columns))}  (use --docket-col / --form-col)")
@@ -79,12 +82,14 @@ def main():
     (out / "photos").mkdir(exist_ok=True)
     jobs = []
     for _, r in df.iterrows():
-        d = str(r[a.docket_col]).strip()
+        d = str(r[a.docket_col]).strip().lstrip("'").strip()      # Excel text cells often start with a '
         if not d or d.lower() == "nan":
             continue
         jobs.append((d, links(r[a.form_col]), links(r.get(a.media_col)) if a.photos else []))
     jobs = jobs[: a.limit] if a.limit else jobs
-    print(f"{len(jobs)} dockets", flush=True)
+    print(f"{len(jobs)} dockets | with a form link: {sum(1 for j in jobs if j[1])} | without: {sum(1 for j in jobs if not j[1])}", flush=True)
+    if a.dry_run:
+        return
 
     lock = threading.Lock()
     st = {"done": 0, "ok": 0, "skipped": 0, "failed": 0, "t0": time.time()}
