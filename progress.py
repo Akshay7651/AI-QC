@@ -17,7 +17,7 @@ COUNTER_KEYS = ["form_not_found", "missing_form_link", "missing_photo_link", "ph
                 "signature_missing", "mismatch", "overwrite", "duplicate_photos", "form_unreadable",
                 "not_proforma3", "gps_cluster", "po_id_mismatch", "flooded", "no_crop_in_photo", "crop_mismatch",
                 "photo_not_field", "same_location"]
-VERDICT_KEYS = ["OK", "Review", "Reject-evidence", "Manual-check"]
+VERDICT_KEYS = ["OK", "Partially OK", "Review", "Manual QC Required"]
 SCHEMA_VERSION = 1
 
 

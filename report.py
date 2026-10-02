@@ -54,7 +54,7 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-VERDICT_COLOURS = {"Reject-evidence": "#F8BBD0", "Manual-check": "#FFE0B2", "Review": "#FFF9C4", "OK": "#C8E6C9"}
+VERDICT_COLOURS = {"Manual QC Required": "#F8BBD0", "Review": "#FFE0B2", "Partially OK": "#FFF9C4", "OK": "#C8E6C9"}
 CONF_COLOURS = {"Low": "#F8BBD0", "Medium": "#FFF9C4", "High": "#C8E6C9"}
 BAD = "#F8BBD0"
 
@@ -257,7 +257,7 @@ def _write_fast(df, path, remarks_col):
     def cf(c, val, colour):
         if c in cols:
             rules.append((cols.index(c), val, dxf_ids[colour]))
-    for k, colour in {"Reject-evidence": "red", "Manual-check": "amber", "Review": "yellow", "OK": "green"}.items():
+    for k, colour in {"Manual QC Required": "red", "Review": "amber", "Partially OK": "yellow", "OK": "green"}.items():
         cf("QC Verdict", k, colour)
     for k, colour in {"Low": "red", "Medium": "yellow", "High": "green"}.items():
         cf("AI_Confidence", k, colour)

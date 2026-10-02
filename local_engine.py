@@ -599,7 +599,7 @@ class LocalRunner:
         try:
             ev = remarks.evaluate(row, form, photos, gps, dfl, risk)
         except Exception as e:  # remark building must never lose the row
-            ev = {"remark": f"Remark could not be built ({type(e).__name__}: {e})", "verdict": "Manual-check", "confidence": "Low",
+            ev = {"remark": f"Remark could not be built ({type(e).__name__}: {e})", "verdict": "Manual QC Required", "confidence": "Low",
                   "flags": ["Internal error"], "counters": [], "match": "NA", "form_area": None, "form_loss": None}
             if self.prog:
                 self.prog.error(f"remark build failed for {row.get('docket_id')}: {e}")

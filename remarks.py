@@ -1,6 +1,6 @@
 """Row-level QC reasoning: turns what the form reader / photo analyst / GPS / data / risk engines found into
   * a precise, prioritised, human-readable remark  ('Any Other Remarks')
-  * a QC Verdict  (OK / Review / Reject-evidence / Manual-check)
+  * a QC Verdict  (OK / Partially OK / Review / Manual QC Required)
   * AI_Confidence (High / Medium / Low), AI_Flags (short tags) and counter keys for the live dashboard.
 
 Nothing here invents values: a field whose confidence is low is reported as 'not readable'.
@@ -31,7 +31,7 @@ from datetime import datetime
 
 import config as C
 
-VERDICTS = ("OK", "Review", "Reject-evidence", "Manual-check")
+VERDICTS = ("OK", "Partially OK", "Review", "Manual QC Required")
 LOW_FIELD_CONF = 0.5
 RISK_REVIEW = 60
 COVERED_DATA_FLAGS = ("Missing: signed form link", "Missing: photo links")
@@ -143,107 +143,47 @@ _REASON = {
 }
 
 
+_SHORT_TAG = {
+    "Form link missing": "Form Link Missing",
+    "Photo link missing": "Photo Link Missing",
+    "Form not found": "Form Not Found",
+    "Photos not found": "Photos Not Found",
+    "Not Proforma-3": "Not Proforma-3",
+    "Form not readable": "Form Not Readable",
+    "Low confidence - manual review": "Low Confidence",
+    "Signature missing": "Signature Missing",
+    "Photo is form image": "No Field Photo",
+    "Photo not of the field": "No Field Photo",
+    "Field state vs reported loss": "Loss Mismatch",
+    "Crop mismatch": "Crop Mismatch",
+    "Form vs app mismatch": "Form-App Mismatch",
+    "Flooding seen": "Flooding",
+    "Photo GPS mismatch": "GPS Mismatch",
+    "Photo date outside survey period": "Photo Date Mismatch",
+    "Same location": "Same Location",
+    "Same app entry at same spot": "Same Location (Copied Entry)",
+    "GPS cluster": "Same Location",
+    "Overwriting": "Overwrite on Form",
+}
+
 def _plain(row, form, photos, gps, flags, verdict, ev):
-    ok_form = bool(form) and form.get("_state") in (None, "ok") and form.get("is_proforma3") is not False
-    miss = []
-    if ok_form:
-        miss = [n for n, k in (("farmer", "farmer_signed"), ("company", "company_signed")) if form.get(k) is False]
-        if form.get("template") == "rajasthan" and form.get("officer_signed") is False:
-            miss.append("agriculture supervisor (AAO)")
-    reasons = []
+    tags = []
     for f in flags:
-        if f == "Signature missing":
-            if miss:
-                reasons.append(" and ".join(miss) + " signature missing")
-        elif f == "Photo is form image":
-            n, nf = int(_num((photos or {}).get("_n_photos")) or 0), int(_num((photos or {}).get("n_form_photos")) or 0)
-            reasons.append("all photos are pictures of the paper form, no field photo" if (not n or nf >= n) else "some photos are pictures of the paper form")
-        elif f.startswith("Data: "):
-            reasons.append("the record data looks unusual (" + f[6:].lower() + ")")
+        if f.startswith("Data: "):
+            tags.append("Data Issue")
         elif f.startswith("High risk score"):
-            reasons.append("the record has a high risk score")
-        elif f in _REASON:
-            err = ((form if f == "Form not found" else photos) or {}).get("_error") if f in ("Form not found", "Photos not found") else None
-            reasons.append(_REASON[f] + (f" ({err})" if err else ""))
-    if "Form not readable" in flags and "Low confidence - manual review" in flags:
-        reasons = [r for r in reasons if r != _REASON["Low confidence - manual review"]]
-    reasons = list(dict.fromkeys(reasons))
-    head = {"OK": "OK - no problem found.",
-            "Review": "Please check: " + "; ".join(reasons) + ".",
-            "Reject-evidence": "Evidence not acceptable: " + "; ".join(reasons) + ".",
-            "Manual-check": "AI could not decide, please check by hand: " + "; ".join(reasons) + "."}[verdict]
-    if verdict != "OK" and not reasons:
-        head = {"Review": "Please check.", "Reject-evidence": "Evidence not acceptable.", "Manual-check": "AI could not decide, please check by hand."}[verdict]
-    out = [head[0].upper() + head[1:]]
-    # ---- form
-    f = []
-    if ok_form:
-        fn = form.get("form_no")
-        if fn and _readable(form, fn, "form_no"):
-            f.append(f"Form no {fn}.")
-        fa, fl, m = ev.get("form_area"), ev.get("form_loss"), ev.get("match")
-        if fa is not None and fl is not None:
-            s = f"Form says affected area {_fmt(fa)}% and crop loss {_fmt(fl)}%"
-            if m == "Match":
-                s += " (same as the app)."
-            elif m == "Mismatch":
-                s += f" but the app says {_fmt(row.get('affected_area_pct'))}% and {_fmt(row.get('crop_loss_pct'))}% (different)."
-            else:
-                s += "."
-            f.append(s)
-        else:
-            f.append("Area / loss on the form could not be read.")
-        sg = [n for n, k in (("Farmer", "farmer_signed"), ("Company", "company_signed")) + ((("Supervisor (AAO)", "officer_signed"),) if form.get("template") == "rajasthan" else ()) if form.get(k)]
-        if sg:
-            f.append(" and ".join(sg).capitalize() + (" signature present." if len(sg) == 1 else " signatures present."))
-    if form and form.get("_state") in (None, "ok") and form.get("is_proforma3") is False:
-        f.append("The uploaded paper is not a Proforma-3 form.")
-    if f:
-        out.append("FORM: " + " ".join(f))
-    # ---- photos
-    p = photos if isinstance(photos, dict) and photos.get("_state") in (None, "ok") else None
-    ph = []
-    if p:
-        n = int(_num(p.get("_n_photos")) or _num(p.get("n_photos")) or 0)
-        nf = int(_num(p.get("n_form_photos")) or 0)
-        is_form = bool(p.get("photo_is_form")) or p.get("scene_type") == "paper form"
-        if is_form:
-            ph.append(f"{'All ' + str(n) if n and nf >= n else str(nf) + ' of ' + str(n)} photos are pictures of the paper form, no field photo.")
-        else:
-            ph.append(f"{n} field photo(s).")
-            each = p.get("person_each")
-            if isinstance(each, (list, tuple)) and each:
-                isf = p.get("photo_is_form_each") or []
-                field_ = [i for i in range(len(each)) if not (i < len(isf) and isf[i])]
-                seen = [i + 1 for i in field_ if each[i]]
-                ph.append(f"Farmer is visible in photo {', '.join(map(str, seen))}." if seen else "Farmer is not visible in any photo.")
-            trusted = p.get("photo_conf") == "high" and p.get("photo_agree") is not False
-            if trusted:
-                if p.get("crop_seen"):
-                    ph.append(f"Crop seen: {p['crop_seen']}.")
-                if p.get("flooded") in (True, "yes"):
-                    ph.append("Water-logging is visible.")
-                if p.get("damage_state"):
-                    ph.append(f"Crop looks {p['damage_state']}.")
-        dist = _num(p.get("stamp_dist_m")) if C.USE_PHOTO_GPS else None
-        if dist is not None:
-            ph.append(f"Photo location is {dist:,.0f} m from the app location" + (" (OK)." if dist <= C.GPS_PHOTO_MAX_DISTANCE_M else " (too far)."))
-        d = _parse_date(p.get("stamp_date") or p.get("photo_date"))
-        if d:
-            ph.append(f"Photo date {d:%d-%m-%Y}.")
-        nd = int(_num(p.get("n_duplicates")) or 0)
-        if nd:
-            ph.append(f"{nd} photo(s) are repeated.")
-    if ph:
-        out.append("PHOTOS: " + " ".join(ph))
-    # ---- same place
-    gps = gps or {}
-    anyn, same = int(_num(gps.get("Nearby_Any_Surveyor_25m")) or 0), int(_num(gps.get("Nearby_Same_Surveyor_25m")) or 0)
-    if anyn:
-        sv = str(gps.get("Same_Location_Values") or "").strip()
-        out.append(f"PLACE: {anyn} other survey(s) within 25 m ({same} by the same surveyor, {anyn - same} by others)."
-                   + (f" {sv[0].upper() + sv[1:]}." if sv else "") + " This docket's form is still checked on its own (see FORM).")
-    return " ".join(out)
+            tags.append("High Risk")
+        elif f in _SHORT_TAG:
+            tags.append(_SHORT_TAG[f])
+        elif f not in ("Internal error",):
+            tags.append(f)
+    fa, fl, m = ev.get("form_area"), ev.get("form_loss"), ev.get("match")
+    if m == "Mismatch" and "Form-App Mismatch" not in tags:
+        tags.append("Form-App Mismatch")
+    tags = list(dict.fromkeys(tags))
+    if not tags:
+        return verdict
+    return verdict + " - " + ", ".join(tags)
 
 
 def evaluate(row, form=None, photos=None, gps=None, data_flags="", risk=None):
@@ -578,25 +518,22 @@ def evaluate(row, form=None, photos=None, gps=None, data_flags="", risk=None):
     onf = int(_num(gps.get("Records_On_Same_Field")) or 0)
     dmg = _num(row.get("total_damage_pct"))
     if same_txt:
-        if g_rem.startswith("Same Location"):
-            flag("Same location", "review", "multiple surveys at the same location")
-        else:
-            flag("Same location", None)       # a neighbour within 25 m is common; only repeated same-surveyor hot-spots need review
+        flag("Same location", None)       # same location is informational only — noted in remark, never drives the verdict
     sv_txt = str(gps.get("Same_Location_Values") or "")
     if "possible copied entry" in sv_txt:
-        flag("Same app entry at same spot", "review")
+        flag("Same app entry at same spot", None)
         parts_gps.append("Surveys at the same spot carry the same app entry - possible copied entry.")
     if g_rem.startswith("Same Location"):
         if same_txt:
             pass
         elif "QC Required" in g_rem:
-            parts_gps.append(f"{same} same-surveyor records within {C.GPS_PROXIMITY_RADIUS_M} m - QC required.")
+            parts_gps.append(f"{same} same-surveyor records within {C.GPS_PROXIMITY_RADIUS_M} m.")
         else:
             parts_gps.append(f"{same} same-surveyor records within {C.GPS_PROXIMITY_RADIUS_M} m (low damage{'' if dmg is None else f' {_fmt(dmg)}%'}).")
-        flag("GPS cluster", "review", None if same_txt else f"{same} same-surveyor records within {C.GPS_PROXIMITY_RADIUS_M} m")
+        flag("GPS cluster", None)
     elif g_rem.startswith("Review"):
-        parts_gps.append(f"{onf} records on the same survey number - review.")
-        flag("GPS cluster", "review")
+        parts_gps.append(f"{onf} records on the same survey number.")
+        flag("GPS cluster", None)
 
     # ------------------------------------------------------------ data flags
     dflags = [x.strip() for x in str(data_flags or "").split(",") if x.strip() and x.strip() not in COVERED_DATA_FLAGS]
@@ -614,16 +551,16 @@ def evaluate(row, form=None, photos=None, gps=None, data_flags="", risk=None):
 
     # ------------------------------------------------------------ verdict + confidence
     conf_form = _num((form or {}).get("confidence")) if form and fstate == "ok" else None
-    if severity["reject"]:
-        verdict = "Reject-evidence"
-    elif severity["manual"]:
-        verdict = "Manual-check"
+    if severity["reject"] or severity["manual"]:
+        verdict = "Manual QC Required"
     elif severity["review"]:
         verdict = "Review"
+    elif flags:
+        verdict = "Partially OK"
     else:
         verdict = "OK"
     evidence_failed = fstate in ("no_link", "not_found", "error") or pstate in ("no_link", "not_found", "error")
-    if evidence_failed or severity["manual"] or (conf_form is not None and conf_form < C.LOW_CONFIDENCE_THRESHOLD) or \
+    if evidence_failed or severity["manual"] or severity["reject"] or (conf_form is not None and conf_form < C.LOW_CONFIDENCE_THRESHOLD) or \
             (form and fstate == "ok" and form.get("is_proforma3") is False):
         confidence = "Low"
     elif severity["review"] or (conf_form is not None and conf_form < 0.8) or fstate == "skipped" or pstate == "skipped":
@@ -645,8 +582,10 @@ def evaluate(row, form=None, photos=None, gps=None, data_flags="", risk=None):
     if rtxt:
         sections.append(rtxt)
     head = ""
-    if verdict != "OK" and headline:
-        head = f"{verdict.upper()}: " + "; ".join(dict.fromkeys(headline[:3])) + ". "
+    if verdict not in ("OK", "Partially OK") and headline:
+        head = f"{verdict}: " + "; ".join(dict.fromkeys(headline[:3])) + ". "
+    elif verdict == "Partially OK":
+        head = "Partially OK. "
     elif verdict == "OK":
         head = "OK: no issues found. "
     detail = head + (" | ".join(sections))
