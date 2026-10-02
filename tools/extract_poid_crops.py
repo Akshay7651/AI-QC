@@ -20,19 +20,14 @@ OUT = os.path.join(ROOT, "data", "poid_crops.pkl")
 
 def one(path):
     import form_p3 as P
+    import poid_reader as PR
     d = os.path.basename(path)[:-4]
     try:
         lay = P.analyse_layout(P.load_image(path))
         if not lay.get("ok") or "po_id" not in (lay.get("boxes") or {}):
             return d, None
-        r = lay["rgb"]
-        x0, y0, x1, y1 = lay["boxes"]["po_id"]
-        h = y1 - y0
-        box = (x0, y0 + 0.30 * h, r.shape[1], y1 + 0.40 * h)       # the handwritten line sits in the lower part of the box
-        c = P.crop(r, box)
-        g = cv2.cvtColor(c, cv2.COLOR_RGB2GRAY)
-        g = cv2.resize(g, (int(g.shape[1] * 96 / max(1, g.shape[0])), 96), interpolation=cv2.INTER_AREA)
-        return d, g
+        box, h = PR.window_box(lay)
+        return d, PR.find_line(P.crop(lay["rgb"], box), h)
     except Exception:     # noqa: BLE001
         return d, None
 
