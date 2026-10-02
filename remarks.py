@@ -166,9 +166,24 @@ _SHORT_TAG = {
     "Overwriting": "Overwriting Detected on Form",
 }
 
+_INFO_ONLY = {"Duplicate photos", "Photos rotated"}     # informational: shown in the detailed remark, not in the verdict line
+
+
 def _plain(row, form, photos, gps, flags, verdict, ev):
     tags = []
+    same_spot = any(f in flags for f in ("Same location", "GPS cluster", "Same app entry at same spot"))
     for f in flags:
+        if f in _INFO_ONLY:
+            continue
+        if f in ("Same location", "GPS cluster"):          # one place-related tag instead of two that say the same thing
+            if "Same app entry at same spot" not in flags:
+                tags.append("Multiple Surveys at Same Spot")
+            continue
+        if f == "Data: Possible duplicate field" and same_spot:
+            continue                                        # the same-spot tag already covers it
+        if f == "Data: Possible duplicate field":
+            tags.append("Same Land Record (Khasra) in Another Docket")
+            continue
         if f.startswith("Data: "):
             tags.append("Data Issue (" + f[6:] + ")")
         elif f.startswith("High risk score"):
