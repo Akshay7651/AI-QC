@@ -207,7 +207,7 @@ def evaluate(row, form=None, photos=None, gps=None, data_flags="", risk=None):
     gps = gps or {}
     risk = risk or {}
     flags: list[str] = []          # short tags (AI_Flags)
-    severity = {"reject": [], "manual": [], "review": []}
+    severity = {"reject": [], "manual": [], "review": [], "partial": []}
     parts_form: list[str] = []
     parts_photo: list[str] = []
     parts_gps: list[str] = []
@@ -255,7 +255,7 @@ def evaluate(row, form=None, photos=None, gps=None, data_flags="", risk=None):
             if po is True:
                 s += "; PO ID matches docket"
             elif po is False:
-                flag("PO ID mismatch", "review", "PO ID on the form differs from the docket")
+                flag("PO ID mismatch", "partial", "PO ID on the form differs from the docket")
                 shown = form.get("po_id") if _readable(form, form.get("po_id"), "po_id") else None
                 s += f"; PO ID {shown} does NOT match docket" if shown else "; PO ID does NOT match docket"
             # (PO ID reading is skipped by design: say nothing when it is unknown)
@@ -344,19 +344,19 @@ def evaluate(row, form=None, photos=None, gps=None, data_flags="", risk=None):
                 a_loss, a_int = _parse_date(row.get("survey_start_date")), _parse_date(row.get("survey_end_date"))
                 if fd["loss_date"] and a_loss and fd["loss_date"] != a_loss:
                     parts_form.append(f"Loss date on form {fd['loss_date']:%d-%m-%Y} differs from the app ({a_loss:%d-%m-%Y}).")
-                    flag("Form date differs from app", None)   # informational: loss-date reading is ~96% precise, so no verdict change
+                    flag("Form date differs from app", "partial")   # a mismatch like the PO ID: Partially OK
                 if fd["intimation_date"] and a_int and fd["intimation_date"] != a_int:
                     parts_form.append(f"Intimation date on form {fd['intimation_date']:%d-%m-%Y} differs from the app ({a_int:%d-%m-%Y}).")
-                    flag("Form date differs from app", None)
+                    flag("Form date differs from app", "partial")
                 seq = [fd[k] for k in ("sow_date", "loss_date", "intimation_date", "inspection_date") if fd[k]]
                 if any(b < a for a, b in zip(seq, seq[1:])):
                     parts_form.append("Dates on the form are not in the usual order (sowing, loss, intimation, inspection).")
-                    flag("Form dates out of order", None)
+                    flag("Form dates out of order", "partial")
             # The primary worker and the block officer almost never sign (officer: 0 of 149 labelled forms; worker: ~17%), so their
             # absence is informational only. A missing FARMER or COMPANY signature is what needs a review.
             core_missing = [m for m in missing if m in ("farmer", "company", "insurance company", "agriculture supervisor (AAO)")]
             if core_missing:
-                flag("Signature missing", "review", "signature missing: " + ", ".join(core_missing))
+                flag("Signature missing", None, "signature missing: " + ", ".join(core_missing))   # user's rule: noted in the remark, verdict stays OK
             if form.get("officer_stamp_only"):
                 parts_form.append("Block officer block has a rubber stamp only (not a signature).")
                 flag("Officer stamp only", "review")
@@ -568,10 +568,10 @@ def evaluate(row, form=None, photos=None, gps=None, data_flags="", risk=None):
         verdict = "Manual QC Required"
     elif severity["review"]:
         verdict = "Review"
-    elif flags:
+    elif severity["partial"]:
         verdict = "Partially OK"
     else:
-        verdict = "OK"
+        verdict = "OK"          # informational findings (same spot, signature missing, ...) only go into the remark
     evidence_failed = fstate in ("no_link", "not_found", "error") or pstate in ("no_link", "not_found", "error")
     if evidence_failed or severity["manual"] or severity["reject"] or (conf_form is not None and conf_form < C.LOW_CONFIDENCE_THRESHOLD) or \
             (form and fstate == "ok" and form.get("is_proforma3") is False):
