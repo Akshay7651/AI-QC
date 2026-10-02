@@ -168,14 +168,29 @@ def main():
     mp = a.init_model
     D.CELL_MODEL_PATH = mp
     D._CELL = None
-    before = evaluate(hold, lab, 0.85)
+    import json
+    bf = os.path.join(HERE, "data", "raj_before.json")          # cached: the cloud machine restarts every few minutes
+    if os.path.exists(bf):
+        before = json.load(open(bf))
+    else:
+        before = evaluate(hold, lab, 0.85)
+        json.dump(before, open(bf, "w"))
     print("CURRENT model on Rajasthan hold-out:", before, flush=True)
     for rnd in range(a.rounds):
-        sel = select_rows(train_ids, lab)
-        good = sum(1 for v in sel.values() if v[1] >= a.min_score)
-        print(f"round {rnd + 1}: {good} of {len(train_ids)} forms have a compatible row (score >= {a.min_score}); row index counts:",
-              np.bincount([v[0] for v in sel.values() if v[1] >= a.min_score], minlength=10).tolist(), flush=True)
-        Xr, yr, _ = build_dataset(train_ids, lab, sel, a.min_score)
+        dsf = os.path.join(HERE, "data", f"raj_ds_round{rnd + 1}.npz")
+        if os.path.exists(dsf):
+            try:
+                z = np.load(dsf); Xr, yr = z["X"], z["y"]
+                print(f"round {rnd + 1}: dataset loaded from {dsf}", flush=True)
+            except Exception:     # noqa: BLE001
+                os.remove(dsf)
+        if not os.path.exists(dsf):
+            sel = select_rows(train_ids, lab)
+            good = sum(1 for v in sel.values() if v[1] >= a.min_score)
+            print(f"round {rnd + 1}: {good} of {len(train_ids)} forms have a compatible row (score >= {a.min_score}); row index counts:",
+                  np.bincount([v[0] for v in sel.values() if v[1] >= a.min_score], minlength=10).tolist(), flush=True)
+            Xr, yr, _ = build_dataset(train_ids, lab, sel, a.min_score)
+            np.savez(dsf + ".tmp.npz", X=Xr, y=yr); os.replace(dsf + ".tmp.npz", dsf)
         print("  Rajasthan cells", len(yr), "class counts", np.bincount(yr, minlength=len(CLASSES)).tolist(), flush=True)
         net = TC.make_net()
         zz = np.load(mp)
@@ -211,7 +226,7 @@ def main():
                 ih = torch.randint(0, len(yh), (64 - nr,))
                 xb, yb = torch.cat([xb, Xh[ih]]), torch.cat([yb, yh[ih]])
             opt.zero_grad(); l = lossf(net(TC.augment(xb)), yb); l.backward(); opt.step(); sched.step()
-            if (s + 1) % 250 == 0:
+            if (s + 1) % 100 == 0:
                 torch.save({"net": net.state_dict(), "opt": opt.state_dict(), "sched": sched.state_dict(), "step": s + 1, "steps": a.steps, "n": len(yt)}, ck)
             if (s + 1) % 500 == 0:
                 print(f"  step {s + 1} loss {l.item():.3f} ({time.time() - t0:.0f}s)", flush=True)
