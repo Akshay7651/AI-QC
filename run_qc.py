@@ -278,12 +278,12 @@ QC_BLOCK = [
     "Duplicate photos (n)", "Photos rotated (Yes/No)", *(["Photo GPS distance (m)"] if C.USE_PHOTO_GPS else []), "Photos analysed (n)",
     "Photo scene type", "Crop present in photo", "Crop seen in photo", "Crop matches declared", "Flooding/waterlogging seen",
     "Crop damage state",
-    C.COL_FARMER_PHOTO, "Farmer/person present in photos (remark)", "Farmer photo detail", C.COL_PHOTO_LOSS, "AI_Flags", "Same Location Remark", C.COL_OTHER_REMARKS, "AI Technical Detail", "AI Engine",
+    C.COL_FARMER_PHOTO, "Farmer/person present in photos (remark)", "Farmer photo detail", C.COL_PHOTO_LOSS, "AI_Flags", "Same Location Remark", C.COL_OTHER_REMARKS, C.COL_AI_REMARK, "AI Technical Detail", "AI Engine",
 ]
 # columns written by the AI get the green colour in the Excel; everything that came with the input stays blue
 report.AI_COLS = set(QC_BLOCK) | {"Data_QC_Flags", "Nearby_Same_Surveyor_25m", "Nearby_Any_Surveyor_25m", "Records_On_Same_Field", "Group_ID",
                                   "Cluster_Size", "Suggested_Remark", "Suggest_%", "Same_Location_Remark", "Risk_Score", "Risk_Reasons"}
-_AI_PREFIX = ("OK:", "REJECT-EVIDENCE:", "MANUAL-CHECK:", "REVIEW:", "FORM:", "PHOTOS:", "GPS:", "DATA:", "RISK ")
+_AI_PREFIX = ("OK", "PARTIALLY OK", "REVIEW", "MANUAL QC REQUIRED", "FORM:", "PHOTOS:", "GPS:", "DATA:", "RISK ")
 
 
 def _yn(v):
@@ -402,6 +402,8 @@ def _fill_blanks(cols, R):
                     v = "NA (photo is the paper form)"
             elif c in ("AI_Flags", "Same Location Remark"):
                 v = "None"
+            elif c == C.COL_AI_REMARK:
+                v = "Not processed"
             else:
                 v = "Not available"
             cols[c][i] = v
@@ -426,7 +428,8 @@ def assemble_local(df, results, keys):
         put("QC Verdict", r.get("verdict"))
         put("AI_Confidence", r.get("confidence"))
         put("AI_Flags", ", ".join(r.get("flags") or []))
-        put(C.COL_OTHER_REMARKS, r.get("remark"))
+        put(C.COL_OTHER_REMARKS, r.get("remark_detail"))
+        put(C.COL_AI_REMARK, r.get("remark"))
         put("AI Technical Detail", r.get("remark_detail"))
         put("Same Location Remark", _nn(slr[i]) if slr is not None else None)
         put("AI Engine", r.get("engine"))
@@ -435,8 +438,8 @@ def assemble_local(df, results, keys):
             put(C.COL_MATCH, r.get("match") or "NA")
         if fok:
             ok3 = f.get("is_proforma3") is not False
-            put("Form No", f.get("form_no") if ok3 else None)
-            put("PO ID matches docket", _yn(f.get("po_id_matches")) if ok3 else None)
+            put("Form No", f.get("form_no") if (ok3 and f.get("form_no")) else "Can't Read")
+            put("PO ID matches docket", _yn(f.get("po_id_matches")) if ok3 else "Can't Read")
             fa_v = _nn(r.get("form_area"))
             fl_v = _nn(r.get("form_loss"))
             put(C.COL_FORM_AREA, fa_v if fa_v is not None else "Not readable")
@@ -459,8 +462,11 @@ def assemble_local(df, results, keys):
             put(C.COL_FORM_REMARKS, "; ".join(str(x) for x in (f.get("notes") or [])) or "No remarks")
         elif r is not None and not fok:
             fst = f.get("_state", "not_found") if f else "not_found"
-            put(C.COL_FORM_AREA, "N/A (form not found)" if fst in ("not_found", "no_link") else "Not readable")
-            put(C.COL_FORM_LOSS, "N/A (form not found)" if fst in ("not_found", "no_link") else "Not readable")
+            why = "N/A (form not found)" if fst in ("not_found", "no_link") else "Not readable"
+            put("Form No", why)
+            put("PO ID matches docket", why)
+            put(C.COL_FORM_AREA, why)
+            put(C.COL_FORM_LOSS, why)
             put(C.COL_MATCH, "NA")
             put(C.COL_SURVEYOR_SIG, "N/A")
             put(C.COL_FARMER_SIG, "N/A")
@@ -501,7 +507,7 @@ def assemble_local(df, results, keys):
                 keep = old.map(lambda v: isinstance(v, str) and v.strip() != "" and not v.strip().upper().startswith(_AI_PREFIX))
                 new = new.where(~(keep & has), new.astype(str) + " | INPUT REMARK: " + old.astype(str))
             new = new.where(has, old)
-            if c not in ("QC Verdict", "AI_Confidence", "AI_Flags", "AI Engine", "AI Technical Detail", C.COL_OTHER_REMARKS):
+            if c not in ("QC Verdict", "AI_Confidence", "AI_Flags", "AI Engine", "AI Technical Detail", C.COL_OTHER_REMARKS, C.COL_AI_REMARK):
                 new = new.where(new.notna() | ~has, old)
         elif c == "AI_Flags":
             new = new.where(has, "")
