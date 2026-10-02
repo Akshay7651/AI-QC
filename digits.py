@@ -13,7 +13,7 @@ from PIL import Image
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 MODEL_PATH = os.path.join(HERE, "models", "digits_cnn.npz")
-CELL_MODEL_PATH = os.path.join(HERE, "models", "cells_cnn.npz")
+CELL_MODEL_PATH = os.environ.get("CELL_MODEL_PATH") or os.path.join(HERE, "models", "cells_cnn.npz")
 CELL_VALUES = ["EMPTY"] + [str(v) for v in range(0, 101, 5)] + ["OTHER"]
 # classes: 0-9 digits, 10 '.', 11 '%'/slash/other trailing mark, 12 junk
 CLASSES = list("0123456789") + [".", "%", "#"]

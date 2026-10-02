@@ -27,3 +27,9 @@ Rajasthan (National Insurance Company Ltd, Jaipur Regional Office): printed head
  tehsil, district, farmer id, loss date, intimation date), 3 handwritten lines (harvest date, cause, committee inspection date) ->
  table of 9 columns (no, application id, DOCKET ID, crop, khasra, khata, insured area ha, AFFECTED AREA %, LOSS %), 10 rows, NO total row, several dockets may share a form
  -> cause of loss, remarks -> signatures: farmer | insurance company TC/DC | agriculture supervisor / AAO (with stamp).
+
+## Result of Rajasthan training run (2026-10-02, new geometry)
+`train_raj.py` (2 rounds x 3000 steps, 1213 train / 213 hold-out forms) -> models/cells_raj_new.npz (not committed, NOT adopted).
+Blind compare on the same 213 hold-out forms: baseline Haryana model 28.2% coverage / 100% precision (8 of 84 non-zero forms stated);
+new model 9.9% coverage / 100% precision (9 of 84 non-zero). Coverage is worse, so models/cells_cnn.npz is unchanged.
+Note: the cloud machine only runs while a turn is active; long jobs stall between keeper ticks (stay in a turn that waits).
