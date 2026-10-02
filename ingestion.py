@@ -86,7 +86,7 @@ def load(src: str) -> pd.DataFrame:
     _TEMPLATE_MARKERS = {"text box", "dropdown", "calendar", "5% interval"}
     if len(df) and df.shape[1] > 20:
         r0 = df.iloc[0].astype(str).str.lower().str.strip()
-        if sum(any(m in v for m in _TEMPLATE_MARKERS) for v in r0) >= 3:
+        if sum(isinstance(v, str) and any(m in v for m in _TEMPLATE_MARKERS) for v in r0) >= 3:   # pandas 3 keeps NaN as NaN after astype(str)
             df = df.iloc[1:].reset_index(drop=True)
     if "docket_id" in df:  # numeric cells read as text can carry a trailing '.0' or leading apostrophe (Excel text prefix)
         df["docket_id"] = df["docket_id"].map(lambda v: re.sub(r"\.0+$", "", v.strip().lstrip("'")) if isinstance(v, str) else v)

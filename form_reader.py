@@ -353,8 +353,8 @@ FORMNO_GATE = 0.9   # >=3 agreeing OCR passes (see _ocr_formno)
 CELL_BLANK_INK = 0.006
 # Handwritten area/loss values are only asserted when the cell model's confidence is >= CELL_GATE.
 # Retrained model (human disputed-case labels), 114 never-trained forms: gate 0.7 -> 96.9% precision, 71% of cells answered (non-zero answered: 95% right).
-# Lowered to 0.30 to increase coverage: most PMFBY forms have 0/0 values (simple digits) -> precision stays high.
-CELL_GATE = 0.30
+# 0.30 (tried on 2026-10-02) let "00%" be read as 20..80 on ~9% of forms (12 of 130 checked by eye, all false mismatches): back to 0.85.
+CELL_GATE = 0.85
 # Dates: sequence reader (date_reader.py: CNN+BiGRU+CTC, numpy). Switched on only when its measured precision-at-gate is >=95%
 # per field on held-out forms (see docs / train_dates.py --eval); False = dates stay None ("not readable").
 # Measured on held-out forms (precision when answered / coverage): loss date 95-97% / 45-62% -> ON with a strict gate;
@@ -674,6 +674,17 @@ def read_form(path_or_pil, docket=None, debug=False):
                     out[key] = None
                     low.append(which + rr)
                     break
+    # ---- row 1 and the total row normally carry the same value (one field per form): if both were read and disagree,
+    # one of them is a misread - withhold both rather than report a wrong value
+    # (compared on the raw readings, before the gate: a confident misread of one cell is caught by the other cell)
+    first = next((rr for rr in ("r1", "r2") if not (cells["area_" + rr]["blank"] and cells["loss_" + rr]["blank"])), None)
+    for tk, rk, kind in (("form_area", "row_area", "area"), ("form_loss", "row_loss", "loss")):
+        tv = None if cells[kind + "_tot"]["blank"] else cells[kind + "_tot"]["value"]
+        rv = None if first is None or cells[f"{kind}_{first}"]["blank"] else cells[f"{kind}_{first}"]["value"]
+        if tv is not None and rv is not None and abs(float(tv) - float(rv)) > 0.01:
+            notes.append(f"{kind}: total row reads {tv:g} but row {first[1]} reads {rv:g} - verify manually")
+            out[tk] = out[rk] = None
+            low.append(kind + "_disagree")
     if low:
         notes.append("handwritten area/loss not confidently readable (" + ", ".join(low) + ") - verify manually")
     out["cells_low_conf"] = bool(low)
