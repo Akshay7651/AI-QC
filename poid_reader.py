@@ -13,7 +13,7 @@ import date_reader as DR
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 MODEL_PATH = os.path.join(HERE, "models", "poid_crnn.npz")
-CONF_GATE = 0.8          # below this the PO ID is reported as "Can't Read"; set from the hold-out measurement
+CONF_GATE = 0.9          # hold-out (526 forms): 37% answered; 87% equal the docket exactly - most of the rest are forms where the surveyor wrote another number (checked by eye)
 _M = None
 IH, IW = 48, 512          # twice the date reader's width: 18 handwritten digits need the resolution
 

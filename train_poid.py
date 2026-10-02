@@ -27,6 +27,19 @@ CROPS = os.path.join(ROOT, "data", "poid_crops.pkl")
 OUT = os.path.join(ROOT, "models", "poid_crnn.npz")
 
 
+def synth_items(n, seed=0):
+    """random 18-digit numbers (mostly with the real 0401062600 prefix, some fully random): they teach the reader to look at
+    every digit instead of guessing the tail from the prefix"""
+    rng = np.random.default_rng(seed)
+    out = []
+    for _ in range(n):
+        tail = "".join(str(int(x)) for x in rng.integers(0, 10, 8))
+        head = "0401062600" if rng.random() < 0.7 else "".join(str(int(x)) for x in rng.integers(0, 10, 10))
+        txt = head + tail
+        out.append({"docket": "synth", "text": txt, "tgt": [int(c) + 1 for c in txt], "synthetic": True})
+    return out
+
+
 def holdout(d):
     return int(hashlib.md5(d.encode()).hexdigest(), 16) % 10 == 0
 
@@ -58,7 +71,10 @@ class DS:
         import torch
         it = self.items[i]
         rng = np.random.default_rng((i * 7919 + int(time.time() * 1000)) % (2 ** 32))
-        g = TD.augment(it["crop"], rng, trim=False) if self.aug else it["crop"]
+        if it.get("synthetic"):                          # handwritten MNIST digits, new glyphs every time it is drawn
+            g = TD.augment(TD.render_synth(it, rng), rng, trim=False)
+        else:
+            g = TD.augment(it["crop"], rng, trim=False) if self.aug else it["crop"]
         return torch.from_numpy(PR.prep(g))[None], i
 
 
@@ -85,7 +101,7 @@ def train(net, items, epochs, lr, bs=32, log=print):
             opt.zero_grad(); loss.backward(); torch.nn.utils.clip_grad_norm_(net.parameters(), 5.0); opt.step(); sched.step()
             tot += float(loss.detach()) * len(idx); n += len(idx)
         log("epoch %d/%d loss %.3f  %.0fs" % (ep + 1, epochs, tot / max(n, 1), time.time() - t0))
-        export(net, OUT + ".partial")
+        export(net, OUT.replace(".npz", "_partial.npz"))
     return net
 
 
@@ -125,6 +141,7 @@ def main():
     ap.add_argument("--lr", type=float, default=2e-3)
     ap.add_argument("--round2", action="store_true")
     ap.add_argument("--eval", action="store_true")
+    ap.add_argument("--synth", type=int, default=0, help="add N synthetic handwritten numbers to the training set")
     a = ap.parse_args()
     import torch
     torch.set_num_threads(4)
@@ -133,9 +150,13 @@ def main():
     if a.eval:
         evaluate(ho)
         return
+    if a.synth:
+        tr = tr + synth_items(a.synth)
+        print(f"+ {a.synth} synthetic numbers", flush=True)
     net = TD.make_model()
     if a.round2 and os.path.exists(OUT):
         TD.load_npz(net, OUT)
+        tr = [x for x in tr if not x.get("synthetic")]
         L = losses(net, tr)
         keep = L <= np.percentile(L, 85)
         tr = [x for x, k in zip(tr, keep) if k]

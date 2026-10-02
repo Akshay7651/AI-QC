@@ -632,11 +632,26 @@ def read_form(path_or_pil, docket=None, debug=False):
     # ---- PO ID
     if "po_id" in B and P.crop(r, B["po_id"]).size:
         po, pcf, pm, pinfo = read_po_id(P.crop(r, B["po_id"]), docket)
-        # PO-ID handwriting reading does not work yet (0 of 337 forms read fully): never assert a match or a mismatch.
+        # the old digit-segmentation reader did not work (0 of 337 forms read fully): it is only used for the 'blank' check.
         out["po_id"], out["po_id_matches"] = None, None
-        fc["po_id"] = round(float(pcf), 3)
+        fc["po_id"] = 0.0
         if pinfo.get("blank"):
             notes.append("PO ID field appears blank")
+        else:
+            try:                                                   # sequence reader (poid_reader.py, train_poid.py)
+                import poid_reader as PR
+                if PR.available():
+                    wbox, bh = PR.window_box({"boxes": B, "rgb": r})
+                    line = PR.find_line(P.crop(r, wbox), bh)
+                    if line is not None:
+                        pr = PR.read_po_id(line)
+                        fc["po_id"] = round(pr["conf"], 3)
+                        if pr["conf"] >= PR.CONF_GATE and len(pr["text"]) >= 10:
+                            out["po_id"] = pr["text"]
+                            if docket:
+                                out["po_id_matches"] = (pr["text"] == docket)
+            except Exception as e:     # noqa: BLE001
+                notes.append("PO ID reading failed: %s" % type(e).__name__)
         # (PO-ID stroke-count overwrite rule disabled: it fired on ~55% of forms because PO-ID segmentation is unreliable)
     # ---- table cells
     cells = {}
