@@ -148,38 +148,38 @@ _SHORT_TAG = {
     "Photo link missing": "Photo Link Missing",
     "Form not found": "Form Not Found",
     "Photos not found": "Photos Not Found",
-    "Not Proforma-3": "Not Proforma-3",
-    "Form not readable": "Form Not Readable",
-    "Low confidence - manual review": "Low Confidence",
+    "Not Proforma-3": "Not Proforma-3 (Wrong Document)",
+    "Form not readable": "Form Not Readable (Handwriting Unclear)",
+    "Low confidence - manual review": "Low Confidence (Verify Manually)",
     "Signature missing": "Signature Missing",
-    "Photo is form image": "No Field Photo",
-    "Photo not of the field": "No Field Photo",
-    "Field state vs reported loss": "Loss Mismatch",
-    "Crop mismatch": "Crop Mismatch",
-    "Form vs app mismatch": "Form-App Mismatch",
-    "Flooding seen": "Flooding",
-    "Photo GPS mismatch": "GPS Mismatch",
-    "Photo date outside survey period": "Photo Date Mismatch",
+    "Photo is form image": "Form Image Uploaded Instead of Field Photo",
+    "Photo not of the field": "Wrong Photo (Not a Field Photo)",
+    "Field state vs reported loss": "Photo vs Reported Loss Mismatch",
+    "Crop mismatch": "Crop in Photo Differs from Declared Crop",
+    "Form vs app mismatch": "Form & App Values Mismatch",
+    "Flooding seen": "Flooding Visible in Photo",
+    "Photo GPS mismatch": "Photo Location Differs from App GPS",
+    "Photo date outside survey period": "Photo Date Outside Survey Period",
     "Same location": "Same Location",
-    "Same app entry at same spot": "Same Location (Copied Entry)",
-    "GPS cluster": "Same Location",
-    "Overwriting": "Overwrite on Form",
+    "Same app entry at same spot": "Same Location (Possible Copied Entry)",
+    "GPS cluster": "Multiple Surveys at Same Spot",
+    "Overwriting": "Overwriting Detected on Form",
 }
 
 def _plain(row, form, photos, gps, flags, verdict, ev):
     tags = []
     for f in flags:
         if f.startswith("Data: "):
-            tags.append("Data Issue")
+            tags.append("Data Issue (" + f[6:] + ")")
         elif f.startswith("High risk score"):
-            tags.append("High Risk")
+            tags.append("High Risk Score")
         elif f in _SHORT_TAG:
             tags.append(_SHORT_TAG[f])
         elif f not in ("Internal error",):
             tags.append(f)
     fa, fl, m = ev.get("form_area"), ev.get("form_loss"), ev.get("match")
-    if m == "Mismatch" and "Form-App Mismatch" not in tags:
-        tags.append("Form-App Mismatch")
+    if m == "Mismatch" and "Form & App Values Mismatch" not in tags:
+        tags.append("Form & App Values Mismatch")
     tags = list(dict.fromkeys(tags))
     if not tags:
         return verdict
