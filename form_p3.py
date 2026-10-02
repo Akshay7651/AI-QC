@@ -37,9 +37,25 @@ def load_image(src, hw=HW):
         p = str(src)
         if p.lower().endswith(".pdf"):
             import pymupdf
+            im = None
             with pymupdf.open(p) as d:
                 pg = d[0]
-                im = Image.open(io.BytesIO(pg.get_pixmap(dpi=int(72 * hw / pg.rect.width)).tobytes("png")))
+                # a scanned/photographed form is one JPEG filling the page: use that photo itself (same pixels the readers were
+                # trained on) instead of re-rendering the page, which resamples it and costs area/loss/PO ID reads
+                imgs = pg.get_images(full=True)
+                if len(imgs) == 1 and not pg.rotation:
+                    try:
+                        bb = pg.get_image_bbox(imgs[0][7])
+                        if bb.width >= 0.9 * pg.rect.width and bb.height >= 0.9 * pg.rect.height:
+                            im = Image.open(io.BytesIO(d.extract_image(imgs[0][0])["image"]))
+                            if im.width / im.height > 1.0 + 1e-6 and bb.width / bb.height < 1.0:    # stored sideways
+                                im = None
+                            elif im.format == "JPEG":
+                                im.draft("RGB", (hw, hw))
+                    except Exception:     # noqa: BLE001
+                        im = None
+                if im is None:
+                    im = Image.open(io.BytesIO(pg.get_pixmap(dpi=int(72 * hw / pg.rect.width)).tobytes("png")))
         else:
             im = Image.open(p)
             try:

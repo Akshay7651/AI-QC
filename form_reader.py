@@ -139,7 +139,7 @@ def _formno_scan(r):
     return f, conf, "", note
 
 
-def _barcode_formno(rgb):
+def _barcode_formno(rgb, lay=None):
     """form number (HR0126xxxxxx) decoded from the printed Code-128 barcode with zxing-cpp; None when it does not decode or the
     library is not installed (pip install zxing-cpp)."""
     try:
@@ -152,13 +152,60 @@ def _barcode_formno(rgb):
     tries = (g, cv2.rotate(g, cv2.ROTATE_180), cv2.resize(top, None, fx=1.5, fy=1.5, interpolation=cv2.INTER_CUBIC),
              cv2.resize(top, None, fx=2.0, fy=2.0, interpolation=cv2.INTER_CUBIC), cv2.createCLAHE(3.0, (8, 8)).apply(g))
     for x in tries:
-        try:
-            for res in zxingcpp.read_barcodes(x):
-                t = (res.text or "").strip().upper()
-                if re.fullmatch(r"HR\d{10}", t):
-                    return t
-        except Exception:     # noqa: BLE001
-            return None
+        t = _zx(zxingcpp, x)
+        if t:
+            return t
+    return _barcode_located(zxingcpp, g, lay) if lay is not None else None
+
+
+def _zx(zxingcpp, x, **kw):
+    try:
+        for res in zxingcpp.read_barcodes(x, **kw):
+            t = (res.text or "").strip().upper()
+            if re.fullmatch(r"HR\d{10}", t):
+                return t
+    except Exception:     # noqa: BLE001
+        return None
+    return None
+
+
+def _barcode_located(zxingcpp, g, lay):
+    """second try: find the bars first (OpenCV detector quad -> rectified; vertical-bar energy box), crop them with a quiet zone,
+    upscale x1/x2/x3 and decode with three binarizers (+ Otsu). Measured on 100 user forms: 16 -> 23 decoded."""
+    tries = []
+    try:
+        q = P.find_barcode_quad(lay["rgb"], lay) if lay.get("ok") else None
+    except Exception:     # noqa: BLE001
+        q = None
+    if q is not None:
+        p0, p1, p2, p3 = q
+        d, ex = p0 - p1, (p3 - p0) * 0.08
+        src = np.float32([p1 - 0.3 * d - ex, p2 - 0.3 * d + ex, p3 + 0.3 * d + ex, p0 + 0.3 * d - ex])
+        bw, bh = np.linalg.norm(p3 - p0), np.linalg.norm(d)
+        for s in (1.0, 2.0, 3.0):
+            wd, hd = int(bw * 1.16 * s), int(bh * 1.6 * s)
+            M = cv2.getPerspectiveTransform(src, np.float32([[0, 0], [wd, 0], [wd, hd], [0, hd]]))
+            tries.append(cv2.warpPerspective(g, M, (wd, hd), flags=cv2.INTER_CUBIC, borderMode=cv2.BORDER_REPLICATE))
+    h, w = g.shape
+    top = g[: int(h * 0.45), int(w * 0.3):]
+    p = lay["tab"]["p"] * lay["scale"] if lay.get("ok") else 30
+    bb = _bar_bbox(top, max(9, int(1.3 * p)), hmin=int(0.3 * p), hmax=int(3 * p))
+    if bb:
+        x0, y0, x1, y1, _ = bb
+        bh, bw = y1 - y0, x1 - x0
+        c = top[max(0, y0 - int(0.4 * bh)): y1 + int(0.4 * bh), max(0, x0 - int(0.1 * bw)): x1 + int(0.1 * bw)]
+        if c.size:
+            tries += [cv2.resize(c, None, fx=s, fy=s, interpolation=cv2.INTER_CUBIC) for s in (1.0, 2.0, 3.0)]
+    B = zxingcpp.Binarizer
+    for t in tries:
+        for b in (B.LocalAverage, B.GlobalHistogram, B.FixedThreshold):
+            v = _zx(zxingcpp, t, binarizer=b, formats=zxingcpp.BarcodeFormat.Code128)
+            if v:
+                return v
+        _, bn = cv2.threshold(cv2.GaussianBlur(t, (3, 3), 0), 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+        v = _zx(zxingcpp, bn, formats=zxingcpp.BarcodeFormat.Code128)
+        if v:
+            return v
     return None
 
 
@@ -637,7 +684,7 @@ def read_form(path_or_pil, docket=None, debug=False):
         out["quality"] = "cropped" if out["quality"] == "good" else out["quality"]
         notes.append("table touches the image border (page may be cropped)")
     # ---- FORM NO: decode the Code-128 barcode first (exact when it decodes, ~50% of photos); printed-number OCR as fallback
-    bc = _barcode_formno(r)
+    bc = _barcode_formno(r, lay)
     if bc:
         fn, fcf, raw, note = bc, 1.0, bc, None
     else:

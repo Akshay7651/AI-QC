@@ -472,6 +472,10 @@ def assemble_local(df, results, keys):
             put("PO ID matches docket", _yn(f.get("po_id_matches")) if ok3 else "Can't Read")
             fa_v = _nn(r.get("form_area"))
             fl_v = _nn(r.get("form_loss"))
+            if ok3:
+                # the remark pairs area+loss; a single confidently-read value is still shown in its own column
+                fa_v = fa_v if fa_v is not None else _nn(f.get("form_area"))
+                fl_v = fl_v if fl_v is not None else _nn(f.get("form_loss"))
             put(C.COL_FORM_AREA, fa_v if fa_v is not None else ("Mentioned but can't read" if f.get("area_written", True) else "Blank on form"))
             put(C.COL_FORM_LOSS, fl_v if fl_v is not None else ("Mentioned but can't read" if f.get("loss_written", True) else "Blank on form"))
             put("Form Row Area %", _nn(f.get("row_area")))
