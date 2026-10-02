@@ -54,15 +54,16 @@ def _cache_one(docket):
     f = os.path.join(CACHE, docket + ".npz")
     if os.path.exists(f):
         return docket, True
+    if os.path.exists(f + ".fail"):               # geometry already failed once: do not re-analyse on every restart
+        return docket, False
     p = os.path.join(FORMS, docket + ".jpg")
     if not os.path.exists(p):
         return docket, False
     try:
         lay = P.analyse_layout(P.load_image(p))
-        if not lay["ok"]:
-            return docket, False
-        cr = R.cell_crops(lay)
+        cr = R.cell_crops(lay) if lay["ok"] else None
         if cr is None:
+            open(f + ".fail", "w").close()
             return docket, False
         crops, _ = cr
         X = np.stack([np.stack([D.cell_image(a), D.cell_image(b)]) for a, b in crops])      # (10, 2, 64, 192)
