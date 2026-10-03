@@ -89,7 +89,7 @@ def parse_args(argv=None):
     if a.checkpoint is None:
         a.checkpoint = "output/checkpoint.json" if a.offset is None else f"output/checkpoint_off{a.offset}.json"
     if a.workers is not None:
-        a.workers = max(1, min(a.workers, 20))
+        a.workers = max(1, min(a.workers, 32))      # 32 worker processes max (each loads the readers ~0.3-0.5 GB RAM)
     if not a.output:
         a.output = "output/qc_output.xlsx" if a.input.startswith(("http://", "https://")) \
             else str(Path(a.input).with_suffix("")) + "_QC.xlsx"

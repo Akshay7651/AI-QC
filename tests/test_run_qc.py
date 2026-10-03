@@ -24,7 +24,7 @@ def read(out="out/o.xlsx"):
 
 def test_parse_args_defaults():
     a = run_qc.parse_args(["--input", "/x/y.xlsx", "--workers", "99"])
-    assert os.path.normpath(a.output) == os.path.normpath("/x/y_QC.xlsx") and a.workers == 20
+    assert os.path.normpath(a.output) == os.path.normpath("/x/y_QC.xlsx") and a.workers == 32
     assert run_qc.parse_args(["--input", "https://d.invalid/f"]).output == "output/qc_output.xlsx"
 
 
