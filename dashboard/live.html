@@ -143,20 +143,20 @@ body{background:linear-gradient(180deg,#f3f7ff 0,#fbfcff 260px)!important;color:
 .chips#counters .chip{background:#f1f4fa;color:#1b2430;border:1px solid #dfe5f0}
 .chips#counters .chip.hot{background:#fde2ea;color:#a1124a;border-color:#f7b6c9}
 summary{color:#5b6573}
-#agents{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:10px}
-@media (max-width:900px){#agents{grid-template-columns:1fr}}
-.rolerow{margin:0;padding:8px 10px 10px;border-radius:14px;min-height:96px}
+#agents{display:flex;flex-direction:column;gap:8px;margin-top:10px}
+.rolerow{margin:0;padding:6px 10px;border-radius:14px;display:flex;align-items:center;gap:12px;min-height:58px}
+.rolerow .rolehd{flex:0 0 190px;display:flex;flex-direction:column;gap:4px}
+.rolerow .robots{flex:1;margin-top:0;flex-wrap:wrap}
 .rolerow.dl{background:#eef6ff;border:1px solid #c5ddfb}.rolerow.fr{background:#f7f0ff;border:1px solid #e0cdf7}.rolerow.ph{background:#fff6ea;border:1px solid #fbd9ad}
 .rolehead{box-shadow:none;font-size:13.5px}
-.rolecount{float:right;font-size:12px;font-weight:700;color:#4a5568;padding-top:4px}
-.rolerow .robots{margin-top:8px}
+.rolecount{font-size:12px;font-weight:700;color:#4a5568;padding-left:4px}
 .agent{background:#ffffff!important;color:#1b2430}
 .agent.appear{animation:popin2 .35s ease-out}
 @keyframes popin2{from{transform:scale(.6);opacity:0}}
 .agent.busy{box-shadow:0 0 0 2px #6ee7b7,0 2px 8px rgba(16,185,129,.25);animation:glow2 1.8s ease-in-out infinite}
 .agent.busy.appear{animation:popin2 .35s ease-out,glow2 1.8s ease-in-out .35s infinite}
 @keyframes glow2{50%{box-shadow:0 0 0 2px #fcd34d,0 2px 10px rgba(245,158,11,.3)}}
-.freebox{color:#7a8597;font-size:12.5px;padding:14px 4px;text-align:center}
+.freebox{color:#7a8597;font-size:12.5px;padding:4px}
 </style>
 </head>
 <body>
@@ -167,6 +167,7 @@ summary{color:#5b6573}
     <h1><span class="ai">&#129302;</span> <span id="title">CLAP AI QC - live run</span> &#10024;</h1>
     <span class="pill Offline" id="pill"><span class="dot"></span><span id="status">Connecting</span></span>
     <div class="kv"><span><b id="rows">0 / 0</b>rows</span><span><b id="rpm">0</b>rows/min</span><span><b id="eta">-</b>left</span><span><b id="elapsed">0s</b>elapsed</span><span><b id="errs">0</b>errors</span><span style="display:none"><b id="cost"></b></span></div>
+    <span class="kv"><span id="agentline" style="font-weight:700;color:#2b3a67"></span></span>
     <span class="note" id="upd"></span>
     <span class="note" id="outline"></span>
   </div>
@@ -250,10 +251,12 @@ function render(d){
   // one row per role (Downloader / Reader / Photo Analyst); inside a row the agents are numbered Agent 1, 2, ...
   // one panel (cell) per role; only the agents that are working are shown - a free agent disappears and comes back when it gets work
   var groups=[["&#128229; Downloader",function(a){return /Download/i.test(a.role)},"dl"],["&#129504; Reader",function(a){return !/Download|Photo/i.test(a.role)},"fr"],["&#128248; Photo Analyst",function(a){return /Photo/i.test(a.role)},"ph"]];
+  var cnt=function(re){return ag.filter(function(a){return re.test(a.role)}).length};
+  $("agentline").textContent="Agents: "+cnt(/Download/i)+" downloaders + "+ag.filter(function(a){return !/Download|Photo/i.test(a.role)}).length+" readers + "+cnt(/Photo/i)+" photo analysts";
   var nowShown={};
   $("agents").innerHTML=groups.map(function(gr){var m=ag.filter(gr[1]);if(!m.length)return "";
     var work=m.filter(function(a){return a.state!=="idle"}),nb=m.filter(function(a){return a.state==="busy"}).length;
-    return '<div class="rolerow '+gr[2]+'"><span class="rolehead '+gr[2]+'">'+gr[0]+'</span><span class="rolecount">'+nb+' working / '+m.length+' agents</span>'+
+    return '<div class="rolerow '+gr[2]+'"><div class="rolehd"><span class="rolehead '+gr[2]+'">'+gr[0]+'</span><span class="rolecount">'+nb+' working / '+m.length+' agents</span></div>'+
       '<div class="robots">'+(work.length?work.map(function(a){nowShown[a.id]=1;var h=card(a);return SHOWN[a.id]?h:h.replace('class="agent ','class="agent appear ')}).join(""):'<div class="freebox">&#128164; all '+m.length+' agents free - waiting for work</div>')+'</div></div>'}).join("");
   SHOWN=nowShown;
   var o=d.output||{};
