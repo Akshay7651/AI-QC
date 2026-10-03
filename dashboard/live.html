@@ -157,6 +157,50 @@ summary{color:#5b6573}
 .agent.busy.appear{animation:popin2 .35s ease-out,glow2 1.8s ease-in-out .35s infinite}
 @keyframes glow2{50%{box-shadow:0 0 0 2px #fcd34d,0 2px 10px rgba(245,158,11,.3)}}
 .freebox{color:#7a8597;font-size:12.5px;padding:4px}
+
+/* ---- Excel-like agent grid ---- */
+#agents{display:block!important;margin-top:10px}
+.xgrid{border:2px solid #7f8fa9;border-radius:6px;overflow:hidden;background:#fff}
+.xrow{display:flex;border-top:2px solid #7f8fa9}
+.xcells{flex:1;display:flex;flex-wrap:wrap;margin-right:-1px;margin-bottom:-1px;min-width:0}
+.xcells .xcell{flex:1 1 0;min-width:132px}
+.xrow:first-child{border-top:0}
+.xhead{flex:0 0 170px;display:flex;flex-direction:column;justify-content:center;gap:4px;padding:8px 10px;border-right:2px solid #7f8fa9;font-weight:800}
+.xrow.dl .xhead{background:#dbeafe;color:#1e3a8a}.xrow.fr .xhead{background:#ede1fb;color:#5b21b6}.xrow.ph .xhead{background:#ffe8c7;color:#8a4b00}
+.xname{font-size:15px}.xcount{font-size:12px;font-weight:700;opacity:.8}
+.xcell{position:relative;height:96px;border-right:1px solid #b9c3d3;border-bottom:1px solid #b9c3d3;padding:3px 6px;overflow:hidden;background:#fbfcfe}
+.xcell.busy.dl{background:#f1f7ff}.xcell.busy.fr{background:#f8f2ff}.xcell.busy.ph{background:#fff8ee}
+.xlab{font-size:11px;font-weight:800;color:#2b3a67}
+.xcell.idle .xlab{color:#a3adbd}
+.xdoc{position:absolute;left:6px;right:6px;bottom:15px;font:10.5px ui-monospace,Consolas,monospace;color:#4a5568;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.xtask{position:absolute;left:6px;right:6px;bottom:2px;font-size:10.5px;color:#5b6573;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.xcell.idle .xtask{color:#b0b8c6;font-style:italic}
+.stage{position:absolute;left:0;right:0;top:16px;height:44px}
+.walker{position:absolute;top:0;left:4px;width:34px;height:40px;display:none}
+.xcell.busy .walker,.xcell.starting .walker{display:block;animation-name:roamx,roamy;animation-timing-function:ease-in-out,ease-in-out;animation-iteration-count:infinite,infinite;animation-direction:alternate,alternate}
+@keyframes roamx{0%{left:2px}100%{left:calc(100% - 38px)}}
+@keyframes roamy{0%{top:0}50%{top:6px}100%{top:1px}}
+.bot{width:34px;height:40px;overflow:visible}
+.bot .b-head,.bot .b-body{stroke:#334;stroke-width:1.6}
+.bot .b-arm rect,.bot .b-leg rect{fill:#c7d2e4;stroke:#334;stroke-width:1.3}
+.bot .b-eye{fill:#5eead4}
+.bot .b-ant{fill:#94a3b8}
+.xcell.dl .b-head,.xcell.dl .b-body{fill:#93c5fd}.xcell.fr .b-head,.xcell.fr .b-body{fill:#c4b5fd}.xcell.ph .b-head,.xcell.ph .b-body{fill:#fdba74}
+.bot .b-core{fill:#e2e8f0}
+.xcell.busy .b-ant{animation:antblink .7s infinite alternate}
+@keyframes antblink{to{fill:#22c55e}}
+.xcell.busy .b-core{animation:core 1s infinite alternate}
+@keyframes core{to{fill:#facc15}}
+.xcell.busy .b-eye{animation:look 2.4s infinite;transform-box:fill-box;transform-origin:center}
+@keyframes look{0%,40%{transform:translateX(0)}50%,70%{transform:translateX(1.3px)}80%{transform:scaleY(.15)}85%,100%{transform:translateX(-1px)}}
+.xcell.busy .b-arm.l{animation:swing .45s infinite alternate;transform-box:fill-box;transform-origin:50% 0}
+.xcell.busy .b-arm.r{animation:swing .45s .22s infinite alternate-reverse;transform-box:fill-box;transform-origin:50% 0}
+@keyframes swing{from{transform:rotate(-30deg)}to{transform:rotate(30deg)}}
+.xcell.busy .b-leg.l{animation:step .45s infinite alternate;transform-box:fill-box;transform-origin:50% 0}
+.xcell.busy .b-leg.r{animation:step .45s .22s infinite alternate-reverse;transform-box:fill-box;transform-origin:50% 0}
+@keyframes step{from{transform:rotate(-18deg)}to{transform:rotate(18deg)}}
+.xcell.starting .walker{opacity:.6}
+.xcell.error,.xcell.dead{background:#fde2ea}
 </style>
 </head>
 <body>
@@ -203,6 +247,13 @@ var COUNTERS=[["form_not_found","Form not found",1],["missing_form_link","Missin
  ["form_unreadable","Form not readable",0],["not_proforma3","Not Proforma-3",0],["po_id_mismatch","PO ID mismatch",0],["gps_cluster","GPS cluster",0]];
 var VERD=[["OK","OK","ok"],["Partially OK","Partially OK","review"],["Review","Review","manual"],["Manual QC Required","Manual QC Required","reject"]];
 var lastOK=0,fails=0,openEv={},lastEvKey="";
+var BOT='<svg class="bot" viewBox="0 0 48 56"><line x1="24" y1="2" x2="24" y2="9" stroke="#334" stroke-width="2"/><circle class="b-ant" cx="24" cy="3" r="3"/>'+
+ '<rect class="b-head" x="9" y="9" width="30" height="20" rx="6"/><rect x="13" y="13" width="22" height="11" rx="5" fill="#1b2340"/>'+
+ '<circle class="b-eye" cx="19" cy="18.5" r="2.6"/><circle class="b-eye" cx="29" cy="18.5" r="2.6"/>'+
+ '<g class="b-arm l"><rect x="3" y="31" width="6" height="13" rx="3"/></g><g class="b-arm r"><rect x="39" y="31" width="6" height="13" rx="3"/></g>'+
+ '<rect class="b-body" x="11" y="30" width="26" height="17" rx="5"/><circle class="b-core" cx="24" cy="38.5" r="4"/>'+
+ '<g class="b-leg l"><rect x="15" y="46" width="6" height="9" rx="2.5"/></g><g class="b-leg r"><rect x="27" y="46" width="6" height="9" rx="2.5"/></g>'+
+ '<text class="b-tool" x="44" y="30" font-size="13" text-anchor="middle"></text></svg>';
 var ROBOT='<svg class="robot" viewBox="0 0 64 64"><line x1="32" y1="3" x2="32" y2="12" stroke="currentColor" stroke-width="2"/><circle class="ant" cx="32" cy="4" r="3" fill="var(--busy)"/>'+
  '<rect class="head" x="14" y="12" width="36" height="26" rx="7" stroke-width="2"/>'+
  '<rect class="eye" x="21" y="21" width="7" height="8" rx="2"/><rect class="eye" x="36" y="21" width="7" height="8" rx="2"/>'+
@@ -210,7 +261,7 @@ var ROBOT='<svg class="robot" viewBox="0 0 64 64"><line x1="32" y1="3" x2="32" y
  '<g class="arm l"><rect x="12" y="38" width="8" height="13" rx="3" fill="var(--chip)" stroke="currentColor" stroke-width="1.5"/></g>'+
  '<g class="arm r"><rect x="44" y="38" width="8" height="13" rx="3" fill="var(--chip)" stroke="currentColor" stroke-width="1.5"/></g>'+
  '<text x="32" y="63" font-size="11" text-anchor="middle">TOOL</text></svg>';
-var seq=0,ALL=[],SHOWN={};
+var seq=0,ALL=[],SHOWN={},GRID_SIG="";
 
 function esc(s){return String(s==null?"":s).replace(/[&<>"']/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]})}
 function dur(s){if(s==null)return "-";s=Math.round(s);var h=Math.floor(s/3600),m=Math.floor(s%3600/60),x=s%60;
@@ -240,25 +291,26 @@ function render(d){
   $("split").innerHTML=VERD.map(function(x){return '<i title="'+x[1]+'" style="width:'+(tot?100*(v[x[0]]||0)/tot:0)+'%;background:'+CO[x[0]]+'"></i>'}).join("");
   var ag=d.agents||[],busy=ag.filter(function(a){return a.state==="busy"}).length;
   $("agentnote").textContent="("+busy+" busy of "+ag.length+")";
-  function card(a){
-    var doing=a.state==="busy"?(/^form/.test(a.task||"")?"reading the form":/^photo/.test(a.task||"")?"checking the photos":/fetch/.test(a.task||"")?"downloading form + photos":esc(a.task||"working")):a.state==="idle"?"waiting for work":a.state==="starting"?"waking up (loading models)":esc(a.task||a.state);
-    var tool=/Download/i.test(a.role)?"&#128229;":/Photo/i.test(a.role)?"&#128248;":"&#129504;";
-    var emo=a.state==="busy"?(/Download/i.test(a.role)?"&#128229;":/Photo/i.test(a.role)?"&#128248;":"&#129504;"):a.state==="idle"?"&#128164;":a.state==="starting"?"&#128267;":(a.state==="error"||a.state==="dead")?"&#9888;&#65039;":"&#9881;&#65039;";
-    var rc=/Download/i.test(a.role)?"role-dl":/Photo/i.test(a.role)?"role-ph":"role-fr";
-    return '<div class="agent '+rc+' '+esc(a.state)+'">'+ROBOT.replace("TOOL",tool)+'<div class="body"><div class="role"><span>Agent '+esc(((a.role||"").match(/#(\d+)/)||[0,""])[1])+'</span><span class="st">'+esc(a.state)+(a.state==="idle"?'<span class="zzz">zzz</span>':'')+'</span></div>'+
-      '<div class="doc">'+(a.state==="busy"?esc(a.docket||""):"&nbsp;")+'</div><div class="note"><span class="emo">'+emo+'</span>'+doing+'</div>'+
-      '<div class="meta"><span>'+num(a.rows_done)+' done</span><span>'+(a.avg_sec?a.avg_sec+" s/row":"-")+'</span></div></div></div>'}
-  // one row per role (Downloader / Reader / Photo Analyst); inside a row the agents are numbered Agent 1, 2, ...
-  // one panel (cell) per role; only the agents that are working are shown - a free agent disappears and comes back when it gets work
+  // Excel-like grid: one bordered row per role, one fixed bordered cell per agent. A working agent's robot walks around inside its
+  // cell; a free agent's cell stays empty (the robot comes back when it gets work). Cells are updated in place so the walk is smooth.
   var groups=[["&#128229; Downloader",function(a){return /Download/i.test(a.role)},"dl"],["&#129504; Reader",function(a){return !/Download|Photo/i.test(a.role)},"fr"],["&#128248; Photo Analyst",function(a){return /Photo/i.test(a.role)},"ph"]];
   var cnt=function(re){return ag.filter(function(a){return re.test(a.role)}).length};
   $("agentline").textContent="Agents: "+cnt(/Download/i)+" downloaders + "+ag.filter(function(a){return !/Download|Photo/i.test(a.role)}).length+" readers + "+cnt(/Photo/i)+" photo analysts";
-  var nowShown={};
-  $("agents").innerHTML=groups.map(function(gr){var m=ag.filter(gr[1]);if(!m.length)return "";
-    var work=m.filter(function(a){return a.state!=="idle"}),nb=m.filter(function(a){return a.state==="busy"}).length;
-    return '<div class="rolerow '+gr[2]+'"><div class="rolehd"><span class="rolehead '+gr[2]+'">'+gr[0]+'</span><span class="rolecount">'+nb+' working / '+m.length+' agents</span></div>'+
-      '<div class="robots">'+(work.length?work.map(function(a){nowShown[a.id]=1;var h=card(a);return SHOWN[a.id]?h:h.replace('class="agent ','class="agent appear ')}).join(""):'<div class="freebox">&#128164; all '+m.length+' agents free - waiting for work</div>')+'</div></div>'}).join("");
-  SHOWN=nowShown;
+  var sig=ag.map(function(a){return a.id}).join(",");
+  if(sig!==GRID_SIG){GRID_SIG=sig;
+    $("agents").innerHTML='<div class="xgrid">'+groups.map(function(gr){var m=ag.filter(gr[1]);if(!m.length)return "";
+      return '<div class="xrow '+gr[2]+'"><div class="xhead"><div class="xname">'+gr[0]+'</div><div class="xcount" id="cnt_'+gr[2]+'"></div></div><div class="xcells">'+
+        m.map(function(a,i){var n=((a.role||"").match(/#(\d+)/)||[0,i+1])[1];
+          return '<div class="xcell" id="cell_'+esc(a.id)+'"><div class="xlab">Agent '+esc(n)+'</div><div class="stage"><div class="walker" style="animation-duration:'+(5+(i*1.7)%4).toFixed(1)+'s,'+(3.3+(i*1.3)%3).toFixed(1)+'s;animation-delay:-'+((i*0.9)%5).toFixed(1)+'s,-'+((i*0.7)%3).toFixed(1)+'s">'+BOT+'</div></div><div class="xdoc"></div><div class="xtask"></div></div>'}).join("")+'</div></div>'}).join("")+'</div>'}
+  groups.forEach(function(gr){var m=ag.filter(gr[1]);if(!m.length)return;
+    var nb=m.filter(function(a){return a.state==="busy"}).length,c=$("cnt_"+gr[2]);if(c)c.textContent=nb+" working / "+m.length;
+    m.forEach(function(a){var el=$("cell_"+a.id);if(!el)return;
+      var doing=a.state==="busy"?(/^form/.test(a.task||"")?"reading the form":/^photo/.test(a.task||"")?"checking the photos":/fetch/.test(a.task||"")?"downloading form + photos":(a.task||"working")):a.state==="starting"?"waking up":a.state==="idle"?"free":(a.task||a.state);
+      var cls="xcell "+gr[2]+" "+(a.state||"idle")+(a.state==="busy"&&/^photo/.test(a.task||"")?" t-ph":a.state==="busy"&&/^form/.test(a.task||"")?" t-fr":a.state==="busy"?" t-dl":"");
+      if(el.className!==cls)el.className=cls;
+      var dk=a.state==="busy"?(a.docket||""):"";
+      var tl=a.state!=="busy"?"":/^photo/.test(a.task||"")?"\u{1F4F8}":/^form/.test(a.task||"")?"\u{1F9E0}":"\u{1F4E5}",te=el.querySelector(".b-tool");if(te&&te.textContent!==tl)te.textContent=tl;
+      var dd=el.children[2],tt=el.children[3];if(dd.textContent!==dk)dd.textContent=dk;if(tt.textContent!==doing)tt.textContent=doing})});
   var o=d.output||{};
   $("outpath").textContent=o.path||"-";
   $("outsaved").textContent=o.last_saved?o.last_saved+"  ("+num(o.rows_saved)+" rows written)":"not saved yet (first autosave after the set interval)";
