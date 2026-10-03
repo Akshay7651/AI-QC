@@ -527,10 +527,10 @@ def evaluate(row, form=None, photos=None, gps=None, data_flags="", risk=None):
     onf = int(_num(gps.get("Records_On_Same_Field")) or 0)
     dmg = _num(row.get("total_damage_pct"))
     if same_txt:
-        flag("Same location", None)       # same location is informational only — noted in remark, never drives the verdict
+        flag("Same location", "review")   # user's rule (2026-10-03): several surveys at the same spot -> Review
     sv_txt = str(gps.get("Same_Location_Values") or "")
     if "possible copied entry" in sv_txt:
-        flag("Same app entry at same spot", None)
+        flag("Same app entry at same spot", "review")
         parts_gps.append("Surveys at the same spot carry the same app entry - possible copied entry.")
     if g_rem.startswith("Same Location"):
         if same_txt:
@@ -539,10 +539,10 @@ def evaluate(row, form=None, photos=None, gps=None, data_flags="", risk=None):
             parts_gps.append(f"{same} same-surveyor records within {C.GPS_PROXIMITY_RADIUS_M} m.")
         else:
             parts_gps.append(f"{same} same-surveyor records within {C.GPS_PROXIMITY_RADIUS_M} m (low damage{'' if dmg is None else f' {_fmt(dmg)}%'}).")
-        flag("GPS cluster", None)
+        flag("GPS cluster", "review")
     elif g_rem.startswith("Review"):
         parts_gps.append(f"{onf} records on the same survey number.")
-        flag("GPS cluster", None)
+        flag("GPS cluster", "review")
 
     # ------------------------------------------------------------ data flags
     dflags = [x.strip() for x in str(data_flags or "").split(",") if x.strip() and x.strip() not in COVERED_DATA_FLAGS]
@@ -571,7 +571,7 @@ def evaluate(row, form=None, photos=None, gps=None, data_flags="", risk=None):
     elif severity["partial"]:
         verdict = "Partially OK"
     else:
-        verdict = "OK"          # informational findings (same spot, signature missing, ...) only go into the remark
+        verdict = "OK"          # informational findings (signature missing, duplicate photos, ...) only go into the remark
     evidence_failed = fstate in ("no_link", "not_found", "error") or pstate in ("no_link", "not_found", "error")
     if evidence_failed or severity["manual"] or severity["reject"] or (conf_form is not None and conf_form < C.LOW_CONFIDENCE_THRESHOLD) or \
             (form and fstate == "ok" and form.get("is_proforma3") is False):
