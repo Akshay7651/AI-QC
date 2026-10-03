@@ -1,51 +1,109 @@
-"""Summary workbook: District Summary, Surveyor Report, Issue Summary."""
+"""Summary workbook (summary_report.xlsx): ONE sheet 'Summary' with the run's numbers, built from the QC output columns."""
 import pandas as pd
 
 import config as C
 
+VERDICTS = ["OK", "Partially OK", "Review", "Manual QC Required"]
 
-def _truthy(s):
-    return s.astype(str).str.upper().eq("TRUE")
+
+def _col(df, *names):
+    for n in names:
+        if n in df:
+            return df[n]
+    return pd.Series([None] * len(df), index=df.index)
+
+
+def _field_counts(s):
+    """value column -> (read, can't read, blank on form, no form / not checked)"""
+    v = s.fillna("").astype(str).str.strip()
+    cant = v.str.lower().str.startswith(("mentioned but can't read", "can't read", "cant read"))
+    blank = v.str.lower().str.startswith("blank")
+    none = v.eq("") | v.str.lower().isin(["na", "no form", "nan"])
+    read = ~(cant | blank | none)
+    return int(read.sum()), int(cant.sum()), int(blank.sum()), int(none.sum())
+
+
+def _tags(remark):
+    """'Manual QC Required - A, B, C' -> ['A', 'B', 'C']"""
+    r = str(remark or "")
+    if " - " not in r:
+        return []
+    return [t.strip() for t in r.split(" - ", 1)[1].split(",") if t.strip()]
 
 
 def build(df: pd.DataFrame, path: str):
-    flagged = df["Suggested_Remark"].fillna("OK").ne("OK") if "Suggested_Remark" in df else pd.Series(False, index=df.index)
-    if "Data_QC_Flags" in df:
-        flagged |= df["Data_QC_Flags"].fillna("").ne("")
-    m = df[C.COL_MATCH] if C.COL_MATCH in df else pd.Series("NA", index=df.index)
-    done = _truthy(df[C.COL_QC_DONE]) if C.COL_QC_DONE in df else pd.Series(False, index=df.index)
-    blank = pd.Series("Unknown", index=df.index)
-    dist = df["district"].fillna("Unknown") if "district" in df else blank
-    surv_name = df["surveyor_name"].fillna("Unknown") if "surveyor_name" in df else blank
-    t = pd.DataFrame({"District": dist, "QC Done": done, "Match": m.eq("Match"),
-                      "Mismatch": m.eq("Mismatch"), "Flagged": flagged})
-    t["Total"] = 1
-    d = t.groupby("District").sum().reset_index()
-    d["Match%"] = (100 * d["Match"] / (d["Match"] + d["Mismatch"]).replace(0, float("nan"))).round(1)
-    district = d[["District", "Total", "QC Done", "Match", "Mismatch", "Flagged", "Match%"]]
+    n = len(df)
+    verdict = _col(df, "QC Verdict").fillna("")
+    match = _col(df, C.COL_MATCH).fillna("NA")
+    remark = _col(df, "AI Remark", "Suggested_Remark").fillna("")
+    dist = _col(df, "district").fillna("Unknown")
+    surv = _col(df, "surveyor_name").fillna("Unknown")
+    tags = remark.map(_tags)
 
-    s = pd.DataFrame({"Surveyor": surv_name,
-                      "Same_Location_Flags": df.get("Suggested_Remark", pd.Series("", index=df.index)).fillna("").str.startswith("Same Location"),
-                      "Mismatch_Count": m.eq("Mismatch")})
-    s["Records"] = 1
-    sv = s.groupby("Surveyor").sum().reset_index()
-    sv["Consistency_Score"] = (100 - 100 * (sv["Same_Location_Flags"] + sv["Mismatch_Count"]) / sv["Records"]).clip(0, 100).round(1)
-    surveyor = sv[["Surveyor", "Records", "Same_Location_Flags", "Mismatch_Count", "Consistency_Score"]]
+    blocks = []          # (title, DataFrame)
+    pct = lambda k: round(100.0 * k / n, 1) if n else 0.0
+    ov = [("Rows checked", n, 100.0 if n else 0.0)] + [(v, int((verdict == v).sum()), pct(int((verdict == v).sum()))) for v in VERDICTS]
+    ov += [("Form vs app: Match", int((match == "Match").sum()), pct(int((match == "Match").sum()))),
+           ("Form vs app: Mismatch", int((match == "Mismatch").sum()), pct(int((match == "Mismatch").sum()))),
+           ("Form vs app: not comparable (value not read)", int((~match.isin(["Match", "Mismatch"])).sum()), pct(int((~match.isin(["Match", "Mismatch"])).sum())))]
+    blocks.append(("1. Overall result", pd.DataFrame(ov, columns=["Item", "Rows", "% of rows"])))
 
-    issues = []
-    for col in ("Data_QC_Flags", "AI_Flags"):
-        if col in df:
-            for v in df[col].fillna(""):
-                issues += [x.strip() for x in v.split(",") if x.strip()]
-    if "Suggested_Remark" in df:
-        issues += [r for r in df["Suggested_Remark"].fillna("OK") if r != "OK"]
-    iss = pd.Series(issues, dtype=str).value_counts().rename_axis("Issue_Type").reset_index(name="Count")
-    iss["% of Total"] = (100 * iss["Count"] / max(len(df), 1)).round(2)
+    fr = []
+    for label, cols in (("Form No", ("Form No",)), ("PO ID (Form)", ("PO ID (Form)",)),
+                        ("Affected area % (Form)", (C.COL_FORM_AREA, "Affected area% (Form)")),
+                        ("Crop loss % (Form)", (C.COL_FORM_LOSS, "Crop Loss% (Form)"))):
+        r, c, b, x = _field_counts(_col(df, *cols))
+        fr.append((label, r, pct(r), c, b, x))
+    po, dk = _col(df, "PO ID (Form)").fillna("").astype(str), _col(df, "docket_id").fillna("").astype(str)
+    fr.append(("PO ID equal to docket", int((po == dk).sum()), pct(int((po == dk).sum())), None, None, None))
+    for label, cols in (("Farmer signature = Yes", ("Farmer Signature (Yes/No)",)), ("Surveyor signature = Yes", ("Surveyor Signature (Yes/No)",)),
+                        ("Government signature = Yes", ("Government Signature (Yes/No)",)), ("Field photo = Yes", (C.COL_FIELD_PHOTO, "Field photo (no crop / cut & spread / crop mismatch / standing crop)")),
+                        ("Farmer photo = Yes", ("Farmer Photo (Yes/No)",)), ("Survey remarks on form = Yes", ("Survey remarks on form",))):
+        k = int(_col(df, *cols).fillna("").astype(str).str.strip().str.lower().eq("yes").sum())
+        fr.append((label, k, pct(k), None, None, None))
+    blocks.append(("2. What the AI could read on the forms", pd.DataFrame(fr, columns=["Field", "Read", "% of rows", "Written but can't read", "Blank on form", "No form / not checked"])))
 
-    with pd.ExcelWriter(path) as w:
-        district.to_excel(w, sheet_name="District Summary", index=False)
-        surveyor.to_excel(w, sheet_name="Surveyor Report", index=False)
-        iss.to_excel(w, sheet_name="Issue Summary", index=False)
+    cnt = {}
+    for ts in tags:
+        for t in ts:
+            cnt[t] = cnt.get(t, 0) + 1
+    iss = sorted(cnt.items(), key=lambda kv: -kv[1])
+    blocks.append(("3. Issues found (a row can have several)", pd.DataFrame([(t, k, pct(k)) for t, k in iss], columns=["Issue", "Rows", "% of rows"])))
+
+    def per(group, name):
+        t = pd.DataFrame({name: group, "Rows": 1, "Match": match.eq("Match"), "Mismatch": match.eq("Mismatch"),
+                          "Same spot": tags.map(lambda x: any("Same" in y for y in x)).astype(bool)})
+        for v in VERDICTS:
+            t[v] = verdict.eq(v)
+        g = t.groupby(name).sum(numeric_only=True).reset_index()
+        g["OK %"] = (100 * g["OK"] / g["Rows"]).round(1)
+        g["Match % (of compared)"] = (100 * g["Match"] / (g["Match"] + g["Mismatch"]).replace(0, float("nan"))).round(1)
+        return g[[name, "Rows"] + VERDICTS + ["OK %", "Match", "Mismatch", "Match % (of compared)", "Same spot"]].sort_values("Rows", ascending=False)
+    blocks.append(("4. By district", per(dist, "District")))
+    blocks.append(("5. By surveyor", per(surv, "Surveyor")))
+
+    with pd.ExcelWriter(path, engine="openpyxl") as w:
+        r0 = 0
+        for title, t in blocks:
+            pd.DataFrame([[title]]).to_excel(w, sheet_name="Summary", startrow=r0, index=False, header=False)
+            t.to_excel(w, sheet_name="Summary", startrow=r0 + 1, index=False)
+            r0 += len(t) + 4
+        ws = w.sheets["Summary"]
+        from openpyxl.styles import Font, PatternFill
+        head = PatternFill("solid", fgColor="1F3A5F")
+        for row in ws.iter_rows():
+            for c in row:
+                if c.column == 1 and isinstance(c.value, str) and c.value[:2] in {f"{i}." for i in range(1, 10)}:
+                    c.font = Font(bold=True, size=13, color="1F3A5F")
+        r0 = 0
+        for title, t in blocks:
+            for j in range(len(t.columns)):
+                cell = ws.cell(row=r0 + 2, column=j + 1)
+                cell.font, cell.fill = Font(bold=True, color="FFFFFF"), head
+            r0 += len(t) + 4
+        ws.column_dimensions["A"].width = 44
+        for col in "BCDEFGHIJKLM":
+            ws.column_dimensions[col].width = 16
 
 
 # ============================================================================ the big QC workbook (fast, atomic)

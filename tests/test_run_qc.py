@@ -306,26 +306,27 @@ def test_assemble_false_values_and_input_untouched():
 # ---- report ----
 def test_report_full_and_minimal_columns(tmp_path):
     df = frame([good(0), good(1, district="D2")])
-    df["Suggested_Remark"] = ["Same Location - QC Required", "OK"]
-    df["Data_QC_Flags"] = ["Missing: x, Duplicate record", ""]
+    df["QC Verdict"] = ["Manual QC Required", "OK"]
+    df["AI Remark"] = ["Manual QC Required - Low Confidence (Verify Manually), Same Location (Possible Copied Entry)", "OK"]
     df["Match/Mismatch (Form&app)"] = ["Mismatch", "Match"]
-    df["QC Done"] = [True, False]
+    df["Crop Loss% (Form)"] = ["Mentioned but can't read", 30]
     p = str(tmp_path / "r.xlsx")
     report.build(df, p)
-    sheets = pd.read_excel(p, sheet_name=None)
-    assert set(sheets) == {"District Summary", "Surveyor Report", "Issue Summary"}
-    d = sheets["District Summary"].set_index("District")
-    assert d.loc["D1", "Flagged"] == 1 and d.loc["D1", "Mismatch"] == 1 and d.loc["D1", "QC Done"] == 1
-    assert d.loc["D2", "Match%"] == 100
-    assert set(sheets["Issue Summary"]["Issue_Type"]) == {"Missing: x", "Duplicate record", "Same Location - QC Required"}
-    assert sheets["Surveyor Report"].set_index("Surveyor").loc["S0", "Consistency_Score"] == 0
+    sheets = pd.read_excel(p, sheet_name=None, header=None)
+    assert set(sheets) == {"Summary"}
+    t = sheets["Summary"].fillna("")
+    cells = {str(v) for v in t.values.ravel()}
+    assert {"1. Overall result", "2. What the AI could read on the forms", "3. Issues found (a row can have several)",
+            "4. By district", "5. By surveyor", "Low Confidence (Verify Manually)", "D1", "D2"} <= cells
+    loss = t[t[0] == "Crop loss % (Form)"].iloc[0]
+    assert loss[1] == 1 and loss[3] == 1          # read 1, written but can't read 1
 
 
 def test_report_missing_columns_and_empty(tmp_path):
     df = pd.DataFrame({"docket_id": ["a", "b"]})
     report.build(df, str(tmp_path / "m.xlsx"))
-    s = pd.read_excel(tmp_path / "m.xlsx", sheet_name=None)
-    assert s["District Summary"]["District"].tolist() == ["Unknown"] and s["Issue Summary"].empty
+    s = pd.read_excel(tmp_path / "m.xlsx", sheet_name=None, header=None)
+    assert set(s) == {"Summary"} and "Unknown" in set(s["Summary"][0].astype(str))
     report.build(frame([good(0)]).iloc[0:0], str(tmp_path / "e.xlsx"))
 
 

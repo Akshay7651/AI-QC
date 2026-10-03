@@ -793,8 +793,10 @@ def _main_local(args, df, modes, ck, keys, prior_done, sl=None):
     if chunk:
         if os.path.exists(chunk.csv_path):
             print(f"Wrote merged CSV {chunk.csv_path}")
-        out = chunk.read_columns(["district", "surveyor_name", "Suggested_Remark", "Data_QC_Flags", "AI_Flags", C.COL_MATCH,
-                                  C.COL_QC_DONE, "QC Verdict"])
+        out = chunk.read_columns(["docket_id", "district", "surveyor_name", "AI Remark", C.COL_MATCH, "QC Verdict", "Form No", "PO ID (Form)",
+                                  C.COL_FORM_AREA, C.COL_FORM_LOSS, C.COL_FIELD_PHOTO, "Farmer Signature (Yes/No)",
+                                  "Surveyor Signature (Yes/No)", "Government Signature (Yes/No)", "Farmer Photo (Yes/No)",
+                                  "Survey remarks on form"])
     else:
         out = saver.last_df if saver.last_df is not None else build()
     try:

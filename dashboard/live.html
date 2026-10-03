@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="light">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -120,7 +120,7 @@ table.live td.num{font-variant-numeric:tabular-nums}
 @keyframes bob{to{transform:translateY(-2px) rotate(-8deg)}}
 h1 .ai{display:inline-block;animation:bob 1s ease-in-out infinite alternate}
 /* celebration */
-#party{position:fixed;inset:0;z-index:9999;display:none;align-items:center;justify-content:center;background:radial-gradient(circle at center,rgba(40,20,90,.85),rgba(10,5,30,.92))}
+#party{position:fixed;inset:0;z-index:9999;display:none;align-items:center;justify-content:center;background:radial-gradient(circle at center,rgba(255,255,255,.75),rgba(235,240,255,.92))}
 #party canvas{position:absolute;inset:0;width:100%;height:100%}
 #party .box{position:relative;text-align:center;color:#fff;padding:28px 40px;border-radius:24px;background:linear-gradient(135deg,#7b2ff7,#f107a3);box-shadow:0 10px 40px rgba(0,0,0,.5);animation:popin .6s cubic-bezier(.2,1.6,.4,1)}
 @keyframes popin{from{transform:scale(.3);opacity:0}}
@@ -128,6 +128,35 @@ h1 .ai{display:inline-block;animation:bob 1s ease-in-out infinite alternate}
 #party .sum{font-size:15px;opacity:.95}#party .sum b{font-size:18px}
 #party .cd{margin-top:14px;font-size:13px;opacity:.9}
 #party button{margin-top:10px;border:0;border-radius:999px;padding:6px 16px;font-weight:700;cursor:pointer;background:#fff;color:#7b2ff7}
+
+/* ---- light theme + one panel (cell) per role; free agents are hidden ---- */
+body{background:linear-gradient(180deg,#f3f7ff 0,#fbfcff 260px)!important;color:#1b2430}
+.top{background:#ffffff;color:#1b2430;border-bottom:1px solid #e3e9f5;box-shadow:0 2px 10px rgba(60,80,140,.08)}
+.top h1{color:#2b3a67}
+.top .note,.top .kv{color:#5b6573}
+.top .kv b{color:#1b2430}
+.kv span{background:#eef3fb}
+.pill{box-shadow:none}
+.bar{background:#e8edf6}
+.bar>span{color:#1b2430;text-shadow:none}
+.split{background:#e8edf6}
+.chips#counters .chip{background:#f1f4fa;color:#1b2430;border:1px solid #dfe5f0}
+.chips#counters .chip.hot{background:#fde2ea;color:#a1124a;border-color:#f7b6c9}
+summary{color:#5b6573}
+#agents{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:10px}
+@media (max-width:900px){#agents{grid-template-columns:1fr}}
+.rolerow{margin:0;padding:8px 10px 10px;border-radius:14px;min-height:96px}
+.rolerow.dl{background:#eef6ff;border:1px solid #c5ddfb}.rolerow.fr{background:#f7f0ff;border:1px solid #e0cdf7}.rolerow.ph{background:#fff6ea;border:1px solid #fbd9ad}
+.rolehead{box-shadow:none;font-size:13.5px}
+.rolecount{float:right;font-size:12px;font-weight:700;color:#4a5568;padding-top:4px}
+.rolerow .robots{margin-top:8px}
+.agent{background:#ffffff!important;color:#1b2430}
+.agent.appear{animation:popin2 .35s ease-out}
+@keyframes popin2{from{transform:scale(.6);opacity:0}}
+.agent.busy{box-shadow:0 0 0 2px #6ee7b7,0 2px 8px rgba(16,185,129,.25);animation:glow2 1.8s ease-in-out infinite}
+.agent.busy.appear{animation:popin2 .35s ease-out,glow2 1.8s ease-in-out .35s infinite}
+@keyframes glow2{50%{box-shadow:0 0 0 2px #fcd34d,0 2px 10px rgba(245,158,11,.3)}}
+.freebox{color:#7a8597;font-size:12.5px;padding:14px 4px;text-align:center}
 </style>
 </head>
 <body>
@@ -180,7 +209,7 @@ var ROBOT='<svg class="robot" viewBox="0 0 64 64"><line x1="32" y1="3" x2="32" y
  '<g class="arm l"><rect x="12" y="38" width="8" height="13" rx="3" fill="var(--chip)" stroke="currentColor" stroke-width="1.5"/></g>'+
  '<g class="arm r"><rect x="44" y="38" width="8" height="13" rx="3" fill="var(--chip)" stroke="currentColor" stroke-width="1.5"/></g>'+
  '<text x="32" y="63" font-size="11" text-anchor="middle">TOOL</text></svg>';
-var seq=0,ALL=[];
+var seq=0,ALL=[],SHOWN={};
 
 function esc(s){return String(s==null?"":s).replace(/[&<>"']/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]})}
 function dur(s){if(s==null)return "-";s=Math.round(s);var h=Math.floor(s/3600),m=Math.floor(s%3600/60),x=s%60;
@@ -219,9 +248,14 @@ function render(d){
       '<div class="doc">'+(a.state==="busy"?esc(a.docket||""):"&nbsp;")+'</div><div class="note"><span class="emo">'+emo+'</span>'+doing+'</div>'+
       '<div class="meta"><span>'+num(a.rows_done)+' done</span><span>'+(a.avg_sec?a.avg_sec+" s/row":"-")+'</span></div></div></div>'}
   // one row per role (Downloader / Reader / Photo Analyst); inside a row the agents are numbered Agent 1, 2, ...
+  // one panel (cell) per role; only the agents that are working are shown - a free agent disappears and comes back when it gets work
   var groups=[["&#128229; Downloader",function(a){return /Download/i.test(a.role)},"dl"],["&#129504; Reader",function(a){return !/Download|Photo/i.test(a.role)},"fr"],["&#128248; Photo Analyst",function(a){return /Photo/i.test(a.role)},"ph"]];
+  var nowShown={};
   $("agents").innerHTML=groups.map(function(gr){var m=ag.filter(gr[1]);if(!m.length)return "";
-    return '<div class="rolerow"><div class="rolehead '+gr[2]+'">'+gr[0]+' &#129302; ('+m.filter(function(a){return a.state==="busy"}).length+'/'+m.length+' busy)</div><div class="robots">'+m.map(card).join("")+'</div></div>'}).join("");
+    var work=m.filter(function(a){return a.state!=="idle"}),nb=m.filter(function(a){return a.state==="busy"}).length;
+    return '<div class="rolerow '+gr[2]+'"><span class="rolehead '+gr[2]+'">'+gr[0]+'</span><span class="rolecount">'+nb+' working / '+m.length+' agents</span>'+
+      '<div class="robots">'+(work.length?work.map(function(a){nowShown[a.id]=1;var h=card(a);return SHOWN[a.id]?h:h.replace('class="agent ','class="agent appear ')}).join(""):'<div class="freebox">&#128164; all '+m.length+' agents free - waiting for work</div>')+'</div></div>'}).join("");
+  SHOWN=nowShown;
   var o=d.output||{};
   $("outpath").textContent=o.path||"-";
   $("outsaved").textContent=o.last_saved?o.last_saved+"  ("+num(o.rows_saved)+" rows written)":"not saved yet (first autosave after the set interval)";
