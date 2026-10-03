@@ -177,7 +177,7 @@ summary{color:#5b6573}
 .xcell.idle .xtask{color:#b0b8c6;font-style:italic}
 .stage{position:absolute;left:0;right:0;top:16px;height:44px}
 .walker{position:absolute;top:0;left:4px;width:34px;height:40px;display:none}
-.xcell.busy .walker,.xcell.starting .walker{display:block;animation-name:roamx,roamy;animation-timing-function:ease-in-out,ease-in-out;animation-iteration-count:infinite,infinite;animation-direction:alternate,alternate}
+.xcell.busy .walker,.xcell.starting .walker{display:block;animation-name:roamx,roamy;animation-duration:4s,2s;animation-timing-function:ease-in-out,ease-in-out;animation-iteration-count:infinite,infinite;animation-direction:alternate,alternate}
 @keyframes roamx{0%{left:2px}100%{left:calc(100% - 38px)}}
 @keyframes roamy{0%{top:0}50%{top:6px}100%{top:1px}}
 .bot{width:34px;height:40px;overflow:visible}
@@ -201,6 +201,24 @@ summary{color:#5b6573}
 @keyframes step{from{transform:rotate(-18deg)}to{transform:rotate(18deg)}}
 .xcell.starting .walker{opacity:.6}
 .xcell.error,.xcell.dead{background:#fde2ea}
+
+/* symbolic props: downloader = tray with a falling arrow, reader = open book, analyst = magnifier scanning */
+.walker{width:58px}
+.walker .prop{position:absolute;left:27px;top:12px;font-size:20px;line-height:1;display:none}
+.walker .drop{position:absolute;left:34px;top:-6px;font-size:12px;color:#2563eb;font-weight:900;display:none}
+.xcell.busy .prop,.xcell.starting .prop{display:block}
+.xcell.dl .prop::after{content:"\1F4E5"}
+.xcell.fr .prop::after{content:"\1F4D6"}
+.xcell.ph .prop::after{content:"\1F50D"}
+.xcell.busy.dl .drop{display:block;animation:dropin .9s ease-in infinite}
+@keyframes dropin{0%{transform:translateY(-4px);opacity:0}30%{opacity:1}100%{transform:translateY(14px);opacity:0}}
+.xcell.busy.dl .prop{animation:bump .9s ease-in infinite}
+@keyframes bump{0%,80%{transform:translateY(0)}90%{transform:translateY(2px)}100%{transform:translateY(0)}}
+.xcell.busy.fr .prop{animation:readbook 1.6s ease-in-out infinite;transform-origin:50% 100%}
+@keyframes readbook{0%,100%{transform:rotate(-6deg)}50%{transform:rotate(6deg) translateY(-1px)}}
+.xcell.busy.ph .prop{animation:scan 1.8s ease-in-out infinite}
+@keyframes scan{0%{transform:translate(0,0) rotate(0)}25%{transform:translate(5px,-4px) rotate(10deg)}50%{transform:translate(9px,2px) rotate(0)}75%{transform:translate(3px,5px) rotate(-10deg)}100%{transform:translate(0,0)}}
+@keyframes roamx{0%{left:2px}100%{left:calc(100% - 62px)}}
 </style>
 </head>
 <body>
@@ -293,7 +311,7 @@ function render(d){
   $("agentnote").textContent="("+busy+" busy of "+ag.length+")";
   // Excel-like grid: one bordered row per role, one fixed bordered cell per agent. A working agent's robot walks around inside its
   // cell; a free agent's cell stays empty (the robot comes back when it gets work). Cells are updated in place so the walk is smooth.
-  var groups=[["&#128229; Downloader",function(a){return /Download/i.test(a.role)},"dl"],["&#129504; Reader",function(a){return !/Download|Photo/i.test(a.role)},"fr"],["&#128248; Photo Analyst",function(a){return /Photo/i.test(a.role)},"ph"]];
+  var groups=[["&#128229; Downloader",function(a){return /Download/i.test(a.role)},"dl"],["&#128214; Reader",function(a){return !/Download|Photo/i.test(a.role)},"fr"],["&#128269; Photo Analyst",function(a){return /Photo/i.test(a.role)},"ph"]];
   var cnt=function(re){return ag.filter(function(a){return re.test(a.role)}).length};
   $("agentline").textContent="Agents: "+cnt(/Download/i)+" downloaders + "+ag.filter(function(a){return !/Download|Photo/i.test(a.role)}).length+" readers + "+cnt(/Photo/i)+" photo analysts";
   var sig=ag.map(function(a){return a.id}).join(",");
@@ -301,15 +319,18 @@ function render(d){
     $("agents").innerHTML='<div class="xgrid">'+groups.map(function(gr){var m=ag.filter(gr[1]);if(!m.length)return "";
       return '<div class="xrow '+gr[2]+'"><div class="xhead"><div class="xname">'+gr[0]+'</div><div class="xcount" id="cnt_'+gr[2]+'"></div></div><div class="xcells">'+
         m.map(function(a,i){var n=((a.role||"").match(/#(\d+)/)||[0,i+1])[1];
-          return '<div class="xcell" id="cell_'+esc(a.id)+'"><div class="xlab">Agent '+esc(n)+'</div><div class="stage"><div class="walker" style="animation-duration:'+(5+(i*1.7)%4).toFixed(1)+'s,'+(3.3+(i*1.3)%3).toFixed(1)+'s;animation-delay:-'+((i*0.9)%5).toFixed(1)+'s,-'+((i*0.7)%3).toFixed(1)+'s">'+BOT+'</div></div><div class="xdoc"></div><div class="xtask"></div></div>'}).join("")+'</div></div>'}).join("")+'</div>'}
+          return '<div class="xcell" id="cell_'+esc(a.id)+'"><div class="xlab">Agent '+esc(n)+'</div><div class="stage"><div class="walker">'+BOT+'<span class="prop"></span><span class="drop">&#11015;</span></div></div><div class="xdoc"></div><div class="xtask"></div></div>'}).join("")+'</div></div>'}).join("")+'</div>'}
   groups.forEach(function(gr){var m=ag.filter(gr[1]);if(!m.length)return;
     var nb=m.filter(function(a){return a.state==="busy"}).length,c=$("cnt_"+gr[2]);if(c)c.textContent=nb+" working / "+m.length;
     m.forEach(function(a){var el=$("cell_"+a.id);if(!el)return;
       var doing=a.state==="busy"?(/^form/.test(a.task||"")?"reading the form":/^photo/.test(a.task||"")?"checking the photos":/fetch/.test(a.task||"")?"downloading form + photos":(a.task||"working")):a.state==="starting"?"waking up":a.state==="idle"?"free":(a.task||a.state);
       var cls="xcell "+gr[2]+" "+(a.state||"idle")+(a.state==="busy"&&/^photo/.test(a.task||"")?" t-ph":a.state==="busy"&&/^form/.test(a.task||"")?" t-fr":a.state==="busy"?" t-dl":"");
-      if(el.className!==cls)el.className=cls;
+      if(el.className!==cls){
+        // keep every walking robot in step: start its walk at the same phase as a shared clock
+        if(/ busy/.test(cls)&&!/ busy/.test(el.className)){var t=Date.now();el.querySelector(".walker").style.animationDelay="-"+(t%4000)/1000+"s,-"+(t%2000)/1000+"s"}
+        el.className=cls}
       var dk=a.state==="busy"?(a.docket||""):"";
-      var tl=a.state!=="busy"?"":/^photo/.test(a.task||"")?"\u{1F4F8}":/^form/.test(a.task||"")?"\u{1F9E0}":"\u{1F4E5}",te=el.querySelector(".b-tool");if(te&&te.textContent!==tl)te.textContent=tl;
+      var tl=a.state!=="busy"?"":/^photo/.test(a.task||"")?"\u{1F4F8}":/^form/.test(a.task||"")?"\u{1F9E0}":"\u{1F4E5}",te=null;
       var dd=el.children[2],tt=el.children[3];if(dd.textContent!==dk)dd.textContent=dk;if(tt.textContent!==doing)tt.textContent=doing})});
   var o=d.output||{};
   $("outpath").textContent=o.path||"-";

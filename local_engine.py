@@ -458,10 +458,11 @@ class LocalRunner:
             self._flush_if_no_workers()
 
     def _dispatch(self):
-        # pass 1: every idle worker takes work of its own role (photo analysts get the photo jobs);
-        # pass 2: still-idle workers help with the other role's queue
-        for helping_pass in (False, True):
-            self._dispatch_pass(helping_pass)
+        # every worker only does its own role (readers read forms, photo analysts check photos), so each dashboard row shows
+        # only its own job; the other role's queue is only taken over when that role has no worker at all (e.g. --agents 1)
+        self._dispatch_pass(False)
+        if {w.role for w in self.workers} != {"form", "photo"}:
+            self._dispatch_pass(True)
 
     def _dispatch_pass(self, helping_pass):
         for w in self.workers:
