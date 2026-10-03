@@ -442,6 +442,58 @@ def _fill_blanks(cols, R):
             cols[c][i] = v
 
 
+def _compiled_remark(r, v, row, fok, pok, f, p):
+    """AI Remark = one line with everything: verdict + issues, then what was found on the form and in the photos
+    (Form No, PO ID, area, loss, match, signatures, survey remarks, form status, field/farmer photo, photo date, photo loss)."""
+    def s(x):
+        return "" if x is None or (isinstance(x, float) and x != x) else str(x).strip()
+
+    def pct(x):
+        t = s(x)
+        try:
+            return f"{float(t):g}%"
+        except ValueError:
+            return t.lower() if t else "not found"
+    parts = [s(r.get("remark")) or s(r.get("verdict"))]
+    if fok:
+        if f.get("is_proforma3") is False:
+            parts.append("Form: uploaded document is not a Proforma-3")
+        else:
+            fn = s(v.get("Form No"))
+            parts.append("Form No " + (fn if fn and not fn.lower().startswith("can") else "not readable"))
+            po, pm = s(v.get("PO ID (Form)")), s(v.get("PO ID matches docket"))
+            parts.append("PO ID matches docket" if pm == "Yes" else (f"PO ID {po} differs from docket" if pm == "No" and po[:1].isdigit()
+                                                                      else "PO ID not readable"))
+            app_a, app_l = s(row.get("affected_area_pct")), s(row.get("crop_loss_pct"))
+            parts.append(f"Area {pct(v.get(C.COL_FORM_AREA))} (app {pct(app_a) if app_a else 'NA'})")
+            parts.append(f"Loss {pct(v.get(C.COL_FORM_LOSS))} (app {pct(app_l) if app_l else 'NA'})")
+            m = s(v.get(C.COL_MATCH))
+            if m in ("Match", "Mismatch"):
+                parts.append("Form vs app: " + m)
+            miss = [n for n, c in (("farmer", C.COL_FARMER_SIG), ("surveyor", C.COL_SURVEYOR_SIG), ("government officer", C.COL_GOVT_SIG))
+                    if s(v.get(c)) == "No"]
+            parts.append("Signature missing: " + ", ".join(miss) if miss else "All signatures present")
+            parts.append("Survey remarks on form: " + (s(v.get(C.COL_FORM_REMARKS)) or "not checked"))
+            fs = s(v.get(C.COL_FORM_STATUS))
+            if fs:
+                parts.append("Form status: " + fs)
+    else:
+        fst = (f or {}).get("_state", "not_found")
+        parts.append("Form: " + ("link missing" if fst == "no_link" else "not found / could not be downloaded" if fst in ("not_found", "error") else "not checked"))
+    if pok:
+        parts.append("Field photo: " + (s(v.get(C.COL_FIELD_PHOTO)) or "not checked"))
+        parts.append("Farmer photo: " + (s(v.get(C.COL_FARMER_PHOTO)) or "not checked"))
+        d = s(v.get(C.COL_PHOTO_DATE))
+        parts.append("Photo date " + (d if d and d[:1].isdigit() else "not read"))
+        pl = s(v.get(C.COL_PHOTO_LOSS))
+        if pl:
+            parts.append("Loss as per photo: " + pl)
+    else:
+        pst = (p or {}).get("_state", "not_found")
+        parts.append("Photos: " + ("link missing" if pst == "no_link" else "not found / could not be downloaded" if pst in ("not_found", "error") else "not checked"))
+    return " | ".join(x for x in parts if x)
+
+
 def assemble_local(df, results, keys):
     """Merge offline-engine results into the output frame: input columns + gps/data/risk + the QC block (see docs/RUN_GUIDE.md)."""
     n = len(df)
@@ -536,6 +588,7 @@ def assemble_local(df, results, keys):
             put("Farmer/person present in photos (remark)", person_remark(p))
             put("Farmer photo detail", person_detail(p))
             put(C.COL_PHOTO_LOSS, p.get("photo_loss"))
+        put(C.COL_AI_REMARK, _compiled_remark(r, {c: cols[c][i] for c in cols}, df.iloc[i], fok, pok, f, p))
     _fill_blanks(cols, R)
     out = df.copy()
     has = pd.Series([r is not None for r in R], index=out.index)
