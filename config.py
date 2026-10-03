@@ -12,6 +12,10 @@ CLAUDE_MODEL_PHOTO = "claude-sonnet-5-5"
 MODEL_PRICING = {"default": (3.0, 15.0)}
 
 MAX_PARALLEL_WORKERS = 5
+# local engine agents used when the command gives none of --agents / --readers / --analysts / --downloaders
+DEFAULT_DOWNLOADERS = 14
+DEFAULT_READERS = 6
+DEFAULT_ANALYSTS = 6
 MAX_PHOTOS_PER_ROW = 10   # data has up to 6 photos per docket; all of them must be checked (e.g. a person may appear in only one)
 PDF_RENDER_DPI = 150
 PDF_MAX_PAGES = 2

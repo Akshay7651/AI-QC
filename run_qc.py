@@ -690,7 +690,11 @@ class _RowsView(_ColsView):
 
 def _main_local(args, df, modes, ck, keys, prior_done, sl=None):
     import local_engine
-    workers = args.workers or min(os.cpu_count() or 4, 12)
+    if not (args.workers or args.readers or args.analysts or args.inline or args.engine_module):
+        # nothing given on the command line: the agent team from config.py (DEFAULT_DOWNLOADERS / _READERS / _ANALYSTS)
+        args.readers, args.analysts = C.DEFAULT_READERS, C.DEFAULT_ANALYSTS
+        args.downloaders = args.downloaders or C.DEFAULT_DOWNLOADERS
+    workers = args.workers or (args.readers or 0) + (args.analysts or 0) or min(os.cpu_count() or 4, 12)
     kinds = [k for k, m in (("form", "pdf"), ("photo", "photo")) if m in modes]
     for step, m in enumerate(modes, 1):
         if m in ("pdf", "photo"):
