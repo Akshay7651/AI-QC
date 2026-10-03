@@ -2,6 +2,7 @@
 """CLAP Survey AI QC - orchestrator."""
 import argparse
 import asyncio
+import collections
 import hashlib
 import json
 import os
@@ -42,7 +43,9 @@ def parse_args(argv=None):
     p.add_argument("--mode", choices=["gps", "data", "pdf", "photo", "full"], default="full")
     p.add_argument("--agents", "--workers", dest="workers", type=int, default=None,
                    help="parallel agents (worker processes). default: min(CPU cores, 12) for --engine local")
-    p.add_argument("--downloaders", type=int, default=None, help="parallel download slots (default: auto)")
+    p.add_argument("--downloaders", type=int, default=None, help="parallel download slots (default: same as --agents, max 12)")
+    p.add_argument("--readers", type=int, default=None, help="form-reader agents (default: 2/3 of --agents)")
+    p.add_argument("--analysts", type=int, default=None, help="photo-analyst agents (default: 1/3 of --agents)")
     p.add_argument("--rate", type=float, default=5.0, help="max new download requests per second (polite limit)")
     p.add_argument("--cost-cap", type=float)
     p.add_argument("--resume", action="store_true")
@@ -73,6 +76,7 @@ def parse_args(argv=None):
     p.add_argument("--serve-port", type=int, default=8765, help="live dashboard port (default 8765)")
     p.add_argument("--serve-host", default="127.0.0.1", help="127.0.0.1 = this PC only (default, safe); 0.0.0.0 = also reachable from a phone on the same Wi-Fi (exposes docket IDs/remarks to that network)")
     p.add_argument("--no-serve", action="store_true", help="do not start the live dashboard web server")
+    p.add_argument("--no-open", action="store_true", help="do not open the live dashboard in Chrome automatically")
     p.add_argument("--progress", default="output/progress.json", help="progress file written every second")
     p.add_argument("--task-timeout", type=float, default=180.0, help="seconds before a stuck agent is killed and its row retried")
     p.add_argument("--engine-module", help=argparse.SUPPRESS)   # tests: module providing read_form/analyse
@@ -619,6 +623,28 @@ class Autosaver:
             self._thread.join(timeout=1)
 
 
+def _open_dashboard(url):
+    """open the live dashboard in Chrome (new window, so the page can close itself when the run is done); any browser otherwise"""
+    import shutil
+    import subprocess
+    import webbrowser
+    cands = [shutil.which("chrome"), shutil.which("google-chrome"), shutil.which("chromium")]
+    for base in (os.environ.get("PROGRAMFILES"), os.environ.get("PROGRAMFILES(X86)"), os.environ.get("LOCALAPPDATA")):
+        if base:
+            cands.append(os.path.join(base, "Google", "Chrome", "Application", "chrome.exe"))
+    for c in cands:
+        if c and os.path.exists(c):
+            try:
+                subprocess.Popen([c, "--new-window", url], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                return
+            except OSError:
+                pass
+    try:
+        webbrowser.open_new(url)
+    except Exception:     # noqa: BLE001
+        pass
+
+
 def _start_progress(args, total, engine_label):
     import progress as P
     prog = P.Progress(path=args.progress, total=total, output_path=args.output, engine=engine_label,
@@ -628,6 +654,8 @@ def _start_progress(args, total, engine_label):
         if prog.url:
             ip = P.lan_ip()
             print(f"Live dashboard: {prog.url}" + (f"   (phone on same Wi-Fi: http://{ip}:{prog.port}/)" if ip and args.serve_host == "0.0.0.0" else ""))
+            if not args.no_open and sys.stdout.isatty():
+                _open_dashboard(prog.url)
         else:
             print("!! live dashboard could not start (port busy?) - progress is still written to", args.progress)
     return prog
@@ -726,11 +754,13 @@ def _main_local(args, df, modes, ck, keys, prior_done, sl=None):
             media = _local_map(df)
             runner = local_engine.LocalRunner(
                 rows, keys, todo, ck, kinds, media, ctx, agents=workers, downloaders=args.downloaders, rate=args.rate,
+                readers=args.readers, analysts=args.analysts,
                 engine_module=args.engine_module, inline=args.inline, progress=prog, task_timeout=args.task_timeout,
                 pause_file=str(Path(args.progress).with_name("PAUSE")), discard_media=args.discard_media,
                 on_row=(lambda i, res: chunk.mark_row(i)) if chunk else None)
             runner.lock = lock
-            print(f"Agents: {workers} worker processes + {runner.n_dl} downloaders  |  rows to process: {len(todo):,}"
+            nr = collections.Counter(runner._roles())
+            print(f"Agents: {runner.n_dl} downloaders + {nr['form']} readers + {nr['photo']} photo analysts  |  rows to process: {len(todo):,}"
                   f"  (already done: {done_before:,})  |  autosave every {args.autosave_sec:g}s -> {args.output}"
                   + ("  |  discarding downloaded media after each row" if args.discard_media else ""))
             saver.start()
@@ -755,7 +785,7 @@ def _main_local(args, df, modes, ck, keys, prior_done, sl=None):
         lingering = bool(prog.url) and rc == 0
         prog.write_now()
         if lingering:
-            time.sleep(2.5)  # let the open dashboard page see 'Done'
+            time.sleep(4)  # let the open dashboard page see 'Done' (it then celebrates and closes itself)
         prog.stop()
     if path:
         print(f"Wrote {path}" + (f"\n!! {target.last_note}" if target.last_note else ""))

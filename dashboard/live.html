@@ -107,13 +107,35 @@ table.live td.num{font-variant-numeric:tabular-nums}
 .tag.g{background:#d4f1df;color:#16683a}.tag.r{background:#fbd5e3;color:#a1124a}.tag.y{background:#fdf0c2;color:#7a5a00}
 .badge{box-shadow:0 1px 2px rgba(0,0,0,.25)}
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]) table.live tbody tr:nth-child(even) td{background:#1c2633}:root:not([data-theme="light"]) .agent{background:#18202b;color:#e7edf5}:root:not([data-theme="light"]) .tools h2{color:#b9a8ff}}
+
+/* colourful role rows */
+.rolerow{margin-top:8px;padding:6px 8px 8px;border-radius:14px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.18)}
+.rolehead{display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:800;color:#fff;padding:3px 12px;border-radius:999px;opacity:1;box-shadow:0 2px 6px rgba(0,0,0,.25)}
+.rolehead.dl{background:linear-gradient(90deg,#1e88e5,#00bcd4)}.rolehead.fr{background:linear-gradient(90deg,#8e24aa,#e040fb)}.rolehead.ph{background:linear-gradient(90deg,#f57c00,#ffca28);color:#3a2300}
+.agent.role-dl{background:linear-gradient(135deg,#e3f2fd,#e0f7fa)}.agent.role-fr{background:linear-gradient(135deg,#f3e5f5,#fce4ec)}.agent.role-ph{background:linear-gradient(135deg,#fff3e0,#fffde7)}
+.agent.busy{position:relative;box-shadow:0 0 0 2px #36d399,0 0 14px rgba(54,211,153,.6);animation:glow 1.6s ease-in-out infinite}
+@keyframes glow{50%{box-shadow:0 0 0 2px #ffd54f,0 0 18px rgba(255,213,79,.7)}}
+.agent .emo{font-size:15px;margin-right:2px}
+.agent.busy .emo{display:inline-block;animation:bob .8s ease-in-out infinite alternate}
+@keyframes bob{to{transform:translateY(-2px) rotate(-8deg)}}
+h1 .ai{display:inline-block;animation:bob 1s ease-in-out infinite alternate}
+/* celebration */
+#party{position:fixed;inset:0;z-index:9999;display:none;align-items:center;justify-content:center;background:radial-gradient(circle at center,rgba(40,20,90,.85),rgba(10,5,30,.92))}
+#party canvas{position:absolute;inset:0;width:100%;height:100%}
+#party .box{position:relative;text-align:center;color:#fff;padding:28px 40px;border-radius:24px;background:linear-gradient(135deg,#7b2ff7,#f107a3);box-shadow:0 10px 40px rgba(0,0,0,.5);animation:popin .6s cubic-bezier(.2,1.6,.4,1)}
+@keyframes popin{from{transform:scale(.3);opacity:0}}
+#party .big{font-size:64px;line-height:1}#party h2{font-size:30px;margin:10px 0 6px}
+#party .sum{font-size:15px;opacity:.95}#party .sum b{font-size:18px}
+#party .cd{margin-top:14px;font-size:13px;opacity:.9}
+#party button{margin-top:10px;border:0;border-radius:999px;padding:6px 16px;font-weight:700;cursor:pointer;background:#fff;color:#7b2ff7}
 </style>
 </head>
 <body>
 <div class="banner" id="banner"></div>
+<div id="party"><canvas id="confetti"></canvas><div class="box"><div class="big">&#127881;&#129302;&#127882;</div><h2>Work done! QC complete</h2><div class="sum" id="partysum"></div><div class="cd" id="partycd"></div><button id="partykeep">Keep this page open</button></div></div>
 <div class="top">
   <div class="row1">
-    <h1 id="title">CLAP AI QC - live run</h1>
+    <h1><span class="ai">&#129302;</span> <span id="title">CLAP AI QC - live run</span> &#10024;</h1>
     <span class="pill Offline" id="pill"><span class="dot"></span><span id="status">Connecting</span></span>
     <div class="kv"><span><b id="rows">0 / 0</b>rows</span><span><b id="rpm">0</b>rows/min</span><span><b id="eta">-</b>left</span><span><b id="elapsed">0s</b>elapsed</span><span><b id="errs">0</b>errors</span><span style="display:none"><b id="cost"></b></span></div>
     <span class="note" id="upd"></span>
@@ -190,15 +212,16 @@ function render(d){
   $("agentnote").textContent="("+busy+" busy of "+ag.length+")";
   function card(a){
     var doing=a.state==="busy"?(/^form/.test(a.task||"")?"reading the form":/^photo/.test(a.task||"")?"checking the photos":/fetch/.test(a.task||"")?"downloading form + photos":esc(a.task||"working")):a.state==="idle"?"waiting for work":a.state==="starting"?"waking up (loading models)":esc(a.task||a.state);
-    var tool=/Download/i.test(a.role)?"&#128230;":/Photo/i.test(a.role)?"&#128247;":"&#128269;";
+    var tool=/Download/i.test(a.role)?"&#128229;":/Photo/i.test(a.role)?"&#128248;":"&#129504;";
+    var emo=a.state==="busy"?(/Download/i.test(a.role)?"&#128229;":/Photo/i.test(a.role)?"&#128248;":"&#129504;"):a.state==="idle"?"&#128164;":a.state==="starting"?"&#128267;":(a.state==="error"||a.state==="dead")?"&#9888;&#65039;":"&#9881;&#65039;";
     var rc=/Download/i.test(a.role)?"role-dl":/Photo/i.test(a.role)?"role-ph":"role-fr";
-    return '<div class="agent '+rc+' '+esc(a.state)+'">'+ROBOT.replace("TOOL",tool)+'<div class="body"><div class="role"><span>'+esc(a.role)+'</span><span class="st">'+esc(a.state)+(a.state==="idle"?'<span class="zzz">zzz</span>':'')+'</span></div>'+
-      '<div class="doc">'+(a.state==="busy"?esc(a.docket||""):"&nbsp;")+'</div><div class="note">'+doing+'</div>'+
+    return '<div class="agent '+rc+' '+esc(a.state)+'">'+ROBOT.replace("TOOL",tool)+'<div class="body"><div class="role"><span>Agent '+esc(((a.role||"").match(/#(\d+)/)||[0,""])[1])+'</span><span class="st">'+esc(a.state)+(a.state==="idle"?'<span class="zzz">zzz</span>':'')+'</span></div>'+
+      '<div class="doc">'+(a.state==="busy"?esc(a.docket||""):"&nbsp;")+'</div><div class="note"><span class="emo">'+emo+'</span>'+doing+'</div>'+
       '<div class="meta"><span>'+num(a.rows_done)+' done</span><span>'+(a.avg_sec?a.avg_sec+" s/row":"-")+'</span></div></div></div>'}
-  // one row per role: downloaders, form readers, photo analysts
-  var groups=[["Downloaders",function(a){return /Download/i.test(a.role)}],["Form readers",function(a){return !/Download|Photo/i.test(a.role)}],["Photo analysts",function(a){return /Photo/i.test(a.role)}]];
+  // one row per role (Downloader / Reader / Photo Analyst); inside a row the agents are numbered Agent 1, 2, ...
+  var groups=[["&#128229; Downloader",function(a){return /Download/i.test(a.role)},"dl"],["&#129504; Reader",function(a){return !/Download|Photo/i.test(a.role)},"fr"],["&#128248; Photo Analyst",function(a){return /Photo/i.test(a.role)},"ph"]];
   $("agents").innerHTML=groups.map(function(gr){var m=ag.filter(gr[1]);if(!m.length)return "";
-    return '<div class="rolerow"><div class="rolehead">'+gr[0]+' ('+m.filter(function(a){return a.state==="busy"}).length+'/'+m.length+' busy)</div><div class="robots">'+m.map(card).join("")+'</div></div>'}).join("");
+    return '<div class="rolerow"><div class="rolehead '+gr[2]+'">'+gr[0]+' &#129302; ('+m.filter(function(a){return a.state==="busy"}).length+'/'+m.length+' busy)</div><div class="robots">'+m.map(card).join("")+'</div></div>'}).join("");
   var o=d.output||{};
   $("outpath").textContent=o.path||"-";
   $("outsaved").textContent=o.last_saved?o.last_saved+"  ("+num(o.rows_saved)+" rows written)":"not saved yet (first autosave after the set interval)";
@@ -240,6 +263,27 @@ function setOffline(msg){
   var b=$("banner");b.style.display="block";b.textContent=msg;
   $("pill").className="pill Offline";$("status").textContent="Offline";
 }
+
+var sawRunning=false,partied=false;
+function confetti(){
+  var cv=$("confetti"),cx=cv.getContext("2d"),W,H,P=[],C=["#ff595e","#ffca3a","#8ac926","#1982c4","#6a4c93","#f107a3","#00e5ff"];
+  function rs(){W=cv.width=innerWidth;H=cv.height=innerHeight}rs();addEventListener("resize",rs);
+  for(var i=0;i<260;i++)P.push({x:Math.random()*W,y:-Math.random()*H,w:6+Math.random()*7,h:8+Math.random()*10,c:C[i%C.length],vy:2+Math.random()*4,vx:-2+Math.random()*4,r:Math.random()*6,vr:-.2+Math.random()*.4});
+  (function f(){cx.clearRect(0,0,W,H);P.forEach(function(p){p.x+=p.vx;p.y+=p.vy;p.r+=p.vr;if(p.y>H+20){p.y=-20;p.x=Math.random()*W}
+    cx.save();cx.translate(p.x,p.y);cx.rotate(p.r);cx.fillStyle=p.c;cx.fillRect(-p.w/2,-p.h/2,p.w,p.h);cx.restore()});requestAnimationFrame(f)})();
+}
+function celebrate(d){
+  if(partied)return;partied=true;
+  var v=d.verdicts||{};
+  $("partysum").innerHTML='<b>'+num(d.done)+'</b> rows checked in <b>'+dur(d.elapsed_sec)+'</b><br>&#9989; OK '+num(v["OK"])+' &nbsp; &#128993; Partially OK '+num(v["Partially OK"])+' &nbsp; &#128992; Review '+num(v["Review"])+' &nbsp; &#128308; Manual '+num(v["Manual QC Required"])+'<br><small>Saved: '+esc((d.output||{}).path||"")+'</small>';
+  $("party").style.display="flex";confetti();
+  if(!sawRunning){$("partycd").textContent="This run had already finished when the page was opened.";$("partykeep").style.display="none";return}
+  var n=12,keep=false;
+  $("partykeep").onclick=function(){keep=true;$("party").style.display="none"};
+  (function cd(){if(keep)return;
+    if(n<=0){window.close();setTimeout(function(){$("partycd").textContent="All done - you can close this tab now.";$("partykeep").textContent="Show the results"},400);return}
+    $("partycd").textContent="This page will close in "+n+" s";n--;setTimeout(cd,1000)})();
+}
 function tick(){
   var x=new XMLHttpRequest();
   x.open("GET",SRC+(SRC.indexOf("?")<0?"?":"&")+"t="+Date.now(),true);
@@ -247,7 +291,9 @@ function tick(){
   x.onload=function(){
     if(x.status!==200){fails++;if(fails>2)setOffline("Cannot read "+SRC+" (HTTP "+x.status+").");return}
     try{var d=JSON.parse(x.responseText);fails=0;lastOK=Date.now();$("banner").style.display="none";render(d);
-      if(d.status==="Done"||d.status==="Stopped"){setTimeout(tick,3000);return}
+      if(d.status==="Running")sawRunning=true;
+      if(d.status==="Done"){celebrate(d);return}
+      if(d.status==="Stopped"){setTimeout(tick,3000);return}
     }catch(err){fails++}
     setTimeout(tick,1000);
   };

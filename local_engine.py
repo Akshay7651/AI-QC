@@ -233,13 +233,16 @@ class _Worker:
 class LocalRunner:
     def __init__(self, rows, keys, todo, ck, kinds, local_map, ctx, *, agents=4, downloaders=None, rate=5.0,
                  engine_module=None, inline=False, progress=None, task_timeout=180.0, pause_file=None,
-                 cache_dirs=None, max_inflight=None, on_row=None, discard_media=False):
+                 cache_dirs=None, max_inflight=None, on_row=None, discard_media=False, readers=None, analysts=None):
         self.rows, self.keys, self.todo, self.ck = rows, keys, list(todo), ck
         self.kinds = set(kinds)
         self.local_map = local_map or {}
         self.ctx = ctx                      # dict of lists aligned to rows: gps, dflags, risk
+        self.readers, self.analysts = readers, analysts
+        if readers or analysts:
+            agents = int(readers or 0) + int(analysts or 0)
         self.n_agents = max(1, int(agents))
-        self.n_dl = int(downloaders) if downloaders else max(2, min(8, self.n_agents))
+        self.n_dl = int(downloaders) if downloaders else max(2, min(12, self.n_agents))
         self.rate = float(rate)
         self.engine_spec, self.inline = engine_module, inline
         self.prog = progress
@@ -350,7 +353,11 @@ class LocalRunner:
             return ["form"] * n
         if "form" not in self.kinds:
             return ["photo"] * n
-        nf = max(1, round(n * 0.6)) if n > 1 else 1
+        if self.readers or self.analysts:
+            nf, npho = max(1, int(self.readers or 0)), max(1, int(self.analysts or 0))
+            return ["form"] * nf + ["photo"] * npho
+        # photo analysts are mostly idle (one photo batch per row is quick): 2 readers per analyst (--agents 18 -> 12 + 6)
+        nf = max(1, round(n * 2 / 3)) if n > 1 else 1
         return ["form"] * nf + ["photo"] * (n - nf)
 
     def _make_workers(self):
