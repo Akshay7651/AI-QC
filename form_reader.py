@@ -847,11 +847,17 @@ def read_form(path_or_pil, docket=None, debug=False):
     out["officer_signed"] = bool(sg["officer"] or stamp)
     out["officer_stamp_only"] = bool(stamp and not sg["officer"])
     out["_sig_feats"] = feats
-    # handwritten committee / survey remarks: ink in the band between the table and the signature lines (the farmer block is
-    # left out - farmer signatures often reach up into that band). Threshold from 12 forms checked by eye (remarks: >=1.3,
-    # none: <=0.1); first version, to be refined with more labelled forms.
-    rem = sum(float((feats.get(b) or {}).get("area_top", 0.0)) for b in ("company", "worker", "officer"))
-    out["remarks_written"] = bool(rem >= 0.5)
+    # handwritten committee / survey remarks: the table has its own "Comment" column (last column of the loss-detail
+    # table, read as remark_r1/remark_r2 by form_p3.cell_boxes) - check that first since that is where surveyors
+    # actually write it. Fall back to ink in the band between the table and the signature lines (the farmer block is
+    # left out - farmer signatures often reach up into that band; threshold from 12 forms checked by eye: remarks
+    # >=1.3, none <=0.1) only when the remarks column itself could not be located.
+    remark_keys = [k for k in ("remark_r1", "remark_r2") if k in B]
+    if remark_keys:
+        out["remarks_written"] = any(P.ink_frac(P.crop(r, B[k]), inset=0.05) >= CELL_BLANK_INK for k in remark_keys)
+    else:
+        rem = sum(float((feats.get(b) or {}).get("area_top", 0.0)) for b in ("company", "worker", "officer"))
+        out["remarks_written"] = bool(rem >= 0.5)
     # ---- overwrite on cells
     for k, v in cells.items():
         if v["ink"] > 0.30:

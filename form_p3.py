@@ -455,7 +455,7 @@ def cell_boxes(tab, vl, scale):
             # the total-row band is short: fall back to the row band snap for columns that did not snap
             xr, _ = snap_cols(vl, tab["xs"], y0 + 2 * p, tab["ybot"], w)
             xs = [a if abs(a - b) > 0.001 else c for a, b, c in zip(xs, tab["xs"], xr)]
-        for cname, (i0, i1) in {"area": (5, 6), "loss": (6, 7)}.items():
+        for cname, (i0, i1) in {"area": (5, 6), "loss": (6, 7), "remark": (7, 8)}.items():
             padv = 0.08 * (yb - ya) if name != "tot" else -0.06 * (yb - ya)
             out[f"{cname}_{name}"] = tuple(int(round(v * scale)) for v in (xs[i0], ya - padv, xs[i1], yb + padv))
     return out
