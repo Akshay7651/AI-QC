@@ -284,9 +284,23 @@ def _field_photo_yn(p):
 
 
 def _farmer_photo_yn(p):
-    """Yes when any of the docket's photos shows a person or a crop, otherwise No"""
-    person = bool(p.get("farmer_photo")) or any(p.get("person_each") or [])
-    return "Yes" if (person or p.get("crop_present") == "yes") else "No"
+    """Yes only when a person (farmer) is detected in at least one of the docket's photos, otherwise No
+    (same detector as the 'Farmer available / not available' remark, so the two always agree)"""
+    person = any(p.get("person_each") or []) or p.get("scene_type") == "person-only"
+    return "Yes" if person else "No"
+
+
+def _photo_loss_yn(p):
+    """Loss as per Photo (Yes/No): Yes = the field photo shows crop damage / flooding / no standing crop left,
+    No = healthy standing crop, Not clear = the photo does not let us say (weeds, unclear, low quality)"""
+    if p.get("photo_is_form"):
+        return "N/A (form image)"
+    v = str(p.get("photo_loss") or "").strip().lower()
+    if p.get("flooded") == "yes" or any(k in v for k in ("25-50", "50-75", "75-100", "100%")):
+        return "Yes"
+    if v.startswith("0%") or v == "no":
+        return "No"
+    return "Not clear"
 
 
 # ============================================================================ local (offline) engine: output assembly
@@ -485,9 +499,6 @@ def _compiled_remark(r, v, row, fok, pok, f, p):
         parts.append("Farmer photo: " + (s(v.get(C.COL_FARMER_PHOTO)) or "not checked"))
         d = s(v.get(C.COL_PHOTO_DATE))
         parts.append("Photo date " + (d if d and d[:1].isdigit() else "not read"))
-        pl = s(v.get(C.COL_PHOTO_LOSS))
-        if pl:
-            parts.append("Loss as per photo: " + pl)
     else:
         pst = (p or {}).get("_state", "not_found")
         parts.append("Photos: " + ("link missing" if pst == "no_link" else "not found / could not be downloaded" if pst in ("not_found", "error") else "not checked"))
@@ -587,7 +598,7 @@ def assemble_local(df, results, keys):
             put(C.COL_FARMER_PHOTO, _farmer_photo_yn(p))
             put("Farmer/person present in photos (remark)", person_remark(p))
             put("Farmer photo detail", person_detail(p))
-            put(C.COL_PHOTO_LOSS, p.get("photo_loss"))
+            put(C.COL_PHOTO_LOSS, _photo_loss_yn(p))
         put(C.COL_AI_REMARK, _compiled_remark(r, {c: cols[c][i] for c in cols}, df.iloc[i], fok, pok, f, p))
     _fill_blanks(cols, R)
     out = df.copy()
