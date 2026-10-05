@@ -284,17 +284,25 @@ def _field_photo_yn(p):
 
 
 def _farmer_photo_yn(p):
-    """Yes only when a person (farmer) is detected in at least one of the docket's photos, otherwise No
-    (same detector as the 'Farmer available / not available' remark, so the two always agree)"""
+    """Yes only when a person (farmer) is detected, otherwise No. Uses the trained classifier
+    (photo_models/photo_clf_v2.pkl: 84.4% vs human QC labels, held-out) when it ran; falls back to the
+    face-detector rule (75.6%) when it didn't (model file missing, or no usable field photos)."""
+    v2 = p.get("farmer_present_v2")
+    if v2 is not None:
+        return "Yes" if v2 else "No"
     person = any(p.get("person_each") or []) or p.get("scene_type") == "person-only"
     return "Yes" if person else "No"
 
 
 def _photo_loss_yn(p):
     """Loss as per Photo (Yes/No): Yes = the field photo shows crop damage / flooding / no standing crop left,
-    No = healthy standing crop, Not clear = the photo does not let us say (weeds, unclear, low quality)"""
+    No = healthy standing crop, Not clear = the photo does not let us say. Uses the trained classifier
+    (68.9% vs human QC labels, held-out) when it ran; falls back to the damage-state heuristic (51.3%) when it didn't."""
     if p.get("photo_is_form"):
         return "N/A (form image)"
+    v2 = p.get("photo_loss_yn_v2")
+    if v2 is not None:
+        return "Yes" if v2 else "No"
     v = str(p.get("photo_loss") or "").strip().lower()
     if p.get("flooded") == "yes" or any(k in v for k in ("25-50", "50-75", "75-100", "100%")):
         return "Yes"

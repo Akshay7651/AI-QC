@@ -192,7 +192,7 @@ def _models_version():
     """Changes whenever a model file is retrained, so cached predictions never go stale."""
     try:
         t = 0
-        for f in ("form.pkl", "orient.pkl", "crop_visible.pkl", "yunet.onnx", "heads.pkl", _BACKBONE):
+        for f in ("form.pkl", "orient.pkl", "crop_visible.pkl", "yunet.onnx", "heads.pkl", "photo_clf_v2.pkl", _BACKBONE):
             p = os.path.join(_MODELS, f)
             t += int(os.stat(p).st_mtime) if os.path.exists(p) else 7
         return "m%x" % (t % 0xFFFFFF)
@@ -544,11 +544,36 @@ def analyse(paths, row: dict, form_image=None) -> dict:
     farmer = bool(face_idx)
     if farmer:
         remarks.append(f"A person is visible in photo {', '.join(str(i + 1) for i in face_idx)}")
+    # ---- trained farmer-present / loss-visible classifiers (photo_models/photo_clf_v2.pkl, tools/train_photo_clf2.py)
+    # held-out accuracy vs human QC labels: person 75.6% (face-detector rule) -> 84.4% (trained);
+    # loss yes/no 51.3% (old damage-state heuristic) -> 68.9% (trained). None of the fields below when the model
+    # isn't present or there are no usable (non-form) photos: the caller then falls back to the older rule.
+    farmer_v2 = loss_yn_v2 = None
+    clf2 = _load("photo_clf_v2.pkl")
+    if clf2 and field_idx:
+        fp = [P[i] for i in field_idx if "logits" in P[i]]
+        if fp:
+            Xb = np.array([d["logits"].astype(np.float32) for d in fp])
+            Xc = np.array([list(d["field_f"].values()) + list(d["water"].values()) for d in fp], np.float32)
+            heads_m = _load("heads.pkl")
+            if heads_m:
+                try:
+                    pbb, pcl, cls = _head_probs(heads_m, "scene", Xb, Xc)
+                    pp = pcl if pbb is None else (pbb + pcl) / 2
+                    pers = pp[:, cls.index("person-only")] if "person-only" in cls else np.zeros(len(fp))
+                    nf = np.array([d["nfaces"] for d in fp]); fc = np.array([d["face_conf"] for d in fp])
+                    pf = np.array([[nf.max(), nf.mean(), fc.max(), fc.mean(), len(fp), pers.max(), pers.mean()]])
+                    farmer_v2 = bool(clf2["person"].predict(pf)[0])
+                    lf = np.concatenate([Xb.mean(0), Xb.max(0), Xc.mean(0)])[None]
+                    loss_yn_v2 = bool(clf2["loss"].predict(lf)[0])
+                except Exception:
+                    pass
     loss = num(row.get("crop_loss_pct"))
     qual = max(set(d["quality"] for d in P), key=[d["quality"] for d in P].count)
     res = {
         "photo_status": "OK", "engine": "local-v3", "n_photos": n,
         "field_photo": field, "field_note": note, "farmer_photo": farmer, "person_each": [bool(d["nfaces"] > 0) for d in P],
+        "farmer_present_v2": farmer_v2, "photo_loss_yn_v2": loss_yn_v2,
         "photo_loss": est if not (n_form == n) else "N/A (form image)",
         "photo_loss_note": "rough colour-based hint only; not correlated with app loss in tests" if est is not None else "",
         "photo_date": photo_date, "photo_quality": qual, "photo_flags": flags,
