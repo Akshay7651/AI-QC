@@ -586,8 +586,8 @@ def assemble_local(df, results, keys):
             put(C.COL_FORM_REMARKS, f"Form {fst}")
         if pok:
             fp = "form image" if p.get("photo_is_form") else p.get("field_photo")
-            put(C.COL_FIELD_PHOTO, _field_photo_yn(p))
-            put("Field photo type", fp)
+            put(C.COL_FIELD_PHOTO, fp)
+            put("Field photo type", _field_photo_yn(p))
             put(C.COL_PHOTO_DATE, _date_txt(p.get("stamp_date") or p.get("photo_date")))
             put("Photo is form image (Yes/No)", _yn(bool(p.get("photo_is_form"))))
             put("Form-image photos (n)", p.get("n_form_photos"))
