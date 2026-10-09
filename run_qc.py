@@ -568,7 +568,7 @@ def assemble_local(df, results, keys):
             put(C.COL_FORM_STATUS, _form_status(f, r))
             put("Form Quality", f.get("quality"))
             put("Form Confidence", _nn(f.get("confidence")))
-            put(C.COL_FORM_REMARKS, _yn(f.get("remarks_written")) if f.get("remarks_written") is not None else "Can't Read")
+            put(C.COL_FORM_REMARKS, f.get("remarks_text") or (_yn(f.get("remarks_written")) if f.get("remarks_written") is not None else "Can't Read"))
             put("AI notes on form reading", "; ".join(str(x) for x in (f.get("notes") or [])) or None)
         elif r is not None and not fok:
             fst = f.get("_state", "not_found") if f else "not_found"

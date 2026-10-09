@@ -612,6 +612,26 @@ def _hin_header_is_form(rgb):
         return False, ""
 
 
+def _ocr_remark(rgb, boxes):
+    """Best-effort Devanagari/English OCR of the handwritten remark cell(s). Returns cleaned text, or None when OCR
+    produces nothing usable - handwriting OCR is unreliable (unlike the printed form text elsewhere), so this is an
+    extra shown alongside the Yes/No ink detection, not a replacement for it."""
+    try:
+        import pytesseract
+        texts = []
+        for b in boxes:
+            c = P.crop(rgb, b, pad=2)
+            g = cv2.cvtColor(c, cv2.COLOR_RGB2GRAY) if c.ndim == 3 else c
+            g = P._resize_w(g, max(g.shape[1], 400))
+            txt = pytesseract.image_to_string(g, lang="hin+eng", config="--psm 6").strip()
+            if txt:
+                texts.append(txt)
+        joined = re.sub(r"\s+", " ", " ".join(texts)).strip()
+        return joined if len(joined) >= 2 else None
+    except Exception:      # noqa: BLE001
+        return None
+
+
 def _empty(notes):
     return {"is_proforma3": False, "quality": "unknown", "form_no": None, "form_no_conf": 0.0, "po_id": None,
             "po_id_matches": None, "form_area": None, "form_loss": None, "row_area": None, "row_loss": None,
@@ -854,7 +874,10 @@ def read_form(path_or_pil, docket=None, debug=False):
     # >=1.3, none <=0.1) only when the remarks column itself could not be located.
     remark_keys = [k for k in ("remark_r1", "remark_r2") if k in B]
     if remark_keys:
-        out["remarks_written"] = any(P.ink_frac(P.crop(r, B[k]), inset=0.05) >= CELL_BLANK_INK for k in remark_keys)
+        inked = [k for k in remark_keys if P.ink_frac(P.crop(r, B[k]), inset=0.05) >= CELL_BLANK_INK]
+        out["remarks_written"] = bool(inked)
+        if inked:
+            out["remarks_text"] = _ocr_remark(r, [B[k] for k in inked])
     else:
         rem = sum(float((feats.get(b) or {}).get("area_top", 0.0)) for b in ("company", "worker", "officer"))
         out["remarks_written"] = bool(rem >= 0.5)
