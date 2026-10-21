@@ -26,7 +26,10 @@ def locate_cells(path):
         return None, None
     r, info = P.normalise(rgb)
     g = cv2.cvtColor(P._resize_w(r, 1600), cv2.COLOR_RGB2GRAY)
-    words = O._ocr_data(g)
+    try:
+        words = O._ocr_data(g)
+    except Exception:       # noqa: BLE001 - tesseract can hang/fail pathologically on some photos; never let one form stall the batch
+        return None, None
     if not O.is_odisha_form(words):
         return None, None
     lines = O._group_lines(words)

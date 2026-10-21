@@ -560,15 +560,18 @@ def assemble_local(df, results, keys):
                                ("Intimation date (Form)", "intimation_date"), ("Inspection date (Form)", "inspection_date")):
                 v_ = f.get(key_)
                 put(col_, f"{str(v_)[:2]}-{str(v_)[2:4]}-{str(v_)[4:8]}" if v_ and len(str(v_)) == 8 and str(v_).isdigit() else None)
-            put(C.COL_SURVEYOR_SIG, _yn(f.get("company_signed")))
-            put(C.COL_FARMER_SIG, _yn(f.get("farmer_signed")))
-            put("Primary Worker Signature (Yes/No)", _yn(f.get("worker_signed")))
-            put(C.COL_GOVT_SIG, _yn(f.get("officer_signed")))
-            put("Officer Stamp Only (Yes/No)", _yn(f.get("officer_stamp_only")))
-            put(C.COL_FORM_STATUS, _form_status(f, r))
+            # signatures/status/remarks come from Proforma-3-specific zone geometry: meaningless (coincidental ink,
+            # not an actual signature box) on a form the reader determined isn't a Proforma-3 - gate on ok3 same
+            # as Form No/Area/Loss above, instead of showing a confident-looking but baseless Yes/No.
+            put(C.COL_SURVEYOR_SIG, _yn(f.get("company_signed")) if ok3 else "N/A")
+            put(C.COL_FARMER_SIG, _yn(f.get("farmer_signed")) if ok3 else "N/A")
+            put("Primary Worker Signature (Yes/No)", _yn(f.get("worker_signed")) if ok3 else "N/A")
+            put(C.COL_GOVT_SIG, _yn(f.get("officer_signed")) if ok3 else "N/A")
+            put("Officer Stamp Only (Yes/No)", _yn(f.get("officer_stamp_only")) if ok3 else "N/A")
+            put(C.COL_FORM_STATUS, _form_status(f, r) if ok3 else "N/A")
             put("Form Quality", f.get("quality"))
-            put("Form Confidence", _nn(f.get("confidence")))
-            put(C.COL_FORM_REMARKS, f.get("remarks_text") or (_yn(f.get("remarks_written")) if f.get("remarks_written") is not None else "Can't Read"))
+            put("Form Confidence", _nn(f.get("confidence")) if ok3 else None)
+            put(C.COL_FORM_REMARKS, (f.get("remarks_text") or (_yn(f.get("remarks_written")) if f.get("remarks_written") is not None else "Can't Read")) if ok3 else "N/A")
             put("AI notes on form reading", "; ".join(str(x) for x in (f.get("notes") or [])) or None)
         elif r is not None and not fok:
             fst = f.get("_state", "not_found") if f else "not_found"

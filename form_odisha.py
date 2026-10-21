@@ -55,7 +55,7 @@ TABLE2_HDR = [r"affected\s*area", r"loss\s*%?", r"farmer\s*is\s*aware"]
 
 def _ocr_data(gray):
     import pytesseract
-    d = pytesseract.image_to_data(gray, lang="eng", config="--psm 6", output_type=pytesseract.Output.DICT)
+    d = pytesseract.image_to_data(gray, lang="eng", config="--psm 6", output_type=pytesseract.Output.DICT, timeout=20)
     words = []
     for i in range(len(d["text"])):
         t = d["text"][i].strip()
@@ -235,7 +235,10 @@ def _ocr_cell(gray, box, digits_only=False, pad=4):
         cfg = "--psm 7 -c tessedit_char_whitelist=0123456789./%-"
     else:
         cfg = "--psm 7"
-    txt = pytesseract.image_to_string(b, lang="eng", config=cfg).strip()
+    try:
+        txt = pytesseract.image_to_string(b, lang="eng", config=cfg, timeout=10).strip()
+    except Exception:       # noqa: BLE001 - tesseract can hang/fail pathologically on some crops; never let one cell kill the row
+        txt = ""
     return (txt or None), ink
 
 
@@ -274,7 +277,10 @@ def read_odisha(rgb, debug=False):
     {'is_odisha_form': False} if this isn't the Odisha template."""
     r, info = P.normalise(rgb)
     g = cv2.cvtColor(P._resize_w(r, 1600), cv2.COLOR_RGB2GRAY)
-    words = _ocr_data(g)
+    try:
+        words = _ocr_data(g)
+    except Exception:       # noqa: BLE001 - tesseract can hang/fail pathologically on some photos
+        return {"is_odisha_form": False, "_error": "ocr failed"}
     if not is_odisha_form(words):
         return {"is_odisha_form": False}
     lines = _group_lines(words)
