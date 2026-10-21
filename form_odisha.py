@@ -53,18 +53,29 @@ TABLE2_COLS = ["affected_area_pct", "loss_pct", "farmer_aware"]
 TABLE2_HDR = [r"affected\s*area", r"loss\s*%?", r"farmer\s*is\s*aware"]
 
 
-def _ocr_data(gray):
+def _ocr_data_one(gray, psm):
     import pytesseract
-    d = pytesseract.image_to_data(gray, lang="eng", config="--psm 6", output_type=pytesseract.Output.DICT, timeout=20)
+    d = pytesseract.image_to_data(gray, lang="eng", config=f"--psm {psm}", output_type=pytesseract.Output.DICT, timeout=20)
     words = []
     for i in range(len(d["text"])):
         t = d["text"][i].strip()
         if not t or float(d.get("conf", [0])[i]) < 0:
             continue
-        if not t:
-            continue
         words.append({"text": t, "x": d["left"][i], "y": d["top"][i], "w": d["width"][i], "h": d["height"][i],
                       "cx": d["left"][i] + d["width"][i] / 2, "cy": d["top"][i] + d["height"][i] / 2})
+    return words
+
+
+def _ocr_data(gray):
+    """psm 3 (full page segmentation) reads the free-text label:value lines well but regularly misses text
+    inside the ruled tables entirely; psm 6 (uniform block) reads the tables but on some photos hallucinates
+    words from paper-grain/shadow texture instead. Neither is reliable alone (confirmed against real samples) -
+    merge both passes' words so each covers the other's blind spot."""
+    words = _ocr_data_one(gray, 3)
+    try:
+        words = words + _ocr_data_one(gray, 6)
+    except Exception:       # noqa: BLE001
+        pass
     return words
 
 
@@ -93,11 +104,23 @@ def _group_lines(words, tol=0.6):
     return out
 
 
-def is_odisha_form(words_or_text) -> bool:
-    text = words_or_text if isinstance(words_or_text, str) else " ".join(w["text"] for w in words_or_text)
-    t = text.lower()
-    return bool(HEADER_RE.search(t)) or ("generali" in t and "crop loss" in t) or \
-        ("survey no" in t and "actual crop" in t and "insured area" in t)
+# single distinctive words, checked independently against individual OCR tokens (not phrases against the joined
+# text): multi-word phrases need their words to land adjacent in the word stream, which a table-header line
+# (asterisks, bold font, glare) often breaks even when the page is perfectly legible to a human. Single words
+# don't have that problem. None of these are Hindi, so a genuine Proforma-3 (Devanagari) naturally scores ~0.
+_DISTINCTIVE_WORDS = {"gci", "girdhwar", "patwar", "generali", "fasal", "bima", "yojana", "pradhan", "prodhan",
+                      "mantri", "mantn", "insured", "tehsil", "localized", "calamity", "inundation", "landslide",
+                      "hailstorm", "surveyor", "intimations", "lasses", "losses", "farmer", "famer", "damage",
+                      "insurance", "crop", "harvest", "sowing", "sow1ng"}
+
+
+def is_odisha_form(words_or_text, min_hits=2) -> bool:
+    if isinstance(words_or_text, str):
+        tokens = re.findall(r"[a-zA-Z]+", words_or_text.lower())
+    else:
+        tokens = [t for w in words_or_text for t in re.findall(r"[a-zA-Z]+", w["text"].lower())]
+    hits = sum(1 for t in tokens if t in _DISTINCTIVE_WORDS)
+    return (bool(HEADER_RE.search(" ".join(tokens))) or hits >= min_hits)
 
 
 def _clean_value(s):
