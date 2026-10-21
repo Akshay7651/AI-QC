@@ -48,7 +48,7 @@ _FIELD_RE = [(k, re.compile(r"^\s*" + pat, re.I)) for k, pat in _FIELDS]
 
 # the loss-detail table header row (two tables use this shape): label -> column index
 TABLE1_COLS = ["survey_no", "actual_crop", "total_area_hect", "insured_area_hect", "sowing_date"]
-TABLE1_HDR = [r"survey\s*no", r"actual\s*crop", r"total\s*area", r"insured\s*area", r"sowing\s*date"]
+TABLE1_HDR = [r"surv\w*", r"actual\s*crop", r"total\s*area", r"insured\s*area", r"sow\w*\s*date"]
 TABLE2_COLS = ["affected_area_pct", "loss_pct", "farmer_aware"]
 TABLE2_HDR = [r"affected\s*area", r"loss\s*%?", r"farmer\s*is\s*aware"]
 
@@ -70,13 +70,27 @@ def _ocr_data(gray):
     """psm 3 (full page segmentation) reads the free-text label:value lines well but regularly misses text
     inside the ruled tables entirely; psm 6 (uniform block) reads the tables but on some photos hallucinates
     words from paper-grain/shadow texture instead. Neither is reliable alone (confirmed against real samples) -
-    merge both passes' words so each covers the other's blind spot."""
+    merge both passes' words. Fine for word-presence checks (is_odisha_form); NOT fine for line/geometry
+    matching - see ocr_lines(), which groups each pass separately instead of interleaving raw words."""
     words = _ocr_data_one(gray, 3)
     try:
         words = words + _ocr_data_one(gray, 6)
     except Exception:       # noqa: BLE001
         pass
     return words
+
+
+def ocr_lines(gray):
+    """Line-grouped OCR for geometry matching (_find_table_box etc.): each psm pass is grouped into lines on
+    its own, then the line lists are concatenated - merging raw words first (like _ocr_data) interleaves the
+    two passes' tokens when both read the same text, producing garbage like 'Survey Suvey No." Nor] Asta
+    Actual' that breaks header matching even on forms where the text is perfectly readable (confirmed)."""
+    lines = _group_lines(_ocr_data_one(gray, 3))
+    try:
+        lines = lines + _group_lines(_ocr_data_one(gray, 6))
+    except Exception:       # noqa: BLE001
+        pass
+    return sorted(lines, key=lambda ln: ln["ycen"])
 
 
 def _group_lines(words, tol=0.6):
@@ -165,11 +179,35 @@ def _row_band(lines, after_y1, next_rx, max_gap):
     return min(ln["y0"] for ln in band), max(ln["y1"] for ln in band)
 
 
+def _merge_near_lines(lines, tol=18):
+    """Union OCR lines whose ycen falls within `tol` px of each other into one "row candidate" (word lists
+    concatenated, sorted by x). Needed because the two OCR passes each read PART of a header row correctly but
+    not all of it (psm 3 drops a column, psm 6 misspells one) - neither single line satisfies the full header
+    match, but their union does. Chains transitively (A near B near C -> all three merge), same idea as
+    _group_lines but one level up (lines -> row candidates instead of words -> lines)."""
+    ys = sorted(lines, key=lambda ln: ln["ycen"])
+    out, cur = [], []
+    for ln in ys:
+        if cur and ln["ycen"] - cur[-1]["ycen"] > tol:
+            out.append(cur)
+            cur = []
+        cur.append(ln)
+    if cur:
+        out.append(cur)
+    merged = []
+    for grp in out:
+        words = sorted([w for ln in grp for w in ln["words"]], key=lambda w: w["x"])
+        merged.append({"words": words, "text": " ".join(w["text"] for w in words),
+                       "y0": min(ln["y0"] for ln in grp), "y1": max(ln["y1"] for ln in grp),
+                       "ycen": sum(ln["ycen"] for ln in grp) / len(grp)})
+    return merged
+
+
 def _find_table_box(lines, headers_rx, y_search_from=0, next_rx=None, max_gap=140):
-    """Find a header line matching all of headers_rx (in order, left-to-right) -> dict(col_bounds: [x0..xN] in
+    """Find a header row matching all of headers_rx (in order, left-to-right) -> dict(col_bounds: [x0..xN] in
     image px, hdr_y1, row_y0, row_y1). The row band is the union of every OCR line between the header and the
     next known section (see _row_band) rather than a single "next line", which handwriting easily splits."""
-    for i, ln in enumerate(lines):
+    for i, ln in enumerate(_merge_near_lines(lines)):
         if ln["ycen"] < y_search_from:
             continue
         t = ln["text"].lower()
@@ -306,7 +344,7 @@ def read_odisha(rgb, debug=False):
         return {"is_odisha_form": False, "_error": "ocr failed"}
     if not is_odisha_form(words):
         return {"is_odisha_form": False}
-    lines = _group_lines(words)
+    lines = ocr_lines(g)
     out = {"is_odisha_form": True, "_quality": {"n_words": len(words)}}
     out.update(_extract_header_fields(lines))
     box1 = _find_table_box(lines, TABLE1_HDR, next_rx=r"7\)\s*reason\s*of\s*crop\s*loss")
