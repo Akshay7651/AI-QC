@@ -285,22 +285,31 @@ def _find_table_box(lines, headers_rx, y_search_from=0, next_rx=None, max_gap=14
     return None
 
 
-def _find_table_box_by_anchor(lines, anchor_rx, next_rx, n_cols, x0, x1, max_gap=160):
-    """Fallback when a table's own column headers don't OCR reliably (thin/bordered header text): anchor off a
-    nearby line that DOES read well (e.g. the numbered section title above the table), skip the printed column-
-    header line right under it, then take the row band below THAT as the handwritten data row, split into
-    `n_cols` equal-width columns spanning (x0,x1) - valid because this is a fixed printed template (same column
+def _find_table_box_by_anchor(lines, anchor_rx, next_rx, n_cols, x0, x1, max_gap=160, skip_lines=1, fractions=None):
+    """Fallback when a table's own column headers don't OCR reliably (thin/bordered header text, or - confirmed
+    on real samples - small italic text that's below OCR's resolution limit on a lot of real photos): anchor
+    off a nearby line that DOES read well (e.g. the numbered section title above the table, or a label on the
+    line right above it), skip `skip_lines` printed lines (the table's own header row, sometimes also a
+    trailing bit of the line above the table), then take the row band below as the handwritten data row, split
+    into `n_cols` columns (equal-width, or `fractions` - a list of n_cols+1 values in [0,1] - when the printed
+    columns are not equal width) spanning (x0,x1). Valid because this is a fixed printed template (same column
     layout on every form), unlike Proforma-3 where geometry is detected per-form."""
     for i, ln in enumerate(lines):
         if not re.search(anchor_rx, ln["text"], re.I):
             continue
         hdr_row_y1 = ln["y1"]
-        for ln2 in lines[i + 1:i + 3]:
+        skipped = 0
+        for ln2 in lines[i + 1:i + 2 + skip_lines * 2]:
             if ln2["text"].strip():
                 hdr_row_y1 = ln2["y1"]
-                break
+                skipped += 1
+                if skipped >= skip_lines:
+                    break
         row_y0, row_y1 = _row_band(lines, hdr_row_y1, next_rx, max_gap)
-        bounds = [x0 + (x1 - x0) * k / n_cols for k in range(n_cols + 1)]
+        if fractions:
+            bounds = [x0 + (x1 - x0) * f for f in fractions]
+        else:
+            bounds = [x0 + (x1 - x0) * k / n_cols for k in range(n_cols + 1)]
         return {"col_bounds": bounds, "hdr_y1": ln["y1"], "row_y0": row_y0, "row_y1": row_y1}
     return None
 
@@ -382,6 +391,33 @@ def _read_signatures(lines, gray):
     return out
 
 
+# column fractions of table 1 (Survey No./Actual Crop/Total Area/Insured Area/Sowing Date), measured from the
+# one sample whose header OCR'd cleanly enough to locate every column precisely - columns are not equal width
+# (Actual Crop is the widest), so _table1_fallback below uses these instead of splitting evenly like table 2.
+TABLE1_FRACTIONS = [0.0, 0.1247, 0.3231, 0.5305, 0.708, 1.0]
+
+
+def _table1_fallback(lines):
+    """Table 1's own header ("Survey No.* | Actual Crop* | ...") turns out to not OCR at all on most real
+    photos (confirmed: not garbled, just absent - the printed text is too small/italic for Tesseract at this
+    resolution on anything but the cleanest photos). Anchor off "Branch" (the label on the line directly above
+    the table, reads reliably) instead, same approach as table 2's anchor fallback, with the measured
+    (non-equal) column fractions since this table's columns are not equal width."""
+    for i, ln in enumerate(lines):
+        if not re.search(r"\bbranch\b", ln["text"], re.I):
+            continue
+        W = max((w["x"] + w["w"] for ln3 in lines for w in ln3["words"]), default=1600)
+        hdr_row_y1 = ln["y1"]
+        for ln2 in lines[i + 1:i + 4]:
+            if ln2["text"].strip():
+                hdr_row_y1 = ln2["y1"]
+                break
+        row_y0, row_y1 = _row_band(lines, hdr_row_y1, r"7\)\s*reason\s*of\s*crop\s*loss", 160)
+        bounds = [W * f for f in TABLE1_FRACTIONS]
+        return {"col_bounds": bounds, "hdr_y1": ln["y1"], "row_y0": row_y0, "row_y1": row_y1}
+    return None
+
+
 def read_odisha(rgb, debug=False):
     """rgb: upright-ish page (orientation not yet corrected). -> dict of extracted fields, or
     {'is_odisha_form': False} if this isn't the Odisha template."""
@@ -398,6 +434,8 @@ def read_odisha(rgb, debug=False):
     out = {"is_odisha_form": True, "_quality": {"n_words": len(words)}}
     out.update(_extract_header_fields(lines))
     box1 = _find_table_box(lines, TABLE1_HDR, next_rx=r"7\)\s*reason\s*of\s*crop\s*loss")
+    if box1 is None:
+        box1 = _table1_fallback(lines)
     if box1:
         out.update(_read_table_cells(g, box1, TABLE1_COLS, digit_cols={0, 2, 3, 4}))
     box2 = _find_table_box(lines, TABLE2_HDR, next_rx=r"16\)\s*loss\s*survey\s*mandatory")
