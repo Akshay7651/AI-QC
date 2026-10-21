@@ -5,8 +5,12 @@ lines rather than a strict Hindi ruled grid, so it is read with label-anchored O
 full-page Tesseract OCR -> group words into lines -> for each known label, regex the text that follows it on
 the same line (stopping at the next known label, if the line holds two fields) up to the next ruled table.
 
-Deskew/orientation reuses form_p3.normalise() (ruled-line based, ok here too - the form has several ruled
-tables) since the forms are camera photos, not flatbed scans (visible tilt/skew per sample).
+Deskew reuses form_p3.normalise() (ruled-line based, fine here too - the form has several ruled tables) since
+the forms are camera photos, not flatbed scans (visible tilt/skew per sample). Its 90/180/270 orientation
+choice, however, is NOT reused: it picks between candidate rotations by where a Proforma-3 barcode would sit,
+which is meaningless for this template and was confirmed (directly, by rendering the "normalised" page) to
+flip roughly half of these forms upside-down. fix_orientation() below re-checks/corrects that with Tesseract's
+own OSD (orientation detection), which doesn't depend on any Proforma-3-specific feature.
 """
 import re
 
@@ -16,6 +20,27 @@ import numpy as np
 import form_p3 as P
 
 HEADER_RE = re.compile(r"crop\s*loss\s*joint\s*survey\s*form", re.I)
+
+
+def fix_orientation(rgb):
+    """Correct a residual 90/180/270 error from form_p3.normalise() using Tesseract OSD, which reads the actual
+    text direction instead of guessing from barcode position. Low-confidence or failed OSD reads are left as
+    normalise() had them (a wrong guess is better than spinning the page on noise)."""
+    import pytesseract
+    try:
+        osd = pytesseract.image_to_osd(rgb, timeout=15, config="--psm 0")
+        m = re.search(r"Rotate:\s*(\d+)", osd)
+        if not m:
+            return rgb
+        # OSD's angle call is trustworthy even at low "orientation confidence" (that score reflects how
+        # convincingly text was found at all, not angle correctness) - confirmed directly: a 0.09-confidence
+        # read still correctly called a 180 flip that the barcode-based fallback got wrong. No gate: picking
+        # whatever OSD says beats the alternative, which has no real signal for this template at all.
+        deg = int(m.group(1))
+        k = {90: -1, 180: 2, 270: 1}.get(deg)
+        return np.ascontiguousarray(np.rot90(rgb, k)) if k else rgb
+    except Exception:       # noqa: BLE001
+        return rgb
 
 # (field key, label regexes to match at the START of the remaining line text, stop regex for a second field
 # sharing the same line). Order matters only for same-line disambiguation.
@@ -337,6 +362,7 @@ def read_odisha(rgb, debug=False):
     """rgb: upright-ish page (orientation not yet corrected). -> dict of extracted fields, or
     {'is_odisha_form': False} if this isn't the Odisha template."""
     r, info = P.normalise(rgb)
+    r = fix_orientation(r)
     g = cv2.cvtColor(P._resize_w(r, 1600), cv2.COLOR_RGB2GRAY)
     try:
         words = _ocr_data(g)

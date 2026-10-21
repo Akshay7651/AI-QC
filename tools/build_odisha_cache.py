@@ -25,6 +25,7 @@ def locate_cells(path):
     except Exception:
         return None, None
     r, info = P.normalise(rgb)
+    r = O.fix_orientation(r)
     g = cv2.cvtColor(P._resize_w(r, 1600), cv2.COLOR_RGB2GRAY)
     try:
         words = O._ocr_data(g)
