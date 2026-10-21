@@ -698,7 +698,6 @@ def read_form(path_or_pil, docket=None, debug=False):
     out["is_proforma3"] = True
     if tab["n_cols"] < 5 or tab["n_rowlines"] < 8:
         notes.append("table only weakly matched to the template")
-    grid_ok = bool(lay.get("grid") and lay["grid"].get("detected"))
     W = r.shape[1]
     if tab["L"] < 0.02 * P.GW or tab["R"] > 0.985 * P.GW:
         out["quality"] = "cropped" if out["quality"] == "good" else out["quality"]
@@ -887,13 +886,15 @@ def read_form(path_or_pil, docket=None, debug=False):
             out["overwrite_suspected"] = True
             notes.append(f"{k}: very heavy ink (possible over-writing / scribble)")
             break
-    # ---- is it really a Proforma-3? (ruled table alone is not enough: need the form no, the upper grid or a Hindi header)
-    strong = tab["n_cols"] >= 6 and tab["n_rowlines"] >= 11
-    if not fn and not grid_ok and not strong:
+    # ---- is it really a Proforma-3? A strongly-matched ruled table is not enough on its own: other state forms
+    # (e.g. Odisha's "Crop Loss Joint Survey Form") also have multiple ruled tables and can satisfy n_cols/n_rowlines
+    # by geometry alone. Require either a genuine Proforma-3 form number or the Hindi header - a strong table match
+    # alone no longer bypasses this check (it used to, which let other forms' cells get misread as Proforma-3 ones).
+    if not fn:
         ok_h, _ = _hin_header_is_form(r)
         if not ok_h:
             out["is_proforma3"] = False
-            notes.append("ruled table found but no form number / field grid / printed header: probably not a Proforma-3")
+            notes.append("ruled table found but no form number / printed Hindi header: probably not a Proforma-3")
     # ---- confidence
     parts = [out["form_no_conf"]] if fn else []        # an unreadable form number is reported separately, it must not sink the handwriting confidence
     parts += [c for k, c in fc.items() if k in ("form_area", "form_loss", "row_area", "row_loss")]
