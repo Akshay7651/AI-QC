@@ -22,25 +22,49 @@ import form_p3 as P
 HEADER_RE = re.compile(r"crop\s*loss\s*joint\s*survey\s*form", re.I)
 
 
-def fix_orientation(rgb):
-    """Correct a residual 90/180/270 error from form_p3.normalise() using Tesseract OSD, which reads the actual
-    text direction instead of guessing from barcode position. Low-confidence or failed OSD reads are left as
-    normalise() had them (a wrong guess is better than spinning the page on noise)."""
+def _osd_fix(rgb):
+    """-> corrected rgb, or None if OSD itself failed (can happen on a low-quality/wrong-orientation image -
+    OSD needs some readable text to judge direction, a chicken-and-egg problem on the worst photos)."""
     import pytesseract
+    osd = pytesseract.image_to_osd(rgb, timeout=15, config="--psm 0")
+    m = re.search(r"Rotate:\s*(\d+)", osd)
+    if not m:
+        return None
+    deg = int(m.group(1))
+    k = {90: -1, 180: 2, 270: 1}.get(deg)
+    return np.ascontiguousarray(np.rot90(rgb, k)) if k else rgb
+
+
+def _word_score(rgb):
     try:
-        osd = pytesseract.image_to_osd(rgb, timeout=15, config="--psm 0")
-        m = re.search(r"Rotate:\s*(\d+)", osd)
-        if not m:
-            return rgb
-        # OSD's angle call is trustworthy even at low "orientation confidence" (that score reflects how
-        # convincingly text was found at all, not angle correctness) - confirmed directly: a 0.09-confidence
-        # read still correctly called a 180 flip that the barcode-based fallback got wrong. No gate: picking
-        # whatever OSD says beats the alternative, which has no real signal for this template at all.
-        deg = int(m.group(1))
-        k = {90: -1, 180: 2, 270: 1}.get(deg)
-        return np.ascontiguousarray(np.rot90(rgb, k)) if k else rgb
+        g = cv2.cvtColor(P._resize_w(rgb, 1600), cv2.COLOR_RGB2GRAY)
+        words = _ocr_data_one(g, 3)
+        tokens = [t for w in words for t in re.findall(r"[a-zA-Z]+", w["text"].lower())]
+        return sum(1 for t in tokens if t in _DISTINCTIVE_WORDS)
     except Exception:       # noqa: BLE001
-        return rgb
+        return -1
+
+
+def fix_orientation(rgb):
+    """Correct a residual 90/180/270 error from form_p3.normalise() - it picks between rotation candidates by
+    where a Proforma-3 barcode would sit, which has no signal for this template and was confirmed (directly) to
+    flip forms upside-down about as often as not. First try Tesseract OSD, which reads actual text direction
+    (trustworthy even at low "orientation confidence" - that score reflects how much text OSD found, not angle
+    correctness, confirmed directly). If OSD itself fails (can happen on the worst photos), fall back to trying
+    all 4 rotations and keeping whichever one real text (distinctive-word hits) actually shows up in."""
+    try:
+        fixed = _osd_fix(rgb)
+        if fixed is not None:
+            return fixed
+    except Exception:       # noqa: BLE001
+        pass
+    best, best_score = rgb, _word_score(rgb)
+    for k in (1, 2, -1):
+        cand = np.ascontiguousarray(np.rot90(rgb, k))
+        s = _word_score(cand)
+        if s > best_score:
+            best, best_score = cand, s
+    return best
 
 # (field key, label regexes to match at the START of the remaining line text, stop regex for a second field
 # sharing the same line). Order matters only for same-line disambiguation.
