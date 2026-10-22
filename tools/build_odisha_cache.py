@@ -39,8 +39,9 @@ def locate_cells(path):
         box1 = O._table1_fallback(lines)
     box2 = O._find_table_box(lines, O.TABLE2_HDR, next_rx=r"loss\s*survey\s*mandatory")
     if box2 is None and box1 is not None:
-        box2 = O._find_table_box_by_anchor(lines, r"total\s*information", r"loss\s*survey\s*mandatory",
-                                           3, box1["col_bounds"][0], box1["col_bounds"][-1])
+        box2 = O._find_table_box_by_anchor(lines, r"total", r"loss\s*survey\s*mandatory",
+                                           3, box1["col_bounds"][0], box1["col_bounds"][-1],
+                                           y_search_from=box1["row_y1"])
     if box2 is None:
         return None, None
     bounds = box2["col_bounds"]

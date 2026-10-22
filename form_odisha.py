@@ -271,7 +271,8 @@ def _find_table_box(lines, headers_rx, y_search_from=0, next_rx=None, max_gap=14
     return None
 
 
-def _find_table_box_by_anchor(lines, anchor_rx, next_rx, n_cols, x0, x1, max_gap=160, skip_lines=1, fractions=None):
+def _find_table_box_by_anchor(lines, anchor_rx, next_rx, n_cols, x0, x1, max_gap=160, skip_lines=1, fractions=None,
+                              y_search_from=0):
     """Fallback when a table's own column headers don't OCR reliably (thin/bordered header text, or - confirmed
     on real samples - small italic text that's below OCR's resolution limit on a lot of real photos): anchor
     off a nearby line that DOES read well (e.g. the numbered section title above the table, or a label on the
@@ -281,7 +282,7 @@ def _find_table_box_by_anchor(lines, anchor_rx, next_rx, n_cols, x0, x1, max_gap
     columns are not equal width) spanning (x0,x1). Valid because this is a fixed printed template (same column
     layout on every form), unlike Proforma-3 where geometry is detected per-form."""
     for i, ln in enumerate(lines):
-        if not re.search(anchor_rx, ln["text"], re.I):
+        if ln["ycen"] < y_search_from or not re.search(anchor_rx, ln["text"], re.I):
             continue
         hdr_row_y1 = ln["y1"]
         skipped = 0
@@ -437,9 +438,14 @@ def read_odisha(rgb, debug=False):
     if box2 is None and box1 is not None:
         # the table-2 header text ("Affected Area | Loss% | The farmer is aware...") often fails to OCR as a
         # clean line (thin/bordered text) - fall back to the "15) Total Information..." anchor above it, using
-        # table 1's column width (same printed template, both tables span the same left-right extent)
-        box2 = _find_table_box_by_anchor(lines, r"total\s*information", r"loss\s*survey\s*mandatory",
-                                         3, box1["col_bounds"][0], box1["col_bounds"][-1])
+        # table 1's column width (same printed template, both tables span the same left-right extent).
+        # "information" is regularly misread badly enough to not match as a word at all ("Totaliniarmation",
+        # fused with no space; "infarmation", n->r) - anchor on "total" alone instead, which reads more
+        # reliably, bounded to start searching only below table 1 (table 1's own header also has the word
+        # "Total" - "Total Area in Hect." - so an unbounded search could lock onto that instead).
+        box2 = _find_table_box_by_anchor(lines, r"total", r"loss\s*survey\s*mandatory",
+                                         3, box1["col_bounds"][0], box1["col_bounds"][-1],
+                                         y_search_from=box1["row_y1"])
     if box2:
         out.update(_read_table_cells(g, box2, TABLE2_COLS, digit_cols={0, 1}))
     out.update(_read_signatures(lines, g))
