@@ -386,21 +386,30 @@ TABLE1_FRACTIONS = [0.0, 0.1247, 0.3231, 0.5305, 0.708, 1.0]
 def _table1_fallback(lines):
     """Table 1's own header ("Survey No.* | Actual Crop* | ...") turns out to not OCR at all on most real
     photos (confirmed: not garbled, just absent - the printed text is too small/italic for Tesseract at this
-    resolution on anything but the cleanest photos). Anchor off "Branch" (the label on the line directly above
-    the table, reads reliably) instead, same approach as table 2's anchor fallback, with the measured
-    (non-equal) column fractions since this table's columns are not equal width."""
-    for i, ln in enumerate(lines):
-        if not re.search(r"\bbranch\b", ln["text"], re.I):
-            continue
-        W = max((w["x"] + w["w"] for ln3 in lines for w in ln3["words"]), default=1600)
-        hdr_row_y1 = ln["y1"]
-        for ln2 in lines[i + 1:i + 4]:
-            if ln2["text"].strip():
-                hdr_row_y1 = ln2["y1"]
-                break
-        row_y0, row_y1 = _row_band(lines, hdr_row_y1, r"7\)\s*reason\s*of\s*crop\s*loss", 160)
-        bounds = [W * f for f in TABLE1_FRACTIONS]
-        return {"col_bounds": bounds, "hdr_y1": ln["y1"], "row_y0": row_y0, "row_y1": row_y1}
+    resolution on anything but the cleanest photos). Anchor off a label that reads reliably instead, same
+    approach as table 2's anchor fallback, with the measured (non-equal) column fractions since this table's
+    columns are not equal width. Two anchor options, tried in order:
+      - "Branch" (the line directly above the table - only 1 line to skip to reach the table's own header row,
+        then the data row is the next one down). Matched on "ranch" alone: a short, cleanly-printed word but
+        still regularly misread (b<->p confusion: "pranch" seen directly on a real sample).
+      - "IFSC" (one line further up; falls back to this when "Branch" doesn't come through at all on a given
+        photo - confirmed happens) - needs 2 lines skipped instead of 1."""
+    W = max((w["x"] + w["w"] for ln3 in lines for w in ln3["words"]), default=1600)
+    for anchor_rx, skip in ((r"ranch", 1), (r"ifsc", 2)):
+        for i, ln in enumerate(lines):
+            if not re.search(anchor_rx, ln["text"], re.I):
+                continue
+            hdr_row_y1 = ln["y1"]
+            skipped = 0
+            for ln2 in lines[i + 1:i + 2 + skip * 2]:
+                if ln2["text"].strip():
+                    hdr_row_y1 = ln2["y1"]
+                    skipped += 1
+                    if skipped >= skip:
+                        break
+            row_y0, row_y1 = _row_band(lines, hdr_row_y1, r"reason\s*of\s*crop\s*loss", 160)
+            bounds = [W * f for f in TABLE1_FRACTIONS]
+            return {"col_bounds": bounds, "hdr_y1": ln["y1"], "row_y0": row_y0, "row_y1": row_y1}
     return None
 
 
@@ -419,17 +428,17 @@ def read_odisha(rgb, debug=False):
     lines = ocr_lines(g)
     out = {"is_odisha_form": True, "_quality": {"n_words": len(words)}}
     out.update(_extract_header_fields(lines))
-    box1 = _find_table_box(lines, TABLE1_HDR, next_rx=r"7\)\s*reason\s*of\s*crop\s*loss")
+    box1 = _find_table_box(lines, TABLE1_HDR, next_rx=r"reason\s*of\s*crop\s*loss")
     if box1 is None:
         box1 = _table1_fallback(lines)
     if box1:
         out.update(_read_table_cells(g, box1, TABLE1_COLS, digit_cols={0, 2, 3, 4}))
-    box2 = _find_table_box(lines, TABLE2_HDR, next_rx=r"16\)\s*loss\s*survey\s*mandatory")
+    box2 = _find_table_box(lines, TABLE2_HDR, next_rx=r"loss\s*survey\s*mandatory")
     if box2 is None and box1 is not None:
         # the table-2 header text ("Affected Area | Loss% | The farmer is aware...") often fails to OCR as a
         # clean line (thin/bordered text) - fall back to the "15) Total Information..." anchor above it, using
         # table 1's column width (same printed template, both tables span the same left-right extent)
-        box2 = _find_table_box_by_anchor(lines, r"15\)\s*total\s*information", r"16\)\s*loss\s*survey\s*mandatory",
+        box2 = _find_table_box_by_anchor(lines, r"total\s*information", r"loss\s*survey\s*mandatory",
                                          3, box1["col_bounds"][0], box1["col_bounds"][-1])
     if box2:
         out.update(_read_table_cells(g, box2, TABLE2_COLS, digit_cols={0, 1}))

@@ -34,12 +34,12 @@ def locate_cells(path):
     if not O.is_odisha_form(words):
         return None, None
     lines = O.ocr_lines(g)
-    box1 = O._find_table_box(lines, O.TABLE1_HDR, next_rx=r"7\)\s*reason\s*of\s*crop\s*loss")
+    box1 = O._find_table_box(lines, O.TABLE1_HDR, next_rx=r"reason\s*of\s*crop\s*loss")
     if box1 is None:
         box1 = O._table1_fallback(lines)
-    box2 = O._find_table_box(lines, O.TABLE2_HDR, next_rx=r"16\)\s*loss\s*survey\s*mandatory")
+    box2 = O._find_table_box(lines, O.TABLE2_HDR, next_rx=r"loss\s*survey\s*mandatory")
     if box2 is None and box1 is not None:
-        box2 = O._find_table_box_by_anchor(lines, r"15\)\s*total\s*information", r"16\)\s*loss\s*survey\s*mandatory",
+        box2 = O._find_table_box_by_anchor(lines, r"total\s*information", r"loss\s*survey\s*mandatory",
                                            3, box1["col_bounds"][0], box1["col_bounds"][-1])
     if box2 is None:
         return None, None
