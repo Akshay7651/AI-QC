@@ -22,19 +22,6 @@ import form_p3 as P
 HEADER_RE = re.compile(r"crop\s*loss\s*joint\s*survey\s*form", re.I)
 
 
-def _osd_fix(rgb):
-    """-> corrected rgb, or None if OSD itself failed (can happen on a low-quality/wrong-orientation image -
-    OSD needs some readable text to judge direction, a chicken-and-egg problem on the worst photos)."""
-    import pytesseract
-    osd = pytesseract.image_to_osd(rgb, timeout=15, config="--psm 0")
-    m = re.search(r"Rotate:\s*(\d+)", osd)
-    if not m:
-        return None
-    deg = int(m.group(1))
-    k = {90: -1, 180: 2, 270: 1}.get(deg)
-    return np.ascontiguousarray(np.rot90(rgb, k)) if k else rgb
-
-
 def _word_score(rgb):
     try:
         g = cv2.cvtColor(P._resize_w(rgb, 1600), cv2.COLOR_RGB2GRAY)
@@ -48,16 +35,15 @@ def _word_score(rgb):
 def fix_orientation(rgb):
     """Correct a residual 90/180/270 error from form_p3.normalise() - it picks between rotation candidates by
     where a Proforma-3 barcode would sit, which has no signal for this template and was confirmed (directly) to
-    flip forms upside-down about as often as not. First try Tesseract OSD, which reads actual text direction
-    (trustworthy even at low "orientation confidence" - that score reflects how much text OSD found, not angle
-    correctness, confirmed directly). If OSD itself fails (can happen on the worst photos), fall back to trying
-    all 4 rotations and keeping whichever one real text (distinctive-word hits) actually shows up in."""
-    try:
-        fixed = _osd_fix(rgb)
-        if fixed is not None:
-            return fixed
-    except Exception:       # noqa: BLE001
-        pass
+    flip forms upside-down about as often as not.
+
+    Does NOT trust Tesseract OSD's own call, even at its own highest confidence: confirmed directly on a real
+    sample where OSD said "Rotate: 0" at confidence 4.60 (its best case seen) and also called the script
+    "Arabic" - both wrong; the correct 180-degree rotation was obvious once actually checked. OSD's confidence
+    score reflects how much text it found, not whether its angle call was right, so there is no threshold that
+    makes it safe to trust blindly. Brute force instead: score all 4 rotations by how many distinctive words
+    for THIS template actually turn up (a template-specific signal, unlike OSD's generic script detection) and
+    keep the best. Costs 4 OCR passes instead of 1, but correctness matters more than that here."""
     best, best_score = rgb, _word_score(rgb)
     for k in (1, 2, -1):
         cand = np.ascontiguousarray(np.rot90(rgb, k))
