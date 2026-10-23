@@ -389,14 +389,19 @@ def _table1_fallback(lines):
     photos (confirmed: not garbled, just absent - the printed text is too small/italic for Tesseract at this
     resolution on anything but the cleanest photos). Anchor off a label that reads reliably instead, same
     approach as table 2's anchor fallback, with the measured (non-equal) column fractions since this table's
-    columns are not equal width. Two anchor options, tried in order:
+    columns are not equal width. Three anchor options, tried in order:
       - "Branch" (the line directly above the table - only 1 line to skip to reach the table's own header row,
-        then the data row is the next one down). Matched on "ranch" alone: a short, cleanly-printed word but
-        still regularly misread (b<->p confusion: "pranch" seen directly on a real sample).
+        then the data row is the next one down). Matched on "r[ae]nch" (covers "ranch"/"rench"): a short,
+        cleanly-printed word but still regularly misread - "pranch" (b<->p) and "wrench" (whole word swapped)
+        both seen directly on real samples.
       - "IFSC" (one line further up; falls back to this when "Branch" doesn't come through at all on a given
-        photo - confirmed happens) - needs 2 lines skipped instead of 1."""
+        photo - confirmed happens) - needs 2 lines skipped instead of 1. Also seen misread badly enough to lose
+        the match ("WSC" - the "if" dropped outright), hence the third option below.
+      - "Bank" (same line as IFSC, i.e. also 2 lines up - "6) Bank Account Number (KCC/Other) ... IFSC
+        Code:-..."): reads the most reliably of the three on a real sample where both of the above failed, but
+        is also the least specific (matches "Name of Bank" one line below it too) - tried last."""
     W = max((w["x"] + w["w"] for ln3 in lines for w in ln3["words"]), default=1600)
-    for anchor_rx, skip in ((r"ranch", 1), (r"ifsc", 2)):
+    for anchor_rx, skip in ((r"r[ae]nch", 1), (r"ifsc", 2), (r"bank", 3)):
         for i, ln in enumerate(lines):
             if not re.search(anchor_rx, ln["text"], re.I):
                 continue
