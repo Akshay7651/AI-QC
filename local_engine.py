@@ -599,9 +599,6 @@ class LocalRunner:
         ok3 = bool(f) and f.get("is_proforma3") is not False    # signatures/remarks are Proforma-3 geometry: meaningless otherwise
         sd = str(p.get("stamp_date") or p.get("photo_date") or "")
         photo_date = f"{sd[:2]}-{sd[2:4]}-{sd[4:8]}" if len(sd) == 8 and sd.isdigit() else sd
-        src = p.get("stamp_date_sources") or []
-        if photo_date and src:
-            photo_date += f" (Photo {', '.join(map(str, src))})"
         if not ok3:
             remarks_cell = "N/A" if f else ""
         else:

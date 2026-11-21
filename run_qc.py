@@ -417,18 +417,6 @@ def _date_txt(v):
     return d.strftime("%d-%m-%Y") if d else (None if v in (None, "") else str(v))
 
 
-def _date_txt_with_source(p):
-    """Date of survey, plus which uploaded photo(s) it was read from - so a reviewer can jump straight to the
-    photo that actually carries the stamp, instead of checking all of them."""
-    txt = _date_txt(p.get("stamp_date") or p.get("photo_date"))
-    if not txt:
-        return txt
-    src = p.get("stamp_date_sources") or []
-    if not src:
-        return txt
-    label = f"Photo {src[0]}" if len(src) == 1 else "Photos " + ", ".join(str(s) for s in src)
-    return f"{txt} ({label})"
-
 
 _VALUE_COLS = ("Form No", "PO ID (Form)", C.COL_FORM_AREA, C.COL_FORM_LOSS, "Form Row Area %", "Form Row Loss %", "Loss date (Form)")
 _NOT_READ_DATES = ("Sowing date (Form)", "Intimation date (Form)", "Inspection date (Form)")
@@ -615,7 +603,7 @@ def assemble_local(df, results, keys):
                 fp = "no crop (but field photo)"      # distinguish from "form image": this IS a field photo, just no crop visible in it
             put(C.COL_FIELD_PHOTO, fp)
             put("Field photo type", _field_photo_yn(p))
-            put(C.COL_PHOTO_DATE, _date_txt_with_source(p))
+            put(C.COL_PHOTO_DATE, _date_txt(p.get("stamp_date") or p.get("photo_date")))
             put("Photo is form image (Yes/No)", _yn(bool(p.get("photo_is_form"))))
             put("Form-image photos (n)", p.get("n_form_photos"))
             put("Duplicate photos (n)", p.get("n_duplicates"))
