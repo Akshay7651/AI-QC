@@ -211,6 +211,45 @@ footer{color:var(--dim);font-size:11.5px;margin-top:14px;text-align:center}
 #party .cd{margin-top:12px;font-size:13px;color:var(--mute)}
 #party button{margin-top:14px}
 
+
+/* ================= colourful dark: one colour per role, used everywhere =================
+   downloader = cyan, reader = violet, analyst = amber, done = green */
+.kpi{border-color:color-mix(in srgb,var(--c) 35%,transparent);background:linear-gradient(150deg,color-mix(in srgb,var(--c) 22%,transparent),rgba(255,255,255,.03) 60%)}
+.kpi::before{opacity:.4}
+.kpi .lab{color:var(--c)}
+.kpi .big{color:#fff;text-shadow:0 0 22px color-mix(in srgb,var(--c) 55%,transparent)}
+.kpi .big small{color:color-mix(in srgb,var(--c) 60%,#fff)}
+.kpi::after{content:"";position:absolute;left:0;top:0;right:0;height:3px;background:linear-gradient(90deg,var(--c),transparent)}
+.ringcard{border-color:rgba(155,92,255,.35);background:linear-gradient(160deg,rgba(155,92,255,.2),rgba(255,61,180,.08) 55%,rgba(255,255,255,.03))}
+/* pipeline: step colour = the role doing it */
+.node{--c:var(--violet);border-color:color-mix(in srgb,var(--c) 45%,transparent);background:linear-gradient(160deg,color-mix(in srgb,var(--c) 24%,transparent),rgba(255,255,255,.02))}
+.node .n{color:var(--c);text-shadow:0 0 18px color-mix(in srgb,var(--c) 60%,transparent)}
+.node .t{color:color-mix(in srgb,var(--c) 55%,#fff)}
+.node.s1{--c:var(--dl)}.node.s2,.node.s3{--c:var(--fr)}.node.s4,.node.s5{--c:var(--ph)}.node.s6{--c:var(--green)}
+.node.s2,.node.s4{border-style:dashed;background:linear-gradient(160deg,color-mix(in srgb,var(--c) 12%,transparent),rgba(255,255,255,.02))}
+.node.hot{border-style:solid;border-color:var(--pink);box-shadow:0 0 0 1px var(--pink),0 0 28px rgba(255,61,180,.45);animation:hotpulse 1.4s ease-in-out infinite}
+@keyframes hotpulse{50%{box-shadow:0 0 0 2px var(--pink),0 0 40px rgba(255,61,180,.7)}}
+.link.l1,.link.l2{background-image:repeating-linear-gradient(90deg,var(--dl) 0 8px,transparent 8px 14px)}
+.link.l3,.link.l4{background-image:repeating-linear-gradient(90deg,var(--fr) 0 8px,transparent 8px 14px)}
+.link.l5{background-image:repeating-linear-gradient(90deg,var(--ph) 0 8px,transparent 8px 14px)}
+/* squads: tinted panels, vivid busy cards */
+.squad{border-color:color-mix(in srgb,var(--c) 35%,transparent);background:linear-gradient(165deg,color-mix(in srgb,var(--c) 16%,transparent),rgba(255,255,255,.02) 55%)}
+.squad .nm{color:var(--c)}
+.ag{border-color:color-mix(in srgb,var(--c) 18%,transparent)}
+.ag.busy{background:linear-gradient(135deg,color-mix(in srgb,var(--c) 32%,transparent),color-mix(in srgb,var(--c) 10%,transparent));box-shadow:0 0 22px color-mix(in srgb,var(--c) 30%,transparent)}
+.ag.busy .doc{color:var(--c)}
+.ag.busy .top{color:#fff}
+.ag.busy .art{border-color:color-mix(in srgb,var(--c) 60%,transparent);box-shadow:0 0 14px color-mix(in srgb,var(--c) 40%,transparent)}
+/* header role chips */
+.rchip{display:inline-flex;align-items:center;gap:5px;padding:2px 9px;border-radius:999px;font-weight:700;font-size:11.5px;margin-right:4px;border:1px solid color-mix(in srgb,var(--c) 50%,transparent);background:color-mix(in srgb,var(--c) 16%,transparent);color:var(--c)}
+.rchip.dl{--c:var(--dl)}.rchip.fr{--c:var(--fr)}.rchip.ph{--c:var(--ph)}
+/* issues + table accents */
+.iss{border-color:rgba(155,92,255,.25)}
+.iss.hot{background:linear-gradient(135deg,rgba(255,61,180,.25),rgba(255,77,109,.15))}
+th{background:linear-gradient(180deg,#1b1336,#120f24);color:#cbbfff;border-bottom:2px solid transparent;border-image:linear-gradient(90deg,var(--cyan),var(--violet),var(--pink),var(--amber)) 1}
+td code{color:#8fe9ff}
+tbody tr:nth-child(even) td{background:rgba(155,92,255,.035)}
+
 @media (max-width:1200px){.hero{grid-template-columns:1fr}.squads{grid-template-columns:1fr}.kpis{grid-template-columns:repeat(2,1fr)}}
 @media (max-width:640px){.wrap{padding:12px}.kpis{grid-template-columns:1fr 1fr}.kpi .big{font-size:24px}.hright{margin-left:0}}
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
@@ -247,7 +286,7 @@ footer{color:var(--dim);font-size:11.5px;margin-top:14px;text-align:center}
       <div class="glass kpi" style="--c:var(--cyan)"><div class="lab">&#128225; Internet</div><div class="big"><span id="mbit">0</span><small>Mbps</small></div><div class="hint" id="nethint">0 MB downloaded</div><svg class="spark" id="sp_net" viewBox="0 0 100 40" preserveAspectRatio="none"></svg></div>
       <div class="glass kpi" style="--c:var(--violet)"><div class="lab">&#9203; Time left</div><div class="big" id="eta">-</div><div class="hint">at the current speed</div></div>
       <div class="glass kpi" style="--c:var(--pink)"><div class="lab">&#128336; Elapsed</div><div class="big" id="elapsed">0s</div><div class="hint" id="started"></div></div>
-      <div class="glass kpi" style="--c:var(--amber)"><div class="lab">&#129302; Agents busy</div><div class="big"><span id="busy">0</span><small id="busyof">/ 0</small></div><div class="hint" id="busyhint"></div></div>
+      <div class="glass kpi" style="--c:#7aa2ff"><div class="lab">&#129302; Agents busy</div><div class="big"><span id="busy">0</span><small id="busyof">/ 0</small></div><div class="hint" id="busyhint"></div></div>
       <div class="glass kpi" style="--c:var(--red)"><div class="lab">&#128165; Errors</div><div class="big" id="errs">0</div><div class="hint" id="errhint">all good</div></div>
     </div>
   </section>
@@ -298,6 +337,7 @@ var COUNTERS=[["form_not_found","Form not found",1],["missing_form_link","Missin
  ["form_unreadable","Form not readable",0],["not_proforma3","Not Proforma-3",0],["po_id_mismatch","PO ID mismatch",0],["gps_cluster","GPS cluster",0]];
 var VERD=[["OK","OK","var(--ok)"],["Partially OK","Partially OK","var(--pok)"],["Review","Review","var(--rev)"],["Manual QC Required","Manual QC","var(--man)"]];
 var fails=0,seq=0,ALL=[],SQ_SIG="",H_RPM=[],H_NET=[];
+
 
 function esc(s){return String(s==null?"":s).replace(/[&<>"']/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]})}
 function dur(s){if(s==null)return "-";s=Math.round(s);var h=Math.floor(s/3600),m=Math.floor(s%3600/60),x=s%60;return h?h+"h "+m+"m":m?m+"m "+x+"s":x+"s"}
@@ -363,16 +403,17 @@ function render(d){
   var nodes=[["&#128229;","Downloading",p.downloading],["&#9203;","Wait: reader",p.wait_read],["&#128214;","Reading",p.reading],["&#9203;","Wait: analyst",p.wait_photo],["&#128248;","Analysing",p.analysing],["&#9989;","Done",d.done]];
   var waits=[p.downloading||0,p.wait_read||0,p.wait_photo||0],hot=-1;
   if(st==="Running"){var mx=Math.max.apply(null,waits);if(mx>=2)hot=[0,1,3][waits.indexOf(mx)]}
-  var h="";nodes.forEach(function(nd,i){if(i)h+='<div class="link'+((nodes[i-1][2]||0)>0&&st==="Running"?" on":"")+'"></div>';
-    h+='<div class="node'+(i===hot?" hot":"")+'"><div class="e">'+nd[0]+'</div><div class="n">'+(nd[2]==null?"-":num(nd[2]))+'</div><div class="t">'+nd[1]+'</div></div>'});
+  var h="";nodes.forEach(function(nd,i){if(i)h+='<div class="link l'+i+((nodes[i-1][2]||0)>0&&st==="Running"?" on":"")+'"></div>';
+    h+='<div class="node s'+(i+1)+(i===hot?" hot":"")+'"><div class="e">'+nd[0]+'</div><div class="n">'+(nd[2]==null?"-":num(nd[2]))+'</div><div class="t">'+nd[1]+'</div></div>'});
   $("pipe").innerHTML=h;
 
   // squads
   var busy=ag.filter(function(a){return a.state==="busy"}).length;
   $("busy").textContent=busy;$("busyof").textContent="/ "+ag.length;
   var cnt=ROLES.map(function(r){return ag.filter(r[3]).length});
-  $("busyhint").textContent=cnt[0]+" dl · "+cnt[1]+" read · "+cnt[2]+" photo";
-  $("agentline").textContent="Squad: "+cnt[0]+" downloaders · "+cnt[1]+" form readers · "+cnt[2]+" photo analysts · engine "+(d.engine||"local");
+  var bz=ROLES.map(function(r){return ag.filter(function(a){return r[3](a)&&a.state==="busy"}).length});
+  $("busyhint").innerHTML='<span style="color:var(--dl)">'+bz[0]+' dl</span> · <span style="color:var(--fr)">'+bz[1]+' read</span> · <span style="color:var(--ph)">'+bz[2]+' photo</span> working';
+  $("agentline").innerHTML='<span class="rchip dl">&#128229; '+cnt[0]+' downloaders</span><span class="rchip fr">&#128214; '+cnt[1]+' readers</span><span class="rchip ph">&#128248; '+cnt[2]+' analysts</span>';
   var sig=ag.map(function(a){return a.id}).join(",");
   if(sig!==SQ_SIG){SQ_SIG=sig;
     $("squads").innerHTML=ROLES.map(function(r){var m=ag.filter(r[3]);if(!m.length)return "";
