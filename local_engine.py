@@ -596,13 +596,28 @@ class LocalRunner:
                 fl = "Can't read" if f.get("loss_written", True) else "Blank"
         elif form is not None:
             fa = fl = "No form"
+        ok3 = bool(f) and f.get("is_proforma3") is not False    # signatures/remarks are Proforma-3 geometry: meaningless otherwise
+        sd = str(p.get("stamp_date") or p.get("photo_date") or "")
+        photo_date = f"{sd[:2]}-{sd[2:4]}-{sd[4:8]}" if len(sd) == 8 and sd.isdigit() else sd
+        src = p.get("stamp_date_sources") or []
+        if photo_date and src:
+            photo_date += f" (Photo {', '.join(map(str, src))})"
+        if not ok3:
+            remarks_cell = "N/A" if f else ""
+        else:
+            remarks_cell = f.get("remarks_text") or yn(f.get("remarks_written"))
         return {"docket": row.get("docket_id"), "farmer": row.get("farmer_name"), "village": row.get("village"), "surveyor": row.get("surveyor_name"),
                 "verdict": ev.get("verdict"), "confidence": ev.get("confidence"),
                 "form_no": f.get("form_no") if f.get("form_no_conf", 1) >= 0.9 else "",
                 "po_id": f.get("po_id") or "",
                 "area_form": fa, "loss_form": fl, "area_app": row.get("affected_area_pct"), "loss_app": row.get("crop_loss_pct"),
-                "match": ev.get("match"), "farmer_sig": yn(f.get("farmer_signed")), "company_sig": yn(f.get("company_signed")),
-                "worker_sig": yn(f.get("worker_signed")), "photo_is_form": "Yes" if p.get("scene_type") == "paper form" else "",
+                "match": ev.get("match"),
+                "farmer_sig": yn(f.get("farmer_signed")) if ok3 else ("N/A" if f else ""),
+                "company_sig": yn(f.get("company_signed")) if ok3 else ("N/A" if f else ""),
+                "worker_sig": yn(f.get("worker_signed")) if ok3 else ("N/A" if f else ""),
+                "govt_sig": yn(f.get("officer_signed")) if ok3 else ("N/A" if f else ""),
+                "photo_date": photo_date, "survey_remarks": remarks_cell,
+                "photo_is_form": "Yes" if p.get("scene_type") == "paper form" else "",
                 "person": "", "flags": "; ".join(ev.get("flags") or []), "remark": ev.get("remark")}
 
     def _finalize(self, i):
