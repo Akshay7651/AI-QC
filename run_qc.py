@@ -46,6 +46,10 @@ def parse_args(argv=None):
     p.add_argument("--downloaders", type=int, default=None, help="parallel download slots (default: same as --agents, max 12)")
     p.add_argument("--readers", type=int, default=None, help="form-reader agents (default: 2/3 of --agents)")
     p.add_argument("--analysts", type=int, default=None, help="photo-analyst agents (default: 1/3 of --agents)")
+    p.add_argument("--max-agents", type=int, default=None,
+                   help="upper limit for readers+analysts when the autoscaler adds agents (default: logical CPUs - 2)")
+    p.add_argument("--no-autoscale", action="store_true",
+                   help="keep exactly --readers/--analysts (no extra agents added, downloaders never paused)")
     p.add_argument("--rate", type=float, default=5.0, help="max new download requests per second (polite limit)")
     p.add_argument("--cost-cap", type=float)
     p.add_argument("--resume", action="store_true")
@@ -858,6 +862,7 @@ def _main_local(args, df, modes, ck, keys, prior_done, sl=None):
             runner = local_engine.LocalRunner(
                 rows, keys, todo, ck, kinds, media, ctx, agents=workers, downloaders=args.downloaders, rate=args.rate,
                 readers=args.readers, analysts=args.analysts,
+                autoscale=not args.no_autoscale, max_agents=args.max_agents,
                 engine_module=args.engine_module, inline=args.inline, progress=prog, task_timeout=args.task_timeout,
                 pause_file=str(Path(args.progress).with_name("PAUSE")), discard_media=args.discard_media,
                 on_row=(lambda i, res: chunk.mark_row(i)) if chunk else None)

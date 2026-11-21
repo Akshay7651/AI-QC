@@ -220,6 +220,30 @@ def _with_ext(path):
 
 
 # ============================================================================ the runner
+def _free_ram_mb():
+    """available physical memory in MB (Windows / Linux); a huge number when it cannot be read"""
+    try:
+        if os.name == "nt":
+            import ctypes
+
+            class _MS(ctypes.Structure):
+                _fields_ = [("dwLength", ctypes.c_ulong), ("dwMemoryLoad", ctypes.c_ulong), ("ullTotalPhys", ctypes.c_ulonglong),
+                            ("ullAvailPhys", ctypes.c_ulonglong), ("ullTotalPageFile", ctypes.c_ulonglong), ("ullAvailPageFile", ctypes.c_ulonglong),
+                            ("ullTotalVirtual", ctypes.c_ulonglong), ("ullAvailVirtual", ctypes.c_ulonglong), ("ullAvailExtendedVirtual", ctypes.c_ulonglong)]
+            m = _MS()
+            m.dwLength = ctypes.sizeof(_MS)
+            if ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(m)):
+                return m.ullAvailPhys / 2 ** 20
+        else:
+            with open("/proc/meminfo") as fh:
+                for line in fh:
+                    if line.startswith("MemAvailable:"):
+                        return int(line.split()[1]) / 1024
+    except Exception:
+        pass
+    return 1e9
+
+
 class _Worker:
     def __init__(self, name, role, label):
         self.name, self.role, self.label = name, role, label
@@ -228,12 +252,15 @@ class _Worker:
         self.task = None
         self.t_dispatch = 0.0
         self.respawns = 0
+        self.extra = False          # added by the autoscaler (removed again when idle)
+        self.t_idle = time.time()
 
 
 class LocalRunner:
     def __init__(self, rows, keys, todo, ck, kinds, local_map, ctx, *, agents=4, downloaders=None, rate=5.0,
                  engine_module=None, inline=False, progress=None, task_timeout=180.0, pause_file=None,
-                 cache_dirs=None, max_inflight=None, on_row=None, discard_media=False, readers=None, analysts=None):
+                 cache_dirs=None, max_inflight=None, on_row=None, discard_media=False, readers=None, analysts=None,
+                 autoscale=True, max_agents=None):
         self.rows, self.keys, self.todo, self.ck = rows, keys, list(todo), ck
         self.kinds = set(kinds)
         self.local_map = local_map or {}
@@ -254,6 +281,12 @@ class LocalRunner:
         self.discard_media = bool(discard_media)
         self._refs = collections.Counter()   # downloaded cache file -> rows still using it (discard mode)
         self._delq = None                    # background deleter (discard mode), started on first use
+        # autoscaler: add reader/analyst agents while work piles up and every agent is busy, remove the extras when idle;
+        # pause most downloaders while plenty of downloaded work is already waiting. Off for inline (test/debug) runs.
+        self.autoscale = bool(autoscale) and not inline
+        self.max_workers = max(self.n_agents, int(max_agents) if max_agents else max(2, (os.cpu_count() or 4) - 2))
+        self._last_scale = 0.0
+        self._dl_paused = set()
         self._delthread = None
         self._mv = None
         self.discarded = 0
@@ -563,7 +596,103 @@ class LocalRunner:
                 self._on_msg(w, msg)
             self._health()
             self._flush_if_no_workers()
+            self._autoscale()
             self._pipeline()
+
+    # ------------------------------------------------------------------ autoscaler (fixed team, moving roles)
+    # The team size stays what the user declared (downloaders + readers + analysts). Roles move with the work:
+    #  * downloaders pause while plenty of downloaded work is waiting, and each paused downloader's slot becomes one more
+    #    reader/analyst agent (for whichever queue is longer) - capped at logical CPUs - 2 and by free RAM;
+    #    when the downloaders resume, those extra agents are removed again once idle;
+    #  * readers and analysts switch role when one queue is full and the other empty (both engines are loaded in every
+    #    agent, so a switched agent works at once). At least one of each role is kept.
+    AUTO_RAM_MB = 1500         # never add an agent when less than this much RAM is free (~350 MB per agent)
+    AUTO_IDLE_SEC = 15.0       # an added agent must be idle this long before it is removed (no flapping)
+
+    def _live(self):
+        return [w for w in self.workers if w.state in ("starting", "idle", "busy")]
+
+    def _autoscale(self):
+        if not self.autoscale:
+            return
+        now = time.time()
+        if now - self._last_scale < 2.0:
+            return
+        self._last_scale = now
+        with self.lock:
+            wf, wp = len(self.pending["form"]), len(self.pending["photo"])
+        live = self._live()
+        target = min(self.max_workers, self.n_agents + len(self._dl_paused))
+        # grow: a paused downloader's slot becomes an agent (one at a time, after the previous one has started)
+        if (len(live) < target and wf + wp > 0 and not any(w.state == "starting" for w in live)
+                and _free_ram_mb() >= self.AUTO_RAM_MB):
+            kinds = [k for k in ("form", "photo") if k in self.kinds] or ["form"]
+            self._add_worker(max(kinds, key=lambda k: wf if k == "form" else wp))
+            return
+        # shrink: downloaders are back, so give the extra slots back (only agents that have been idle a while)
+        if len(live) > target:
+            for w in live:
+                if w.extra and w.state == "idle" and now - w.t_idle > self.AUTO_IDLE_SEC:
+                    self._retire(w)
+                    return
+        # move readers <-> analysts when one queue is full and the other is empty
+        if {"form", "photo"} <= self.kinds:
+            for full, empty, need in (("form", "photo", wf), ("photo", "form", wp)):
+                other = wp if full == "form" else wf
+                if need >= 3 and other == 0:
+                    donors = [w for w in live if w.role == empty and w.state != "starting"]
+                    if len(donors) > 1:          # keep at least one of each role
+                        w = next((d for d in donors if d.state == "idle"), None) or \
+                            next((d for d in donors if d.state == "busy" and d.task and d.task["kind"] == full), None)
+                        if w is not None:
+                            self._set_role(w, full)
+                            return
+
+    def _next_label(self, role):
+        nums = [int((re.search(r"#(\d+)", w.label) or [0, 0])[1]) for w in self.workers
+                if w.role == role and w.state not in ("retired",)]
+        n = 1
+        while n in nums:
+            n += 1
+        return ("Form reader" if role == "form" else "Photo analyst") + f" #{n}"
+
+    def _add_worker(self, role):
+        self._wid = getattr(self, "_wid", 0) + 1
+        w = _Worker(f"auto{self._wid}", role, self._next_label(role))
+        w.extra = True
+        self.workers.append(w)
+        if self.prog:
+            self.prog.add_agent(w.name, w.label)
+            self.prog.agent(w.name, auto=True)
+        self._spawn(w)
+
+    def _set_role(self, w, role):
+        w.role, w.label = role, self._next_label(role)
+        if self.prog:
+            self.prog.agent(w.name, role=w.label, moved=True)
+
+    def _retire(self, w):
+        try:
+            w.conn.send(None)
+        except Exception:
+            pass
+        w.state = "retired"
+        if self.prog and hasattr(self.prog, "remove_agent"):
+            self.prog.remove_agent(w.name)
+
+    def _dl_allowed(self):
+        """how many downloaders may start a new docket now: all of them normally; only 2 while plenty of downloaded work
+        is already waiting for readers/analysts (more downloads would only pile up)."""
+        if not self.autoscale:
+            return self.n_dl
+        with self.lock:
+            waiting = len(self.pending["form"]) + len(self.pending["photo"])
+        live = len(self._live()) or 1
+        if waiting >= 2 * live:
+            return min(self.n_dl, 2)
+        if waiting >= live:
+            return max(2, self.n_dl // 2)
+        return self.n_dl
 
     def _dispatch(self):
         # every agent first takes work of its own role (readers read forms, photo analysts check photos). An agent whose own
@@ -603,6 +732,7 @@ class LocalRunner:
         kind = msg[0]
         if kind == "ready":
             w.state = "idle"
+            w.t_idle = time.time()
             self.engine_label = msg[2] if len(msg) > 2 else self.engine_label
             if self.prog:
                 self.prog.agent(w.name, state="idle", task="")
@@ -612,6 +742,7 @@ class LocalRunner:
         elif kind == "done":
             _, tid, res, secs = msg
             task, w.task, w.state = w.task, None, "idle"
+            w.t_idle = time.time()
             if task is not None:
                 self._tl(task["i"], "e_" + task["kind"])
             if self.prog:
@@ -821,6 +952,16 @@ class LocalRunner:
             async def consumer(k):
                 name = f"dl{k}"
                 while True:
+                    while not self.stop_evt.is_set() and k > self._dl_allowed():
+                        if k not in self._dl_paused:
+                            self._dl_paused.add(k)
+                            if self.prog:
+                                self.prog.agent(name, state="idle", docket="", task="paused")
+                        await asyncio.sleep(0.5)
+                    if k in self._dl_paused:
+                        self._dl_paused.discard(k)
+                        if self.prog:
+                            self.prog.agent(name, state="idle", docket="", task="")
                     i = await q.get()
                     if i is None or self.stop_evt.is_set():
                         if self.prog:

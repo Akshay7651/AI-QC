@@ -71,6 +71,10 @@ class Progress:
             self.agents[name] = {"id": name, "role": role, "state": "idle", "docket": "", "rows_done": 0,
                                  "avg_sec": 0.0, "errors": 0, "task": "", "_secs": 0.0}
 
+    def remove_agent(self, name):
+        with self.lock:
+            self.agents.pop(name, None)
+
     def agent(self, name, **kw):
         with self.lock:
             a = self.agents.get(name)
