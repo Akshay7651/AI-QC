@@ -233,24 +233,29 @@ def test_discard_media_shared_url_is_kept_until_last_row_done(tmp_path):
     r._track(s1, f)
     r._track(s2, f)
     r._release(s1)
+    r._flush_deletes()
     assert f.exists()
     r._release(s2)
+    r._flush_deletes()                           # deletes run on a background thread (never on the coordinator)
     assert not f.exists()
     ph = cache / "deadbeef.png"                  # photo + its analyser feature-cache sidecar (<name>.<size>.<mtime>.<ver>.pkl)
     ph.write_bytes(PNG)
-    side = cache / "deadbeef.png.123.456.m1.pkl"
+    st = ph.stat()                              # the sidecar name is computed exactly - no folder scan
+    side = cache / f"deadbeef.png.{st.st_size}.{int(st.st_mtime)}.{r._sidecar_version()}.pkl"
     side.write_bytes(b"x")
     keep = cache / "other.png.1.2.m1.pkl"
     keep.write_bytes(b"x")
     s4 = {}
     r._track(s4, ph)
     r._release(s4)
+    r._flush_deletes()
     assert not ph.exists() and not side.exists() and keep.exists()
     other = tmp_path / "elsewhere.jpg"          # a file outside the cache dirs is never deleted, even if tracked by mistake
     other.write_bytes(PNG)
     s3 = {}
     r._track(s3, other)
     r._release(s3)
+    r._flush_deletes()
     assert other.exists()
 
 

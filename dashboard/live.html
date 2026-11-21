@@ -118,6 +118,44 @@ h1 .grad{background:linear-gradient(90deg,var(--cyan),var(--violet) 45%,var(--pi
 .ag.error,.ag.dead{border-color:var(--red);background:rgba(255,77,109,.08)}.ag.error .sd,.ag.dead .sd{background:var(--red)}
 .ag.starting .sd{background:var(--amber)}
 
+/* per-role animated scenes */
+.agents{grid-template-columns:repeat(auto-fill,minmax(168px,1fr))}
+.ag{display:flex;gap:10px;align-items:center;min-height:84px}
+.ag .info{min-width:0;flex:1}
+.ag .doc{margin-top:4px}
+.art{flex:none;width:58px;height:58px;border-radius:12px;background:rgba(0,0,0,.28);border:1px solid var(--stroke);position:relative;overflow:hidden}
+.art svg{width:100%;height:100%;display:block}
+.art .zz{position:absolute;right:4px;top:2px;font-size:10px;font-weight:700;color:var(--mute);display:none}
+.ag.idle .art{filter:grayscale(1);opacity:.55}.ag.idle .art .zz{display:block;animation:zz 2.4s ease-in-out infinite}
+@keyframes zz{0%{transform:translate(0,4px);opacity:0}40%{opacity:1}100%{transform:translate(3px,-4px);opacity:0}}
+.ag:not(.busy) .art svg *{animation-play-state:paused!important}
+.art .sk{stroke:var(--c);fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.art .fl{fill:var(--c)}
+.art .soft{fill:color-mix(in srgb,var(--c) 22%,transparent)}
+/* downloader: cloud, arrow drops, packets fall into the tray, tray fills */
+.dl .art .arrow{animation:dlarrow 1s ease-in infinite}
+@keyframes dlarrow{0%{transform:translateY(-4px);opacity:0}25%{opacity:1}100%{transform:translateY(8px);opacity:0}}
+.dl .art .pk{animation:dlpk 1s ease-in infinite;opacity:0}
+.dl .art .pk.b{animation-delay:.33s}.dl .art .pk.c{animation-delay:.66s}
+@keyframes dlpk{0%{transform:translateY(0);opacity:0}20%{opacity:1}80%{opacity:1}100%{transform:translateY(20px);opacity:0}}
+.dl .art .fillbar{transform-origin:left;animation:dlfill 2.2s linear infinite}
+@keyframes dlfill{from{transform:scaleX(0)}to{transform:scaleX(1)}}
+/* reader: a scan line sweeps the form, lines light up, tick pops */
+.fr .art .scan{animation:frscan 1.6s ease-in-out infinite alternate}
+@keyframes frscan{from{transform:translateY(0)}to{transform:translateY(30px)}}
+.fr .art .ln{fill:rgba(255,255,255,.18);animation:frln 1.6s ease-in-out infinite alternate}
+.fr .art .ln:nth-of-type(2){animation-delay:.2s}.fr .art .ln:nth-of-type(3){animation-delay:.4s}.fr .art .ln:nth-of-type(4){animation-delay:.6s}.fr .art .ln:nth-of-type(5){animation-delay:.8s}
+@keyframes frln{0%,40%{fill:rgba(255,255,255,.18)}60%,100%{fill:var(--c)}}
+.fr .art .tick{animation:frtick 3.2s ease-out infinite;transform-origin:44px 44px}
+@keyframes frtick{0%,70%{transform:scale(0);opacity:0}80%{transform:scale(1.25);opacity:1}100%{transform:scale(1);opacity:1}}
+/* analyst: magnifier sweeps the photo, focus brackets blink, flash */
+.ph .art .mag{animation:phmag 2.6s ease-in-out infinite}
+@keyframes phmag{0%{transform:translate(0,0)}25%{transform:translate(-14px,-8px)}50%{transform:translate(-4px,-14px)}75%{transform:translate(-18px,0)}100%{transform:translate(0,0)}}
+.ph .art .brk{animation:phbrk 1.3s steps(2) infinite}
+@keyframes phbrk{50%{opacity:.15}}
+.ph .art .flash{fill:#fff;opacity:0;animation:phflash 2.6s ease-out infinite}
+@keyframes phflash{0%,88%{opacity:0}92%{opacity:.55}100%{opacity:0}}
+
 /* issues */
 .issues{display:flex;gap:8px;flex-wrap:wrap;padding:14px}
 .iss{font-size:12px;padding:6px 12px;border-radius:999px;background:rgba(255,255,255,.04);border:1px solid var(--stroke);color:var(--mute);display:inline-flex;gap:7px;align-items:center}
@@ -270,10 +308,25 @@ function spark(id,arr,col){var el=$(id);if(!el)return;if(arr.length<2){el.innerH
    '<polygon points="0,40 '+pts+' 100,40" fill="url(#g'+id+')"/><polyline points="'+pts+'" fill="none" stroke="'+col+'" stroke-width="1.6" vector-effect="non-scaling-stroke"/>'}
 function push(a,v){a.push(v);if(a.length>90)a.shift()}
 
+var ART={
+ dl:'<svg viewBox="0 0 58 58"><g class="soft"><circle cx="21" cy="17" r="7"/><circle cx="30" cy="13" r="9"/><circle cx="39" cy="18" r="6"/><rect x="14" y="17" width="31" height="8" rx="4"/></g>'+
+    '<g class="sk"><path d="M15 25h30"/></g><g class="arrow"><path class="sk" d="M29 22v12m-5-5 5 5 5-5"/></g>'+
+    '<rect class="fl pk" x="22" y="27" width="4" height="5" rx="1"/><rect class="fl pk b" x="31" y="27" width="4" height="5" rx="1"/><rect class="fl pk c" x="26.5" y="27" width="4" height="5" rx="1"/>'+
+    '<path class="sk" d="M12 41v7h34v-7"/><rect x="15" y="50" width="28" height="3" rx="1.5" fill="rgba(255,255,255,.1)"/><rect class="fl fillbar" x="15" y="50" width="28" height="3" rx="1.5"/></svg>',
+ fr:'<svg viewBox="0 0 58 58"><rect x="13" y="6" width="32" height="46" rx="4" class="soft"/><rect x="13" y="6" width="32" height="46" rx="4" class="sk"/>'+
+    '<rect class="ln" x="18" y="13" width="22" height="3" rx="1.5"/><rect class="ln" x="18" y="20" width="16" height="3" rx="1.5"/><rect class="ln" x="18" y="27" width="20" height="3" rx="1.5"/><rect class="ln" x="18" y="34" width="13" height="3" rx="1.5"/><rect class="ln" x="18" y="41" width="18" height="3" rx="1.5"/>'+
+    '<g class="scan"><rect x="9" y="10" width="40" height="2.5" rx="1.2" class="fl"/><rect x="9" y="6" width="40" height="6" fill="url(#scanfade)"/></g>'+
+    '<g class="tick"><circle cx="44" cy="44" r="7" class="fl"/><path d="M40.5 44l2.5 2.5 4.5-5" stroke="#0a0a12" stroke-width="2" fill="none" stroke-linecap="round"/></g>'+
+    '<defs><linearGradient id="scanfade" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#9b5cff" stop-opacity="0"/><stop offset="1" stop-color="#9b5cff" stop-opacity=".45"/></linearGradient></defs></svg>',
+ ph:'<svg viewBox="0 0 58 58"><rect x="5" y="11" width="40" height="32" rx="4" class="soft"/><rect x="5" y="11" width="40" height="32" rx="4" class="sk"/>'+
+    '<circle cx="15" cy="20" r="3.5" class="fl"/><path d="M7 41l11-13 7 8 6-6 12 11z" fill="rgba(255,255,255,.22)"/><path d="M14 41l8-9 5 6" stroke="#2bff9a" stroke-width="1.5" fill="none" opacity=".7"/>'+
+    '<g class="brk sk"><path d="M10 16v-3h3M40 16v-3h-3M10 38v3h3M40 38v3h-3"/></g>'+
+    '<g class="mag"><circle cx="40" cy="38" r="9" fill="rgba(255,255,255,.12)"/><circle cx="40" cy="38" r="9" class="sk" stroke-width="2.5"/><path d="M46.5 44.5l6 6" class="sk" stroke-width="3.5"/></g>'+
+    '<rect class="flash" x="5" y="11" width="40" height="32" rx="4"/></svg>'};
 var ROLES=[["dl","&#128229;","Downloaders",function(a){return /Download/i.test(a.role)}],
            ["fr","&#128214;","Form readers",function(a){return !/Download|Photo/i.test(a.role)}],
            ["ph","&#128248;","Photo analysts",function(a){return /Photo/i.test(a.role)}]];
-function doing(a){if(a.state==="busy")return /^form/.test(a.task||"")?"reading the form":/^photo/.test(a.task||"")?"checking photos":/fetch/.test(a.task||"")?"downloading":(a.task||"working");
+function doing(a){if(a.state==="busy")return /^form/.test(a.task||"")?"scanning the form":/^photo/.test(a.task||"")?"inspecting photos":/fetch/.test(a.task||"")?"pulling form + photos":(a.task||"working");
   return a.state==="starting"?"waking up":a.state==="idle"?"free":(a.task||a.state)}
 
 function render(d){
@@ -325,7 +378,7 @@ function render(d){
     $("squads").innerHTML=ROLES.map(function(r){var m=ag.filter(r[3]);if(!m.length)return "";
       return '<div class="glass squad '+r[0]+'"><div class="sh"><div class="ic">'+r[1]+'</div><div><div class="nm">'+r[2]+'</div><div class="ct" id="sq_'+r[0]+'"></div></div><div class="meter" id="sm_'+r[0]+'"></div></div><div class="agents">'+
         m.map(function(a,i){var n=((a.role||"").match(/#(\d+)/)||[0,i+1])[1];
-          return '<div class="ag idle" id="ag_'+esc(a.id)+'"><div class="top"><span class="sd"></span>#'+esc(n)+'</div><span class="st"></span><div class="doc"></div><div class="tk"></div><div class="bar"></div></div>'}).join("")+'</div></div>'}).join("")}
+          return '<div class="ag idle" id="ag_'+esc(a.id)+'"><div class="art">'+ART[r[0]]+'<span class="zz">z z</span></div><div class="info"><div class="top"><span class="sd"></span>#'+esc(n)+'</div><div class="doc"></div><div class="tk"></div></div><span class="st"></span><div class="bar"></div></div>'}).join("")+'</div></div>'}).join("")}
   ROLES.forEach(function(r){var m=ag.filter(r[3]);if(!m.length)return;
     var nb=m.filter(function(a){return a.state==="busy"}).length,done=0,secs=0;
     m.forEach(function(a){done+=a.rows_done||0;secs+=(a.avg_sec||0)*(a.rows_done||0);

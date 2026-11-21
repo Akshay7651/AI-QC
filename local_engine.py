@@ -253,6 +253,9 @@ class LocalRunner:
         self.on_row = on_row
         self.discard_media = bool(discard_media)
         self._refs = collections.Counter()   # downloaded cache file -> rows still using it (discard mode)
+        self._delq = None                    # background deleter (discard mode), started on first use
+        self._delthread = None
+        self._mv = None
         self.discarded = 0
         self.lock = threading.RLock()
         self.state: dict[int, dict] = {}
@@ -344,6 +347,7 @@ class LocalRunner:
                     left = list(self.state.values())
                 for st in left:
                     self._release(st)
+            self._flush_deletes()
 
     def stop(self):
         self.stop_evt.set()
@@ -371,8 +375,12 @@ class LocalRunner:
                     self._refs[p] += 1
 
     def _release(self, st):
-        """Delete this row's downloaded files once nothing else uses them. Only files inside the cache dirs are ever removed."""
-        roots = [Path(d).resolve() for d in self.cache.values()]
+        """Hand this row's downloaded files to the background deleter once nothing else uses them.
+
+        Deleting used to run right here, on the coordinator thread, and for every file it also globbed the whole photo cache
+        folder for the feature sidecar. With a big cache (tens of thousands of files from earlier runs) and antivirus on
+        Windows that cost ~2 s per docket, and during that time no agent got new work (queues grew while agents sat idle).
+        Now the sidecar name is computed exactly (no folder scan) and the deletes happen on their own thread."""
         with self.lock:
             paths = list(st.get("dl", ()))
             st["dl"] = set()
@@ -382,23 +390,68 @@ class LocalRunner:
                 if self._refs[p] <= 0:
                     del self._refs[p]
                     gone.append(p)
-        import glob
-        sidecar_dirs = {str(r) for r in roots} | {str(Path(__file__).resolve().parent / C.PHOTO_CACHE_DIR)}
+        if not gone:
+            return
+        if self._delq is None:
+            import queue
+            self._delq = queue.Queue()
+            self._delthread = threading.Thread(target=self._deleter, name="media-deleter", daemon=True)
+            self._delthread.start()
+        self._delq.put(gone)
+
+    def _deleter(self):
+        while True:
+            gone = self._delq.get()
+            try:
+                if gone is None:
+                    return
+                self._delete_files(gone)
+            finally:
+                self._delq.task_done()
+
+    def _flush_deletes(self):
+        """wait until queued deletes are done (end of run), never more than ~30 s"""
+        if self._delq is None:
+            return
+        t = time.time()
+        while self._delq.unfinished_tasks and time.time() - t < 30:
+            time.sleep(0.05)
+
+    def _delete_files(self, gone):
+        """Only files inside the cache dirs are ever removed (plus the photo analyser's sidecar for that exact file)."""
+        roots = [Path(d).resolve() for d in self.cache.values()]
+        side_dir = Path(__file__).resolve().parent / C.PHOTO_CACHE_DIR
+        mv = self._sidecar_version()
         for p in gone:
             try:
                 rp = Path(p).resolve()
-                if any(r in rp.parents for r in roots):
-                    rp.unlink()
-                    self.discarded += 1
-                    # the photo analyser keeps a feature cache `<photo name>.<size>.<mtime>.<ver>.pkl` (~45 KB each): drop it with the photo
-                    for d in sidecar_dirs:
-                        for side in glob.glob(os.path.join(glob.escape(d), glob.escape(rp.name) + ".*.pkl")):
-                            try:
-                                os.remove(side)
-                            except OSError:
-                                pass
+                if not any(r in rp.parents for r in roots):
+                    continue
+                try:
+                    stt = rp.stat()
+                    names = [f"{rp.name}.{stt.st_size}.{int(stt.st_mtime)}.{mv}.pkl"] if mv else []
+                except OSError:
+                    names = []
+                rp.unlink()
+                self.discarded += 1
+                # the photo analyser keeps a feature cache `<photo name>.<size>.<mtime>.<ver>.pkl` (~45 KB each): drop it too
+                for d in {side_dir, *roots}:
+                    for nm in names:
+                        try:
+                            os.remove(d / nm)
+                        except OSError:
+                            pass
             except OSError:
                 pass
+
+    def _sidecar_version(self):
+        if self._mv is None:
+            try:
+                import photo_local
+                self._mv = photo_local._models_version()
+            except Exception:
+                self._mv = ""
+        return self._mv
 
     # ------------------------------------------------------------------ workers
     def _roles(self):
