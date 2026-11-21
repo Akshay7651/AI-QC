@@ -164,6 +164,9 @@ body.scrolled .mini{opacity:1;transform:none;pointer-events:auto}
 @keyframes orbit{to{--a:360deg}}
 .ag.error,.ag.dead{border-color:rgba(251,113,133,.5);background:rgba(251,113,133,.06)}.ag.error .id i,.ag.dead .id i{background:var(--rose)}
 .ag.starting .id i{background:var(--ph)}
+.ag.help.fr{--c:var(--fr)}.ag.help.ph{--c:var(--ph)}
+.ag .hb{display:none;margin-left:auto;font-size:9px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;padding:1px 6px;border-radius:5px;color:var(--c);border:1px solid color-mix(in srgb,var(--c) 45%,transparent)}
+.ag.help .hb{display:inline-block}
 /* per-role scenes */
 .art .sk{stroke:var(--c);fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
 .art .fl{fill:var(--c)}
@@ -418,8 +421,10 @@ function render(d){
   var cnt=ROLES.map(function(r){return ag.filter(r[3]).length});
   var bz=ROLES.map(function(r){return ag.filter(function(a){return r[3](a)&&a.state==="busy"}).length});
   var busy=bz[0]+bz[1]+bz[2];
+  var tk=function(re){return ag.filter(function(a){return a.state==="busy"&&re.test(a.task||"")}).length};
+  var bt=[bz[0],tk(/^form/),tk(/^photo/)];
   $("busy").textContent=busy;$("busyof").textContent="of "+ag.length;
-  $("busyhint").innerHTML='<span style="color:var(--dl)">'+bz[0]+' downloading</span> · <span style="color:var(--fr)">'+bz[1]+' reading</span> · <span style="color:var(--ph)">'+bz[2]+' analysing</span>';
+  $("busyhint").innerHTML='<span style="color:var(--dl)">'+bt[0]+' downloading</span> · <span style="color:var(--fr)">'+bt[1]+' reading</span> · <span style="color:var(--ph)">'+bt[2]+' analysing</span>';
   $("agentline").innerHTML='<span class="rc dl"><i></i><b>'+cnt[0]+'</b> downloaders</span><span class="rc fr"><i></i><b>'+cnt[1]+'</b> readers</span><span class="rc ph"><i></i><b>'+cnt[2]+'</b> analysts</span>';
   var sig=ag.map(function(a){return a.id}).join(",");
   if(sig!==SQ_SIG){SQ_SIG=sig;
@@ -427,13 +432,16 @@ function render(d){
       return '<div class="card sq '+r[0]+'"><div class="sqh"><div class="ic">'+r[1]+'</div><div><div class="nm">'+r[2]+'</div><div class="ct" id="sq_'+r[0]+'"></div></div><div class="av"><b id="sm_'+r[0]+'">–</b><span>avg per job</span></div></div>'+
         '<div class="util"><i id="su_'+r[0]+'"></i></div><div class="agents">'+
         m.map(function(a,i){var n=((a.role||"").match(/#(\d+)/)||[0,i+1])[1];
-          return '<div class="ag idle" id="ag_'+esc(a.id)+'"><div class="art">'+ART[r[0]]+'</div><div class="inf"><div class="id"><i></i>'+({dl:"Downloader",fr:"Reader",ph:"Analyst"})[r[0]]+' '+esc(n)+'</div><div class="doc"></div><div class="tk"></div></div><span class="cnt num"></span></div>'}).join("")+'</div></div>'}).join("")}
+          return '<div class="ag idle" id="ag_'+esc(a.id)+'"><div class="art">'+ART[r[0]]+'</div><div class="inf"><div class="id"><i></i>'+({dl:"Downloader",fr:"Reader",ph:"Analyst"})[r[0]]+' '+esc(n)+'<span class="hb">helping</span></div><div class="doc"></div><div class="tk"></div></div><span class="cnt num"></span></div>'}).join("")+'</div></div>'}).join("")}
   ROLES.forEach(function(r,k){var m=ag.filter(r[3]);if(!m.length)return;var done=0,secs=0;
     m.forEach(function(a){done+=a.rows_done||0;secs+=(a.avg_sec||0)*(a.rows_done||0);
-      var el=$("ag_"+a.id);if(!el)return;var cls="ag "+(a.state||"idle");if(el.className!==cls)el.className=cls;
+      var el=$("ag_"+a.id);if(!el)return;
+      var sc=a.state==="busy"&&/^form/.test(a.task||"")?"fr":a.state==="busy"&&/^photo/.test(a.task||"")?"ph":r[0];
+      var cls="ag "+(a.state||"idle")+(sc!==r[0]?" help "+sc:"");if(el.className!==cls)el.className=cls;
+      if(el.getAttribute("data-sc")!==sc){el.setAttribute("data-sc",sc);el.querySelector(".art").innerHTML=ART[sc]}
       var dk=a.state==="busy"&&a.docket?"…"+String(a.docket).slice(-8):doing(a);
       var q=el.querySelector(".doc");if(q.textContent!==dk)q.textContent=dk;
-      var t=a.state==="busy"?doing(a):(a.rows_done?a.rows_done+" done · "+a.avg_sec+"s avg":"waiting for work");
+      var t=a.state==="busy"?(sc!==r[0]?(sc==="fr"?"helping readers":"helping analysts")+" · ":"")+doing(a):(a.rows_done?a.rows_done+" done · "+a.avg_sec+"s avg":"waiting for work");
       q=el.querySelector(".tk");if(q.textContent!==t)q.textContent=t;
       q=el.querySelector(".cnt");var s=a.rows_done?String(a.rows_done):"";if(q.textContent!==s)q.textContent=s;
       el.title=(a.role||"")+(a.errors?" · "+a.errors+" errors":"")});

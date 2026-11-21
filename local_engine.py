@@ -566,11 +566,12 @@ class LocalRunner:
             self._pipeline()
 
     def _dispatch(self):
-        # every worker only does its own role (readers read forms, photo analysts check photos), so each dashboard row shows
-        # only its own job; the other role's queue is only taken over when that role has no worker at all (e.g. --agents 1)
+        # every agent first takes work of its own role (readers read forms, photo analysts check photos). An agent whose own
+        # queue is empty then HELPS the other role: every agent process has both engines loaded, so an idle analyst reads a
+        # waiting form (and an idle reader checks waiting photos). This keeps all CPU cores busy without starting more
+        # processes - e.g. 3 readers + 2 analysts become 5 readers while forms pile up and no photos are waiting.
         self._dispatch_pass(False)
-        if {w.role for w in self.workers} != {"form", "photo"}:
-            self._dispatch_pass(True)
+        self._dispatch_pass(True)
 
     def _dispatch_pass(self, helping_pass):
         for w in self.workers:
