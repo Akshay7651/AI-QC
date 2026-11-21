@@ -427,7 +427,7 @@ function render(d){
       return '<div class="card sq '+r[0]+'"><div class="sqh"><div class="ic">'+r[1]+'</div><div><div class="nm">'+r[2]+'</div><div class="ct" id="sq_'+r[0]+'"></div></div><div class="av"><b id="sm_'+r[0]+'">–</b><span>avg per job</span></div></div>'+
         '<div class="util"><i id="su_'+r[0]+'"></i></div><div class="agents">'+
         m.map(function(a,i){var n=((a.role||"").match(/#(\d+)/)||[0,i+1])[1];
-          return '<div class="ag idle" id="ag_'+esc(a.id)+'"><div class="art">'+ART[r[0]]+'</div><div class="inf"><div class="id"><i></i>Agent '+esc(n)+'</div><div class="doc"></div><div class="tk"></div></div><span class="cnt num"></span></div>'}).join("")+'</div></div>'}).join("")}
+          return '<div class="ag idle" id="ag_'+esc(a.id)+'"><div class="art">'+ART[r[0]]+'</div><div class="inf"><div class="id"><i></i>'+({dl:"Downloader",fr:"Reader",ph:"Analyst"})[r[0]]+' '+esc(n)+'</div><div class="doc"></div><div class="tk"></div></div><span class="cnt num"></span></div>'}).join("")+'</div></div>'}).join("")}
   ROLES.forEach(function(r,k){var m=ag.filter(r[3]);if(!m.length)return;var done=0,secs=0;
     m.forEach(function(a){done+=a.rows_done||0;secs+=(a.avg_sec||0)*(a.rows_done||0);
       var el=$("ag_"+a.id);if(!el)return;var cls="ag "+(a.state||"idle");if(el.className!==cls)el.className=cls;
