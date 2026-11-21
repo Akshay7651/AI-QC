@@ -28,7 +28,7 @@ from pathlib import Path
 
 import config as C
 import remarks
-from common import Unavailable, fetch, num
+from common import Unavailable, fetch, image_media_type, num
 
 FORM_DIRS = {"form", "forms", "pdf", "pdfs", "signed", "signed_copy"}
 GUID = re.compile(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")
@@ -779,7 +779,13 @@ class LocalRunner:
             err = None
             for u in urls[:max(0, C.MAX_PHOTOS_PER_ROW - len(paths))] if not paths else []:
                 try:
-                    paths.append(await self._get(http, u, "photo", st))
+                    got = await self._get(http, u, "photo", st)
+                    with open(got, "rb") as fh:
+                        head = fh.read(16)
+                    if image_media_type(head):
+                        paths.append(got)
+                    else:       # the portal answers HTTP 200 with {"error":"Media not found."} for deleted photos
+                        err = "photo not found on portal"
                 except Unavailable as e:
                     err = str(e)
                 except Exception as e:
