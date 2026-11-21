@@ -334,8 +334,9 @@ QC_BLOCK_DETAIL = [
 QC_BLOCK = QC_BLOCK_MAIN + QC_BLOCK_DETAIL
 # detail columns QC reviewers asked to see in the output Excel; written after the main block (after "Done By") so the
 # main columns keep their fixed positions for anyone pasting into a template
-QC_BLOCK_EXTRA = ["Crop matches declared", "Flooding/waterlogging seen", "Crop damage state",
-                  "Farmer/person present in photos (remark)", "Farmer photo detail", "Same Location Remark"]
+QC_BLOCK_EXTRA = ["Crop matches declared", "Crop damage state", "Farmer photo detail", "Same Location Remark"]
+# main-block columns reviewers asked to keep out of the output Excel (still computed: the dashboard and checkpoints use them)
+QC_HIDDEN = {C.COL_AI_REMARK, C.COL_DONE_BY}
 # columns written by the AI get the green colour in the Excel; everything that came with the input stays blue
 report.AI_COLS = set(QC_BLOCK) | {"Data_QC_Flags", "Nearby_Same_Surveyor_25m", "Nearby_Any_Surveyor_25m", "Records_On_Same_Field", "Group_ID",
                                   "Cluster_Size", "Suggested_Remark", "Suggest_%", "Same_Location_Remark", "Risk_Score", "Risk_Reasons"}
@@ -615,14 +616,9 @@ def assemble_local(df, results, keys):
             put("Photo scene type", p.get("scene_type"))
             put("Crop present in photo", _yn_str(p.get("crop_present")))
             put("Crop seen in photo", p.get("crop_seen"))
-            declared = df.iloc[i].get("crop_name") if "crop_name" in df.columns else None
-            seen = p.get("crop_seen")
-            cm = p.get("crop_matches_declared")
-            if seen and seen != "unknown" and declared:
-                verdict = "Match" if cm else ("Mismatch" if cm is False else "Not sure")
-                put("Crop matches declared", f"{verdict}: app={declared} / photo={seen}")
-            else:
-                put("Crop matches declared", _yn(cm))
+            # reviewers want only whether a crop is there at all; paper-form photos are filled as NA by _fill_blanks
+            if not p.get("photo_is_form") and p.get("crop_present") is not None:
+                put("Crop matches declared", "Crop available" if _yn_str(p.get("crop_present")) == "Yes" else "No crop in photo")
             put("Flooding/waterlogging seen", "Not sure" if p.get("photo_conf") == "low" else _yn_str(p.get("flooded")))
             put("Crop damage state", p.get("damage_state"))
             put(C.COL_FARMER_PHOTO, _farmer_photo_yn(p))
@@ -652,7 +648,7 @@ def assemble_local(df, results, keys):
                           "Records_On_Same_Field", "Group_ID", "Cluster_Size", "Suggested_Remark",
                           "Suggest_%", "Same_Location_Remark", "Same_Location_Values", "Risk_Score", "Risk_Reasons"}
     input_cols = [c for c in input_cols if c not in _DROP_INTERMEDIATE]
-    return out[input_cols + QC_BLOCK_MAIN + QC_BLOCK_EXTRA]
+    return out[input_cols + [c for c in QC_BLOCK_MAIN if c not in QC_HIDDEN] + QC_BLOCK_EXTRA]
 
 
 class Autosaver:

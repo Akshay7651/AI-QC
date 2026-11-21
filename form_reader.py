@@ -612,22 +612,35 @@ def _hin_header_is_form(rgb):
         return False, ""
 
 
+def _remark_inner(box):
+    """The remark cell boxes from form_p3.cell_boxes reach 8% above/below the row (right for the digit cells), which
+    pulls the printed column header ("टिप्पणी (यदि कोई है)", insurer name) into the crop and gets it read as a
+    handwritten remark. Trim the top quarter and the sides (table rules) for the remark check."""
+    x0, y0, x1, y1 = box
+    w, h = x1 - x0, y1 - y0
+    return (int(x0 + 0.05 * w), int(y0 + 0.25 * h), int(x1 - 0.05 * w), int(y1 - 0.06 * h))
+
+
+_REMARK_MIN_CONF = 70
+
+
 def _ocr_remark(rgb, boxes):
-    """Best-effort Devanagari/English OCR of the handwritten remark cell(s). Returns cleaned text, or None when OCR
-    produces nothing usable - handwriting OCR is unreliable (unlike the printed form text elsewhere), so this is an
-    extra shown alongside the Yes/No ink detection, not a replacement for it."""
+    """Best-effort Devanagari/English OCR of the handwritten remark cell(s). Keeps only words Tesseract is confident
+    about with 3+ letters (drops table-rule debris like "|", ":" and guesses like "Cou?"); returns None when nothing
+    is left, so the caller shows "Yes" (written, not readable) instead of garbage."""
     try:
         import pytesseract
-        texts = []
+        words = []
         for b in boxes:
-            c = P.crop(rgb, b, pad=2)
+            c = P.crop(rgb, b)
             g = cv2.cvtColor(c, cv2.COLOR_RGB2GRAY) if c.ndim == 3 else c
             g = P._resize_w(g, max(g.shape[1], 400))
-            txt = pytesseract.image_to_string(g, lang="hin+eng", config="--psm 6").strip()
-            if txt:
-                texts.append(txt)
-        joined = re.sub(r"\s+", " ", " ".join(texts)).strip()
-        return joined if len(joined) >= 2 else None
+            d = pytesseract.image_to_data(g, lang="hin+eng", config="--psm 6", output_type=pytesseract.Output.DICT, timeout=15)
+            for t, cf in zip(d["text"], d["conf"]):
+                t = re.sub(r"[^A-Za-zऀ-ॿ]", "", t or "")
+                if len(t) >= 3 and float(cf) >= _REMARK_MIN_CONF:
+                    words.append(t)
+        return " ".join(words) or None
     except Exception:      # noqa: BLE001
         return None
 
@@ -873,10 +886,11 @@ def read_form(path_or_pil, docket=None, debug=False):
     # >=1.3, none <=0.1) only when the remarks column itself could not be located.
     remark_keys = [k for k in ("remark_r1", "remark_r2") if k in B]
     if remark_keys:
-        inked = [k for k in remark_keys if P.ink_frac(P.crop(r, B[k]), inset=0.05) >= CELL_BLANK_INK]
+        inner = {k: _remark_inner(B[k]) for k in remark_keys}
+        inked = [k for k in remark_keys if P.ink_frac(P.crop(r, inner[k]), inset=0.0) >= CELL_BLANK_INK]
         out["remarks_written"] = bool(inked)
         if inked:
-            out["remarks_text"] = _ocr_remark(r, [B[k] for k in inked])
+            out["remarks_text"] = _ocr_remark(r, [inner[k] for k in inked])
     else:
         rem = sum(float((feats.get(b) or {}).get("area_top", 0.0)) for b in ("company", "worker", "officer"))
         out["remarks_written"] = bool(rem >= 0.5)
@@ -886,11 +900,11 @@ def read_form(path_or_pil, docket=None, debug=False):
             out["overwrite_suspected"] = True
             notes.append(f"{k}: very heavy ink (possible over-writing / scribble)")
             break
-    # ---- is it really a Proforma-3? A strongly-matched ruled table is not enough on its own: other state forms
-    # (e.g. Odisha's "Crop Loss Joint Survey Form") also have multiple ruled tables and can satisfy n_cols/n_rowlines
-    # by geometry alone. Require either a genuine Proforma-3 form number or the Hindi header - a strong table match
-    # alone no longer bypasses this check (it used to, which let other forms' cells get misread as Proforma-3 ones).
-    if not fn:
+    # ---- is it really a Proforma-3? Accept on a form number, a strongly matched loss table (the Proforma-3 table has
+    # 8 columns and is detected with 7-9; Odisha's "Crop Loss Joint Survey Form" tables come out at 4-5), or the Hindi
+    # header. The generic "upper grid detected" signal is NOT enough: Odisha forms trigger it too.
+    strong = tab["n_cols"] >= 6 and tab["n_rowlines"] >= 11
+    if not fn and not strong:
         ok_h, _ = _hin_header_is_form(r)
         if not ok_h:
             out["is_proforma3"] = False

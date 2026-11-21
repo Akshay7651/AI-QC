@@ -308,7 +308,7 @@ def test_assemble_local_keeps_input_values_for_unprocessed_rows():
     res = {"A": {"verdict": "OK", "confidence": "High", "flags": [], "remark": "OK: fine", "match": "Match", "form_area": 5.0,
                  "form_loss": 5.0, "form": {"_state": "ok"}, "photo": {"_state": "skipped"}, "n_photos": 0, "ts": "t", "engine": "local"}}
     out = r.assemble_local(df, res, ["A", "B"])
-    assert out["Done By"].tolist() == ["AI-Auto", "Human"]
+    assert "Done By" not in out and "AI Remark" not in out        # reviewers asked for both to be left out of the Excel
     assert out["Any Other Remarks"][0] == "OK: fine | INPUT REMARK: human note" and out["Any Other Remarks"][1] == "kept"
     assert out["QC Verdict"].tolist()[0] == "OK" and pd.isna(out["QC Verdict"][1]) and out["AI_Flags"][1] == ""
     # an earlier AI remark is replaced, not stacked

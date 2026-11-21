@@ -687,9 +687,18 @@ def _field_outputs(Pf, row, n_form, n):
     out["photo_agree"] = bool(all(agrees)) if agrees else None
     low = (out["photo_agree"] is False) or dconf < 0.5 or out["crop_present_conf"] < 0.6
     out["photo_conf"] = "low" if (low or not have_bb) else "high"
-    # legacy four-label field_photo
-    out["field_photo"] = ("crop mismatch" if dstate == "weeds-uncultivated" else "no crop" if dstate in ("bare soil", "harvested") else
-                          "cut & spread" if dstate == "cut & spread" else "crop mismatch" if not crop_yes else "standing crop")
+    # four-label field_photo. "crop mismatch" means the crop seen is not the declared crop - not "weeds present" or "no
+    # crop": a cotton field with weeds was being called "crop mismatch" while the crop-type model said cotton = declared.
+    if dstate == "cut & spread":
+        out["field_photo"] = "cut & spread"
+    elif dstate in ("bare soil", "harvested"):
+        out["field_photo"] = "no crop"
+    elif out["crop_matches_declared"] is False:
+        out["field_photo"] = "crop mismatch"
+    elif crop_yes or out["crop_matches_declared"] is True:
+        out["field_photo"] = "standing crop"
+    else:
+        out["field_photo"] = "no crop"
     out["field_note"] = "; ".join(x for x in (("flooded" if out["flooded"] == "yes" else ""), dstate if dstate not in ("healthy", "") else "") if x)
     # Estimate photo loss from damage state (rough heuristic for QC column)
     _LOSS_EST = {"healthy": "0%", "partly damaged": "25-50%", "lodged": "50-75%",
