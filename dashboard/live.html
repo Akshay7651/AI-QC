@@ -11,7 +11,7 @@
   --bg:#07070d;--bg2:#0d0d18;--glass:rgba(255,255,255,.045);--glass2:rgba(255,255,255,.07);--stroke:rgba(255,255,255,.09);--stroke2:rgba(255,255,255,.16);
   --ink:#f2f1ff;--mute:#9a98b8;--dim:#5f5d7a;
   --lime:#c6ff3d;--cyan:#22e4ff;--pink:#ff3db4;--violet:#9b5cff;--amber:#ffb627;--red:#ff4d6d;--green:#2bff9a;
-  --dl:#22e4ff;--fr:#9b5cff;--ph:#ffb627;
+  --dl:#c6ff3d;--fr:#9b5cff;--ph:#ffb627;
   --ok:#2bff9a;--pok:#c6ff3d;--rev:#ffb627;--man:#ff4d6d;
   --sans:"Space Grotesk",ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
   --mono:"JetBrains Mono",ui-monospace,Consolas,monospace;
@@ -282,8 +282,8 @@ tbody tr:nth-child(even) td{background:rgba(155,92,255,.035)}
       <div class="vchips" id="verdicts"></div>
     </div>
     <div class="kpis">
-      <div class="glass kpi" style="--c:var(--lime)"><div class="lab">&#9889; Speed</div><div class="big"><span id="rpm">0</span><small>rows/min</small></div><svg class="spark" id="sp_rpm" viewBox="0 0 100 40" preserveAspectRatio="none"></svg></div>
-      <div class="glass kpi" style="--c:var(--cyan)"><div class="lab">&#128225; Internet</div><div class="big"><span id="mbit">0</span><small>Mbps</small></div><div class="hint" id="nethint">0 MB downloaded</div><svg class="spark" id="sp_net" viewBox="0 0 100 40" preserveAspectRatio="none"></svg></div>
+      <div class="glass kpi" style="--c:var(--green)"><div class="lab">&#9889; Speed</div><div class="big"><span id="rpm">0</span><small>rows/min</small></div><svg class="spark" id="sp_rpm" viewBox="0 0 100 40" preserveAspectRatio="none"></svg></div>
+      <div class="glass kpi" style="--c:var(--dl)"><div class="lab">&#128225; Internet</div><div class="big"><span id="mbit">0</span><small>Mbps</small></div><div class="hint" id="nethint">0 MB downloaded</div><svg class="spark" id="sp_net" viewBox="0 0 100 40" preserveAspectRatio="none"></svg></div>
       <div class="glass kpi" style="--c:var(--violet)"><div class="lab">&#9203; Time left</div><div class="big" id="eta">-</div><div class="hint">at the current speed</div></div>
       <div class="glass kpi" style="--c:var(--pink)"><div class="lab">&#128336; Elapsed</div><div class="big" id="elapsed">0s</div><div class="hint" id="started"></div></div>
       <div class="glass kpi" style="--c:#7aa2ff"><div class="lab">&#129302; Agents busy</div><div class="big"><span id="busy">0</span><small id="busyof">/ 0</small></div><div class="hint" id="busyhint"></div></div>
@@ -389,7 +389,7 @@ function render(d){
   $("mbit").textContent=(net.mbit_s||0).toFixed(net.mbit_s>=100?0:1);
   $("nethint").textContent=num(Math.round(net.mb_total||0))+" MB downloaded, avg "+(net.avg_mbit_s||0)+" Mbps";
   if(st==="Running"){push(H_RPM,d.rows_per_min||0);push(H_NET,net.mbit_s||0)}
-  spark("sp_rpm",H_RPM,"#c6ff3d");spark("sp_net",H_NET,"#22e4ff");
+  spark("sp_rpm",H_RPM,"#2bff9a");spark("sp_net",H_NET,"#c6ff3d");
 
   var v=d.verdicts||{},tot=0;VERD.forEach(function(x){tot+=(v[x[0]]||0)});
   $("split").innerHTML=VERD.map(function(x){return '<i title="'+x[1]+'" style="width:'+(tot?100*(v[x[0]]||0)/tot:0)+'%;background:'+x[2]+'"></i>'}).join("");
