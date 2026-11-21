@@ -318,6 +318,8 @@ def stamp_features(rgb_zone, p):
 
 
 SIG_LOW_MIN = {"farmer": 0.40, "company": 0.20, "worker": 0.30, "officer": 0.90}   # ink area (p^2 units) below the remark zone
+WORKER_INK_MIN = 0.20       # primary-worker signature fallback (see read_form): ink area (p^2) ...
+WORKER_INK_H = 0.40         # ... and vertical extent (pitches)
 STAMP_FRAC_MIN = 0.012
 STAMP_SPAN_MIN = 0.45
 
@@ -898,6 +900,14 @@ def read_form(path_or_pil, docket=None, debug=False):
         pv = _sig_pred(blk, feats)
         if pv is not None:
             out[blk + "_signed"] = pv
+    # Primary worker: the learned classifier was trained when workers almost never signed, and it misses clear signatures
+    # (9 of 17 signed worker boxes in a 52-form Haryana check by eye). A clear ink signature in the worker box also counts,
+    # except on blurry/dark photos where blur smears ink into the box. On those 52 forms signed boxes measured
+    # area_low >= 0.24 and ext_h >= 0.47, empty ones area_low <= 0.18 and ext_h <= 0.22.
+    wf = feats.get("worker") or {}
+    if (not out["worker_signed"] and out.get("quality") not in ("blurry", "dark")
+            and float(wf.get("area_low", 0.0)) >= WORKER_INK_MIN and float(wf.get("ext_h", 0.0)) >= WORKER_INK_H):
+        out["worker_signed"] = True
     # The block officer rarely signs (~1 in 246 labelled forms), but the user needs a Yes/No answer.
     # Use stamp OR ink as evidence of government involvement.
     out["officer_signed"] = bool(sg["officer"] or stamp)

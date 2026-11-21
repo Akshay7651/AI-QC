@@ -606,7 +606,7 @@ def assemble_local(df, results, keys):
             put(C.COL_FARMER_SIG, "N/A")
             put(C.COL_GOVT_SIG, "N/A")
             put(C.COL_FORM_STATUS, "N/A")
-            put(C.COL_FORM_REMARKS, f"Form {fst}")
+            put(C.COL_FORM_REMARKS, "N/A")         # same as the signature columns (was an internal code like "Form no_link")
         if pok:
             fp = "form image" if p.get("photo_is_form") else p.get("field_photo")
             if fp == "no crop":
