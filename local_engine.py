@@ -612,7 +612,7 @@ class LocalRunner:
                 "farmer_sig": yn(f.get("farmer_signed")) if ok3 else ("N/A" if f else ""),
                 "company_sig": yn(f.get("company_signed")) if ok3 else ("N/A" if f else ""),
                 "worker_sig": yn(f.get("worker_signed")) if ok3 else ("N/A" if f else ""),
-                "govt_sig": yn(f.get("officer_signed")) if ok3 else ("N/A" if f else ""),
+                "govt_sig": yn(None if f.get("worker_signed") is None and f.get("officer_signed") is None else bool(f.get("worker_signed") or f.get("officer_signed"))) if ok3 else ("N/A" if f else ""),
                 "photo_date": photo_date, "survey_remarks": remarks_cell,
                 "photo_is_form": "Yes" if p.get("scene_type") == "paper form" else "",
                 "person": "", "flags": "; ".join(ev.get("flags") or []), "remark": ev.get("remark")}

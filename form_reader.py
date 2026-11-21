@@ -654,6 +654,29 @@ def _empty(notes):
             "field_conf": {}, "notes": list(notes)}
 
 
+def _trim_white_margins(rgb, dark=200, min_frac=0.002, keep=0.85):
+    """Crop away a plain white page border (scanned/exported PDFs where the form sits small in the middle of a white
+    page). Without this the layout finder mis-places the signature boxes on such pages (HR...108198: boxes landed on
+    table rows 7-10). Photos have a non-white background, so they are left alone."""
+    try:
+        m = rgb.min(axis=2) < dark
+        rows = np.nonzero(m.mean(axis=1) > min_frac)[0]
+        cols = np.nonzero(m.mean(axis=0) > min_frac)[0]
+        if rows.size < 10 or cols.size < 10:
+            return rgb
+        y0, y1, x0, x1 = rows[0], rows[-1] + 1, cols[0], cols[-1] + 1
+        H, W = m.shape
+        if (y1 - y0) * (x1 - x0) >= keep * H * W:
+            return rgb
+        border = np.concatenate([rgb[:y0].reshape(-1, 3), rgb[y1:].reshape(-1, 3), rgb[:, :x0].reshape(-1, 3), rgb[:, x1:].reshape(-1, 3)])
+        if border.size == 0 or float(border.mean()) < 235:      # border is not plain white paper -> not a padded scan
+            return rgb
+        py, px = int(0.01 * H), int(0.01 * W)
+        return np.ascontiguousarray(rgb[max(0, y0 - py): min(H, y1 + py), max(0, x0 - px): min(W, x1 + px)])
+    except Exception:     # noqa: BLE001
+        return rgb
+
+
 def read_form(path_or_pil, docket=None, debug=False):
     """Read one photographed Proforma-3. See module docstring / docs/agent_brief.md for the returned keys."""
     t0 = time.time()
@@ -665,6 +688,7 @@ def read_form(path_or_pil, docket=None, debug=False):
         notes.append(f"image unreadable: {e}")
         out["quality"] = "unreadable"
         return out
+    rgb = _trim_white_margins(rgb)
     q = _quality(rgb)
     if q["mean"] < 60:
         out["quality"] = "dark"

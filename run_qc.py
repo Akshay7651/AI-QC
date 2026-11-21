@@ -358,6 +358,15 @@ def _nn(v):
     return None if v is None or (isinstance(v, float) and v != v) else v
 
 
+def _govt_signed(form):
+    """Government signature = the primary worker (agriculture dept field worker) OR the block agriculture officer
+    (Rajasthan: the AAO, read as officer_signed). None when neither box was assessed."""
+    v = [form.get(k) for k in ("worker_signed", "officer_signed")]
+    if all(x is None for x in v):
+        return None
+    return any(bool(x) for x in v)
+
+
 def _form_status(form, res):
     """correct / incomplete / overwrite (None when the form could not be read).
 
@@ -577,7 +586,7 @@ def assemble_local(df, results, keys):
             put(C.COL_SURVEYOR_SIG, _yn(f.get("company_signed")) if ok3 else "N/A")
             put(C.COL_FARMER_SIG, _yn(f.get("farmer_signed")) if ok3 else "N/A")
             put("Primary Worker Signature (Yes/No)", _yn(f.get("worker_signed")) if ok3 else "N/A")
-            put(C.COL_GOVT_SIG, _yn(f.get("officer_signed")) if ok3 else "N/A")
+            put(C.COL_GOVT_SIG, _yn(_govt_signed(f)) if ok3 else "N/A")
             put("Officer Stamp Only (Yes/No)", _yn(f.get("officer_stamp_only")) if ok3 else "N/A")
             put(C.COL_FORM_STATUS, _form_status(f, r) if ok3 else "N/A")
             put("Form Quality", f.get("quality"))
