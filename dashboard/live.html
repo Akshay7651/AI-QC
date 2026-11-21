@@ -467,10 +467,11 @@ function confetti(){var cv=$("confetti"),cx=cv.getContext("2d"),W,H,P=[],C=["#c6
 function celebrate(d){if(partied)return;partied=true;var v=d.verdicts||{};
   $("partysum").innerHTML='<b>'+num(d.done)+'</b> rows checked in <b>'+dur(d.elapsed_sec)+'</b><br>OK '+num(v["OK"])+' · Partially OK '+num(v["Partially OK"])+' · Review '+num(v["Review"])+' · Manual '+num(v["Manual QC Required"])+'<br><small style="color:var(--mute)">saved to '+esc((d.output||{}).path||"")+'</small>';
   $("party").style.display="flex";confetti();
-  if(!sawRunning){$("partycd").textContent="This run had already finished when the page was opened.";$("partykeep").textContent="Show the results";$("partykeep").onclick=function(){$("party").style.display="none"};return}
-  var n=12,keep=false;$("partykeep").onclick=function(){keep=true;$("party").style.display="none"};
-  (function cd(){if(keep)return;if(n<=0){window.close();setTimeout(function(){$("partycd").textContent="All done - you can close this tab now.";$("partykeep").textContent="Show the results"},400);return}
-    $("partycd").textContent="This page closes in "+n+" s";n--;setTimeout(cd,1000)})()}
+  // never close the tab by itself: the user closes it when they are done
+  $("partycd").textContent=sawRunning?"The results stay on this page - close the tab yourself when you are done.":"This run had already finished when the page was opened.";
+  $("partykeep").textContent="Show the results";
+  $("partykeep").onclick=function(){$("party").style.display="none"};
+}
 function tick(){var x=new XMLHttpRequest();x.open("GET",SRC+(SRC.indexOf("?")<0?"?":"&")+"t="+Date.now(),true);x.timeout=4000;
   x.onload=function(){if(x.status!==200){fails++;if(fails>2)setOffline("Cannot read "+SRC+" (HTTP "+x.status+").");setTimeout(tick,2000);return}
     try{var d=JSON.parse(x.responseText);fails=0;$("banner").style.display="none";render(d);
