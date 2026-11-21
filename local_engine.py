@@ -269,6 +269,58 @@ class LocalRunner:
         self._feed_task = None
         self._sem = None
         self._next_slot = 0.0
+        self.t_run0 = time.time()
+        self.tl: dict[int, dict] = {}       # per-row timeline (seconds since start) -> output/timeline.csv
+
+    # ------------------------------------------------------------------ timeline (where does each docket wait?)
+    def _tl(self, i, key, val=None):
+        try:
+            d = self.tl.setdefault(i, {})
+            d[key] = round(time.time() - self.t_run0, 2) if val is None else val
+        except Exception:
+            pass
+
+    TL_COLS = ["docket", "dl_start", "dl_end", "mb", "files", "q_form", "s_form", "e_form", "q_photo", "s_photo", "e_photo", "final"]
+
+    def _write_timeline(self):
+        """output/timeline.csv: one row per docket with when it was downloaded, queued, read, analysed and finished, plus a
+        console summary of the average time spent in each step (so a slow run shows where dockets wait)."""
+        if not self.prog or not self.tl:
+            return
+        try:
+            import csv
+            path = Path(getattr(self.prog, "path", "output/progress.json")).with_name("timeline.csv")
+            path.parent.mkdir(parents=True, exist_ok=True)
+            rows = [dict(self.tl[i], docket=self.rows[i].get("docket_id")) for i in sorted(self.tl)]
+            with open(path, "w", newline="", encoding="utf-8") as fh:
+                w = csv.DictWriter(fh, fieldnames=self.TL_COLS, extrasaction="ignore")
+                w.writeheader()
+                w.writerows(rows)
+
+            def avg(a, b):
+                v = [r[b] - r[a] for r in rows if isinstance(r.get(a), (int, float)) and isinstance(r.get(b), (int, float))]
+                return (sum(v) / len(v), len(v)) if v else (None, 0)
+            parts = [("download", "dl_start", "dl_end"), ("wait for reader", "q_form", "s_form"), ("reading", "s_form", "e_form"),
+                     ("wait for analyst", "q_photo", "s_photo"), ("analysing", "s_photo", "e_photo")]
+            txt = ", ".join(f"{n} {a:.1f}s" for n, x, y in parts for a, k in [avg(x, y)] if a is not None)
+            mb = sum(float(r.get("mb") or 0) for r in rows)
+            span = max((r.get("dl_end") or 0) for r in rows)
+            print(f"Timeline (avg per docket): {txt}. Downloaded {mb:.0f} MB, last download finished at {span:.0f}s -> {path}")
+        except Exception as e:     # diagnostics must never break a run
+            try:
+                self.prog.error(f"timeline not written: {type(e).__name__}: {e}")
+            except Exception:
+                pass
+
+    def _pipeline(self):
+        if not self.prog or not hasattr(self.prog, "pipeline"):
+            return
+        with self.lock:
+            busy = collections.Counter(w.task["kind"] for w in self.workers if w.state == "busy" and w.task)
+            dl = sum(1 for st in self.state.values() if not st.get("prepared"))
+            self.prog.pipeline({"downloading": dl, "wait_read": len(self.pending["form"]), "reading": busy.get("form", 0),
+                                "wait_photo": len(self.pending["photo"]), "analysing": busy.get("photo", 0),
+                                "in_flight": len(self.state), "done": self.finalized})
 
     # ------------------------------------------------------------------ public
     def run(self):
@@ -285,6 +337,8 @@ class LocalRunner:
         finally:
             self.stop_evt.set()
             self._shutdown(feeder)
+            self._pipeline()
+            self._write_timeline()
             if self.discard_media:  # rows that were in flight when we stopped: do not leave their downloads behind
                 with self.lock:
                     left = list(self.state.values())
@@ -456,6 +510,7 @@ class LocalRunner:
                 self._on_msg(w, msg)
             self._health()
             self._flush_if_no_workers()
+            self._pipeline()
 
     def _dispatch(self):
         # every worker only does its own role (readers read forms, photo analysts check photos), so each dashboard row shows
@@ -485,6 +540,7 @@ class LocalRunner:
                 self._on_death(w, "pipe closed")
                 continue
             w.state, w.task, w.t_dispatch = "busy", task, time.time()
+            self._tl(task["i"], "s_" + task["kind"])
             if self.prog:
                 helping = "" if task["kind"] == w.role else " (helping)"
                 self.prog.agent(w.name, state="busy", docket=str(task["docket"]), task=task["kind"] + helping)
@@ -502,6 +558,8 @@ class LocalRunner:
         elif kind == "done":
             _, tid, res, secs = msg
             task, w.task, w.state = w.task, None, "idle"
+            if task is not None:
+                self._tl(task["i"], "e_" + task["kind"])
             if self.prog:
                 ok = res.get("_state") != "error"
                 self.prog.agent(w.name, state="idle" if ok else "error", docket="", task="", finished_secs=secs)
@@ -563,6 +621,7 @@ class LocalRunner:
             if extra:
                 task.update(extra)
             self.pending[kind].append(task)
+        self._tl(i, "q_" + kind)
 
     def _part_done(self, task, res, secs):
         with self.lock:
@@ -623,6 +682,7 @@ class LocalRunner:
             if st.get("final"):
                 return
             st["final"] = True
+        self._tl(i, "final")
         row = self.rows[i]
         form = st["parts"].get("form") if "form" in self.kinds else {"_state": "skipped"}
         photos = st["parts"].get("photo") if "photo" in self.kinds else {"_state": "skipped"}
@@ -738,10 +798,20 @@ class LocalRunner:
     async def _get(self, http, url, kind, st=None):
         cache = self.cache[kind]
         p = Path(cache) / hashlib.sha1(url.encode()).hexdigest()
-        if not (p.exists() and p.stat().st_size):
+        cached = p.exists() and p.stat().st_size
+        if not cached:
             await self._gate()
         timeout = C.PDF_TIMEOUT_SEC if kind == "form" else C.PHOTO_TIMEOUT_SEC
         raw = await fetch(http, url, cache, timeout)
+        if not cached:
+            try:
+                nb = Path(raw).stat().st_size
+                if st is not None:
+                    st["bytes"] = st.get("bytes", 0) + nb
+                if self.prog and hasattr(self.prog, "net_add"):
+                    self.prog.net_add(nb)
+            except OSError:
+                pass
         got = _with_ext(raw)
         if st is not None:
             self._track(st, raw, got)
@@ -753,6 +823,7 @@ class LocalRunner:
         docket = str(row.get("docket_id")).strip()
         with self.lock:
             self.state[i] = st = {"need": 0, "parts": {}, "secs": 0.0, "prepared": False, "n_photos": 0}
+        self._tl(i, "dl_start")
         forms, photos = classify_local(self.local_map.get(docket, {}), docket, row.get("pdf_url"))
         tasks = []
         if "form" in self.kinds:
@@ -799,6 +870,9 @@ class LocalRunner:
                 st["parts"]["photo"] = {"_state": "no_link"}
         with self.lock:
             st["need"] = len(tasks)
+        self._tl(i, "dl_end")
+        self._tl(i, "mb", round(st.get("bytes", 0) / 1e6, 2))
+        self._tl(i, "files", sum(len(p) for _, p, _ in tasks))
         for kind, paths, extra in tasks:
             self._add_task(i, kind, paths, extra)
         self._prepared(i)

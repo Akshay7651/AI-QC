@@ -45,6 +45,9 @@ class Progress:
         self.samples = collections.deque([(self.t0, 0)], maxlen=400)
         self.last_saved, self.rows_saved, self.save_note = None, 0, ""
         self.cost = 0.0
+        self.net_bytes = 0
+        self.net_samples = collections.deque([(self.t0, 0)], maxlen=600)
+        self.pipe = {}
         self.html_path = html_path or str(Path(__file__).parent / "dashboard" / "live.html")
         self.write_interval = write_interval
         self._stop = threading.Event()
@@ -94,6 +97,27 @@ class Progress:
             if remark or verdict:
                 self.events.appendleft({"t": datetime.now().strftime("%H:%M:%S"), "docket": str(docket),
                                         "verdict": verdict or "", "remark": str(remark)[:600]})
+
+    def net_add(self, nbytes):
+        """bytes downloaded from the portal (only real network downloads, not cache hits)"""
+        with self.lock:
+            self.net_bytes += int(nbytes)
+            self.net_samples.append((time.time(), self.net_bytes))
+
+    def pipeline(self, d: dict):
+        with self.lock:
+            self.pipe = dict(d)
+
+    def _net(self):
+        now = self.stopped_at or time.time()
+        win = [s for s in self.net_samples if s[0] >= now - 5]
+        base = next((s for s in reversed(self.net_samples) if s[0] < now - 5), (self.t0, 0))
+        cur = (self.net_bytes - base[1]) / max(now - base[0], 1e-6) if win else 0.0
+        if self.status != "Running":
+            cur = 0.0
+        avg = self.net_bytes / max(now - self.t0, 1e-6)
+        return {"mb_total": round(self.net_bytes / 1e6, 1), "mb_s": round(cur / 1e6, 2), "mbit_s": round(cur * 8 / 1e6, 1),
+                "avg_mbit_s": round(avg * 8 / 1e6, 1)}
 
     def add_row(self, cells: dict):
         """One finished row for the live table (plain strings/numbers only)."""
@@ -164,6 +188,8 @@ class Progress:
                 "errors": list(self.errors),
                 "error_count": self.error_count,
                 "cost": self.cost,
+                "net": self._net(),
+                "pipeline": dict(self.pipe),
                 "output": {"path": self.output_path, "last_saved": self.last_saved, "rows_saved": self.rows_saved,
                            "note": self.save_note},
             }
