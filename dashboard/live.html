@@ -252,7 +252,7 @@ summary{color:#5b6573}
 </div>
 <div class="tabw" id="tabw"><table class="live"><thead><tr>
   <th>#</th><th>Time</th><th>Docket</th><th>Verdict</th><th>Remark (AI)</th><th>Form No</th><th>PO ID (form)</th><th>Area% form</th><th>Loss% form</th><th>Area% app</th><th>Loss% app</th><th>Match</th>
-  <th>Farmer sig</th><th>Company sig</th><th>Govt sig</th><th>Photo date</th><th>Survey remarks</th><th>Photo=form</th><th>Farmer</th><th>Surveyor</th></tr></thead>
+  <th>Farmer sig</th><th>Company sig</th><th>Govt sig</th><th>Photo date</th></tr></thead>
   <tbody id="tb"></tbody></table></div>
 <script>
 (function(){
@@ -344,7 +344,7 @@ function render(d){
 
 function tg(v,good,bad){v=String(v==null?"":v);if(!v)return "";var c=v===good?"g":v===bad?"r":"y";return '<span class="tag '+c+'">'+esc(v)+'</span>'}
 function vcls(v){return '<span class="badge '+esc(v||"").replace(/ /g,"-")+'">'+esc(v||"-")+'</span>'}
-function rowHtml(r,isNew){return '<tr'+(isNew?' class="new"':'')+'><td>'+r.seq+'</td><td>'+esc(r.t)+'</td><td><code>'+esc(r.docket)+'</code></td><td>'+vcls(r.verdict)+'</td><td class="rem">'+esc(r.remark)+'</td><td>'+esc(r.form_no)+'</td><td><code>'+esc(r.po_id||'')+'</code></td><td class="num">'+esc(r.area_form)+'</td><td class="num">'+esc(r.loss_form)+'</td><td class="num">'+esc(r.area_app)+'</td><td class="num">'+esc(r.loss_app)+'</td><td>'+tg(r.match,'Match','Mismatch')+'</td><td>'+tg(r.farmer_sig,'Yes','No')+'</td><td>'+tg(r.company_sig,'Yes','No')+'</td><td>'+tg(r.govt_sig,'Yes','No')+'</td><td>'+esc(r.photo_date||'')+'</td><td class="rem">'+esc(r.survey_remarks||'')+'</td><td>'+tg(r.photo_is_form,'','Yes')+'</td><td>'+esc(r.farmer)+'</td><td>'+esc(r.surveyor)+'</td></tr>'}
+function rowHtml(r,isNew){return '<tr'+(isNew?' class="new"':'')+'><td>'+r.seq+'</td><td>'+esc(r.t)+'</td><td><code>'+esc(r.docket)+'</code></td><td>'+vcls(r.verdict)+'</td><td class="rem">'+esc(r.remark)+'</td><td>'+esc(r.form_no)+'</td><td><code>'+esc(r.po_id||'')+'</code></td><td class="num">'+esc(r.area_form)+'</td><td class="num">'+esc(r.loss_form)+'</td><td class="num">'+esc(r.area_app)+'</td><td class="num">'+esc(r.loss_app)+'</td><td>'+tg(r.match,'Match','Mismatch')+'</td><td>'+tg(r.farmer_sig,'Yes','No')+'</td><td>'+tg(r.company_sig,'Yes','No')+'</td><td>'+tg(r.govt_sig,'Yes','No')+'</td><td>'+esc(r.photo_date||'')+'</td></tr>'}
 function passes(r){var fv=$("fv").value,q=($("fq").value||"").toLowerCase();return (!fv||r.verdict===fv)&&(!q||(r.docket+" "+r.farmer+" "+r.remark+" "+r.flags).toLowerCase().indexOf(q)>=0)}
 function drawRows(newOnes){
   var tb=$("tb");
