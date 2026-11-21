@@ -284,13 +284,10 @@ def _field_photo_yn(p):
 
 
 def _farmer_photo_yn(p):
-    """Yes only when a person (farmer) is detected, otherwise No. Uses the trained classifier
-    (photo_models/photo_clf_v2.pkl: 84.4% vs human QC labels, held-out) when it ran; falls back to the
-    face-detector rule (75.6%) when it didn't (model file missing, or no usable field photos)."""
-    v2 = p.get("farmer_present_v2")
-    if v2 is not None:
-        return "Yes" if v2 else "No"
-    person = any(p.get("person_each") or []) or p.get("scene_type") == "person-only"
+    """Yes when ANY signal finds a person in ANY photo: the trained classifier (photo_models/photo_clf_v2.pkl),
+    the face detector, or a person-only scene. Deliberately lenient - QC wants even a partly visible person
+    marked as farmer on field - so a person one signal misses but another catches still counts."""
+    person = bool(p.get("farmer_present_v2")) or any(p.get("person_each") or []) or p.get("scene_type") == "person-only"
     return "Yes" if person else "No"
 
 
@@ -335,6 +332,10 @@ QC_BLOCK_DETAIL = [
     "Farmer/person present in photos (remark)", "Farmer photo detail", "AI_Flags", "Same Location Remark", "AI Technical Detail", "AI Engine",
 ]
 QC_BLOCK = QC_BLOCK_MAIN + QC_BLOCK_DETAIL
+# detail columns QC reviewers asked to see in the output Excel; written after the main block (after "Done By") so the
+# main columns keep their fixed positions for anyone pasting into a template
+QC_BLOCK_EXTRA = ["Crop matches declared", "Flooding/waterlogging seen", "Crop damage state",
+                  "Farmer/person present in photos (remark)", "Farmer photo detail", "Same Location Remark"]
 # columns written by the AI get the green colour in the Excel; everything that came with the input stays blue
 report.AI_COLS = set(QC_BLOCK) | {"Data_QC_Flags", "Nearby_Same_Surveyor_25m", "Nearby_Any_Surveyor_25m", "Records_On_Same_Field", "Group_ID",
                                   "Cluster_Size", "Suggested_Remark", "Suggest_%", "Same_Location_Remark", "Risk_Score", "Risk_Reasons"}
@@ -343,6 +344,13 @@ _AI_PREFIX = ("OK", "PARTIALLY OK", "REVIEW", "MANUAL QC REQUIRED", "FORM:", "PH
 
 def _yn(v):
     return None if v is None else ("Yes" if v else "No")
+
+
+def _yn_str(v):
+    """For photo_local fields stored as the strings "yes"/"no" - _yn() would read the non-empty string "no" as truthy."""
+    if v is None:
+        return None
+    return "Yes" if str(v).strip().lower() in ("yes", "true", "1") else "No"
 
 
 def _nn(v):
@@ -379,16 +387,15 @@ def _person_state(p):
 
 
 def person_remark(p):
-    """Short, filterable answer: 'Farmer available' / 'Farmer not available' / 'Not checked (photos are the paper form)'.
-    A person counts when at least 25% of a body is visible in ANY field photo of the docket (face-detector based: people facing the camera
-    are found about 6 of 7 times; distant people or people seen from behind can be missed)."""
+    """Short, filterable answer: 'Farmer on field' / 'Farmer not on field' / 'Not checked (photos are the paper form)'.
+    Same lenient rule as the Farmer Photo (Yes/No) column (_farmer_photo_yn) so the two never disagree."""
     st = _person_state(p)
     if st is None:
         return None
     each, field, seen = st
     if not field:
         return "Not checked (photos are the paper form)"
-    return "Farmer available" if seen else "Farmer not available"
+    return "Farmer on field" if _farmer_photo_yn(p) == "Yes" else "Farmer not on field"
 
 
 def person_detail(p):
@@ -400,12 +407,27 @@ def person_detail(p):
         return "All photos are pictures of the paper form, so no field photo to look at."
     if seen:
         return f"A person is visible in photo {', '.join(map(str, seen))} of {len(each)} (not verified who it is)."
-    return f"No person with at least 25% of the body visible in the {len(field)} field photo(s) of {len(each)}."
+    if _farmer_photo_yn(p) == "Yes":
+        return f"A person was detected in the {len(field)} field photo(s) of {len(each)} by the photo classifier (no single photo pinpointed)."
+    return f"No person found in the {len(field)} field photo(s) of {len(each)}."
 
 
 def _date_txt(v):
     d = remarks._parse_date(v)
     return d.strftime("%d-%m-%Y") if d else (None if v in (None, "") else str(v))
+
+
+def _date_txt_with_source(p):
+    """Date of survey, plus which uploaded photo(s) it was read from - so a reviewer can jump straight to the
+    photo that actually carries the stamp, instead of checking all of them."""
+    txt = _date_txt(p.get("stamp_date") or p.get("photo_date"))
+    if not txt:
+        return txt
+    src = p.get("stamp_date_sources") or []
+    if not src:
+        return txt
+    label = f"Photo {src[0]}" if len(src) == 1 else "Photos " + ", ".join(str(s) for s in src)
+    return f"{txt} ({label})"
 
 
 _VALUE_COLS = ("Form No", "PO ID (Form)", C.COL_FORM_AREA, C.COL_FORM_LOSS, "Form Row Area %", "Form Row Loss %", "Loss date (Form)")
@@ -589,9 +611,11 @@ def assemble_local(df, results, keys):
             put(C.COL_FORM_REMARKS, f"Form {fst}")
         if pok:
             fp = "form image" if p.get("photo_is_form") else p.get("field_photo")
+            if fp == "no crop":
+                fp = "no crop (but field photo)"      # distinguish from "form image": this IS a field photo, just no crop visible in it
             put(C.COL_FIELD_PHOTO, fp)
             put("Field photo type", _field_photo_yn(p))
-            put(C.COL_PHOTO_DATE, _date_txt(p.get("stamp_date") or p.get("photo_date")))
+            put(C.COL_PHOTO_DATE, _date_txt_with_source(p))
             put("Photo is form image (Yes/No)", _yn(bool(p.get("photo_is_form"))))
             put("Form-image photos (n)", p.get("n_form_photos"))
             put("Duplicate photos (n)", p.get("n_duplicates"))
@@ -601,10 +625,17 @@ def assemble_local(df, results, keys):
                 put("Photo GPS distance (m)", None if d is None else round(float(d), 1))
             put("Photos analysed (n)", r.get("n_photos"))
             put("Photo scene type", p.get("scene_type"))
-            put("Crop present in photo", _yn(p.get("crop_present")))
+            put("Crop present in photo", _yn_str(p.get("crop_present")))
             put("Crop seen in photo", p.get("crop_seen"))
-            put("Crop matches declared", _yn(p.get("crop_matches_declared")))
-            put("Flooding/waterlogging seen", _yn(p.get("flooded")))
+            declared = df.iloc[i].get("crop_name") if "crop_name" in df.columns else None
+            seen = p.get("crop_seen")
+            cm = p.get("crop_matches_declared")
+            if seen and seen != "unknown" and declared:
+                verdict = "Match" if cm else ("Mismatch" if cm is False else "Not sure")
+                put("Crop matches declared", f"{verdict}: app={declared} / photo={seen}")
+            else:
+                put("Crop matches declared", _yn(cm))
+            put("Flooding/waterlogging seen", "Not sure" if p.get("photo_conf") == "low" else _yn_str(p.get("flooded")))
             put("Crop damage state", p.get("damage_state"))
             put(C.COL_FARMER_PHOTO, _farmer_photo_yn(p))
             put("Farmer/person present in photos (remark)", person_remark(p))
@@ -627,13 +658,13 @@ def assemble_local(df, results, keys):
         elif c == "AI_Flags":
             new = new.where(has, "")
         out[c] = new
-    # Input columns + main QC columns only; detail columns stored for the detail sheet
+    # Input columns + main QC columns + the reviewer-requested extras; other detail columns are not written
     input_cols = [c for c in out.columns if c not in QC_BLOCK]
     _DROP_INTERMEDIATE = {"Data_QC_Flags", "Nearby_Same_Surveyor_25m", "Nearby_Any_Surveyor_25m",
                           "Records_On_Same_Field", "Group_ID", "Cluster_Size", "Suggested_Remark",
                           "Suggest_%", "Same_Location_Remark", "Same_Location_Values", "Risk_Score", "Risk_Reasons"}
     input_cols = [c for c in input_cols if c not in _DROP_INTERMEDIATE]
-    return out[input_cols + QC_BLOCK_MAIN]
+    return out[input_cols + QC_BLOCK_MAIN + QC_BLOCK_EXTRA]
 
 
 class Autosaver:

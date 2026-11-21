@@ -505,6 +505,7 @@ def analyse(paths, row: dict, form_image=None) -> dict:
     # ---- 4. dates -------------------------------------------------------------------------------
     dates = [x for x in photo_dates if x]
     photo_date = max(set(dates), key=dates.count) if dates else None
+    photo_date_sources = [i + 1 for i, d in enumerate(photo_dates) if d == photo_date] if photo_date else []
     loss_d, intim_d = _row_date(row, "survey_start_date"), _row_date(row, "survey_end_date")
     lag_intim = lag_loss = None
     date_bad = False
@@ -581,7 +582,7 @@ def analyse(paths, row: dict, form_image=None) -> dict:
         "n_duplicates": n_dup, "duplicate_of": [None if x is None else x + 1 for x in dup_of],
         "stamp_lat": stamp_lat, "stamp_lng": stamp_lng, "stamp_dist_m": stamp_dist,
         "stamp_dist_each_m": dists, "stamp_unconfirmed": unconf,
-        "stamp_date": photo_date, "stamp_read": [bool(s.get("stamp_ok")) for s in stamps],
+        "stamp_date": photo_date, "stamp_date_sources": photo_date_sources, "stamp_read": [bool(s.get("stamp_ok")) for s in stamps],
         "photo_lag_days_after_intimation": lag_intim, "photo_days_after_loss": lag_loss,
         "rotated": bool(rot_ids), "remarks": remarks,
     }
