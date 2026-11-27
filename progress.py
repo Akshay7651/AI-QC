@@ -48,6 +48,7 @@ class Progress:
         self.net_bytes = 0
         self.net_samples = collections.deque([(self.t0, 0)], maxlen=600)
         self.pipe = {}
+        self.cpu = None
         self.html_path = html_path or str(Path(__file__).parent / "dashboard" / "live.html")
         self.write_interval = write_interval
         self._stop = threading.Event()
@@ -70,6 +71,10 @@ class Progress:
         with self.lock:
             self.agents[name] = {"id": name, "role": role, "state": "idle", "docket": "", "rows_done": 0,
                                  "avg_sec": 0.0, "errors": 0, "task": "", "_secs": 0.0}
+
+    def set_cpu(self, pct):
+        with self.lock:
+            self.cpu = round(float(pct))
 
     def remove_agent(self, name):
         with self.lock:
@@ -194,6 +199,7 @@ class Progress:
                 "cost": self.cost,
                 "net": self._net(),
                 "pipeline": dict(self.pipe),
+                "cpu": self.cpu,
                 "output": {"path": self.output_path, "last_saved": self.last_saved, "rows_saved": self.rows_saved,
                            "note": self.save_note},
             }

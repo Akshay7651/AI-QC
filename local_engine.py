@@ -244,6 +244,24 @@ def _free_ram_mb():
     return 1e9
 
 
+def _cpu_times():
+    """(idle, total) CPU time counters for the whole machine (Windows / Linux), or None"""
+    try:
+        if os.name == "nt":
+            import ctypes
+            from ctypes import wintypes
+            idle, kern, user = wintypes.FILETIME(), wintypes.FILETIME(), wintypes.FILETIME()
+            if not ctypes.windll.kernel32.GetSystemTimes(ctypes.byref(idle), ctypes.byref(kern), ctypes.byref(user)):
+                return None
+            v = lambda f: (f.dwHighDateTime << 32) | f.dwLowDateTime
+            return v(idle), v(kern) + v(user)              # kernel time includes idle time on Windows
+        with open("/proc/stat") as fh:
+            p = [int(x) for x in fh.readline().split()[1:]]
+        return p[3] + (p[4] if len(p) > 4 else 0), sum(p)
+    except Exception:
+        return None
+
+
 class _Worker:
     def __init__(self, name, role, label):
         self.name, self.role, self.label = name, role, label
@@ -284,9 +302,17 @@ class LocalRunner:
         # autoscaler: add reader/analyst agents while work piles up and every agent is busy, remove the extras when idle;
         # pause most downloaders while plenty of downloaded work is already waiting. Off for inline (test/debug) runs.
         self.autoscale = bool(autoscale) and not inline
-        self.max_workers = max(self.n_agents, int(max_agents) if max_agents else max(2, (os.cpu_count() or 4) - 2))
+        # CPU agents: normally up to logical CPUs - 2; while the measured CPU load stays below 80 % the balancer may go further,
+        # up to the whole declared team (downloaders + readers + analysts). --max-agents is a hard limit instead.
+        self.hard_cap = int(max_agents) if max_agents else None
+        self.max_workers = max(self.n_agents, self.hard_cap or max(2, (os.cpu_count() or 4) - 2))
+        self.cpu = None               # measured machine CPU load in % (None until the first sample)
+        self._cpu_prev = None
+        self._cpu_t = 0.0
+        self._grow_t = 0.0
         self._last_scale = 0.0
         self._dl_paused = set()
+        self._avg = {"form": 4.0, "photo": 1.5}     # running average seconds per job, used to balance roles by work
         self._delthread = None
         self._mv = None
         self.discarded = 0
@@ -613,40 +639,82 @@ class LocalRunner:
         return [w for w in self.workers if w.state in ("starting", "idle", "busy")]
 
     def _autoscale(self):
+        """Runs every 0.5 s. Splits the agents between reading and analysing in proportion to the waiting WORK
+        (queue length x average job time) and acts at once: idle agents switch immediately, busy ones from their next job;
+        paused downloaders' slots are filled with new agents all together (RAM permitting)."""
         if not self.autoscale:
             return
         now = time.time()
-        if now - self._last_scale < 2.0:
+        if now - self._last_scale < 0.5:
             return
         self._last_scale = now
         with self.lock:
             wf, wp = len(self.pending["form"]), len(self.pending["photo"])
         live = self._live()
-        target = min(self.max_workers, self.n_agents + len(self._dl_paused))
-        # grow: a paused downloader's slot becomes an agent (one at a time, after the previous one has started)
-        if (len(live) < target and wf + wp > 0 and not any(w.state == "starting" for w in live)
-                and _free_ram_mb() >= self.AUTO_RAM_MB):
-            kinds = [k for k in ("form", "photo") if k in self.kinds] or ["form"]
-            self._add_worker(max(kinds, key=lambda k: wf if k == "form" else wp))
-            return
-        # shrink: downloaders are back, so give the extra slots back (only agents that have been idle a while)
-        if len(live) > target:
+        both = {"form", "photo"} <= self.kinds
+        work = {"form": wf * self._avg["form"], "photo": wp * self._avg["photo"]}
+        if now - self._cpu_t >= 1.5:          # measure the machine CPU load
+            self._cpu_t = now
+            ct = _cpu_times()
+            if ct and self._cpu_prev:
+                di, dt = ct[0] - self._cpu_prev[0], ct[1] - self._cpu_prev[1]
+                if dt > 0:
+                    self.cpu = max(0.0, min(100.0, 100.0 * (1 - di / dt)))
+                    if self.prog and hasattr(self.prog, "set_cpu"):
+                        self.prog.set_cpu(self.cpu)
+            self._cpu_prev = ct
+        want = self.n_agents + len(self._dl_paused)               # the declared team, slots moved from paused downloaders
+        target = min(self.max_workers, want)
+        # beyond logical CPUs - 2 only while the CPU really has room (< 80 %), one agent per 3 s so the load can be re-measured
+        cpu_room = self.hard_cap is None and self.cpu is not None and self.cpu < 80 and now - self._grow_t >= 3.0
+        if cpu_room and want > target:
+            target = min(want, len(live) + 1)
+
+        # 1) grow: fill the paused downloaders' slots now (each agent ~350 MB; keep AUTO_RAM_MB free)
+        n_add = 0
+        if len(live) < target and wf + wp > 0:
+            spare = (_free_ram_mb() - self.AUTO_RAM_MB) // 350
+            n_add = int(max(0, min(target - len(live), spare)))
+            if n_add and len(live) + n_add > self.max_workers:
+                self._grow_t = now
+        total = len(live) + n_add
+
+        # 2) the split the waiting work asks for (at least one of each role)
+        cur_f = sum(1 for w in live if w.role == "form")
+        if both and wf + wp > 0 and total >= 2:
+            share = work["form"] / max(work["form"] + work["photo"], 1e-9)
+            want_f = min(total - 1, max(1, round(total * share)))
+        else:
+            want_f = cur_f + (n_add if "form" in self.kinds and not both else 0) if not both else cur_f
+        for _ in range(n_add):
+            role = ("form" if cur_f < want_f else "photo") if both else next(iter(self.kinds & {"form", "photo"}), "form")
+            self._add_worker(role)
+            cur_f += role == "form"
+        if n_add:
+            live = self._live()
+
+        # 3) switch existing agents towards that split, all at once, when the imbalance is real
+        #    (busiest role has > 1.5x the waiting work per agent of the other and at least 8 s more)
+        if both and want_f != cur_f:
+            nf = max(cur_f, 1)
+            npo = max(len(live) - cur_f, 1)
+            per_f, per_p = work["form"] / nf, work["photo"] / npo
+            hi, lo = max(per_f, per_p), min(per_f, per_p)
+            if hi > 1.5 * lo and hi - lo >= 8:
+                to, frm = ("form", "photo") if want_f > cur_f else ("photo", "form")
+                donors = [w for w in live if w.role == frm and w.state != "starting"]
+                # idle first, then agents already helping the busy role, then busy ones (they switch after this job)
+                donors.sort(key=lambda d: (d.state != "idle", not (d.task and d.task["kind"] == to)))
+                for w in donors[:abs(want_f - cur_f)]:
+                    self._set_role(w, to)
+
+        # 4) shrink: downloaders are back (or the CPU is overloaded), so give extra slots back (only agents idle for a while)
+        overloaded = self.cpu is not None and self.cpu > 92 and len(live) > self.max_workers
+        if len(live) > target or overloaded:
             for w in live:
                 if w.extra and w.state == "idle" and now - w.t_idle > self.AUTO_IDLE_SEC:
                     self._retire(w)
-                    return
-        # move readers <-> analysts when one queue is full and the other is empty
-        if {"form", "photo"} <= self.kinds:
-            for full, empty, need in (("form", "photo", wf), ("photo", "form", wp)):
-                other = wp if full == "form" else wf
-                if need >= 3 and other == 0:
-                    donors = [w for w in live if w.role == empty and w.state != "starting"]
-                    if len(donors) > 1:          # keep at least one of each role
-                        w = next((d for d in donors if d.state == "idle"), None) or \
-                            next((d for d in donors if d.state == "busy" and d.task and d.task["kind"] == full), None)
-                        if w is not None:
-                            self._set_role(w, full)
-                            return
+                    break
 
     def _next_label(self, role):
         nums = [int((re.search(r"#(\d+)", w.label) or [0, 0])[1]) for w in self.workers
@@ -809,6 +877,10 @@ class LocalRunner:
         self._tl(i, "q_" + kind)
 
     def _part_done(self, task, res, secs):
+        if secs and secs > 0:
+            k = task.get("kind")
+            if k in self._avg:
+                self._avg[k] = 0.8 * self._avg[k] + 0.2 * float(secs)
         with self.lock:
             st = self.state[task["i"]]
             st["parts"][task["kind"]] = res

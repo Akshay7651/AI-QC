@@ -168,7 +168,7 @@ body.scrolled .mini{opacity:1;transform:none;pointer-events:auto}
 .ag .hb{display:none;margin-left:auto;font-size:9px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;padding:1px 6px;border-radius:5px;color:var(--c);border:1px solid color-mix(in srgb,var(--c) 45%,transparent)}
 .ag.help .hb{display:inline-block}
 .ag .abg{display:none;font-size:9px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;padding:1px 6px;border-radius:5px;color:#0b0b11;background:var(--c);margin-left:4px}
-.ag.auto .abg{display:inline-block}
+.ag.auto .abg{display:inline-block}.ag.help .abg{display:none}
 .ag.paused{opacity:.35}.ag.paused .doc{color:var(--mute)}
 /* per-role scenes */
 .art .sk{stroke:var(--c);fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
@@ -429,7 +429,8 @@ function render(d){
   var bt=[bz[0],tk(/^form/),tk(/^photo/)];
   $("busy").textContent=busy;$("busyof").textContent="of "+ag.length;
   $("busyhint").innerHTML='<span style="color:var(--dl)">'+bt[0]+' downloading</span> · <span style="color:var(--fr)">'+bt[1]+' reading</span> · <span style="color:var(--ph)">'+bt[2]+' analysing</span>';
-  $("agentline").innerHTML='<span class="rc dl"><i></i><b>'+cnt[0]+'</b> downloaders</span><span class="rc fr"><i></i><b>'+cnt[1]+'</b> readers</span><span class="rc ph"><i></i><b>'+cnt[2]+'</b> analysts</span>';
+  var cpu=d.cpu==null?"":'<span class="rc" style="--c:'+(d.cpu>=90?"var(--rose)":d.cpu>=80?"var(--ph)":"var(--sky)")+'"><i></i>CPU <b>'+d.cpu+'%</b></span>';
+  $("agentline").innerHTML='<span class="rc dl"><i></i><b>'+cnt[0]+'</b> downloaders</span><span class="rc fr"><i></i><b>'+cnt[1]+'</b> readers</span><span class="rc ph"><i></i><b>'+cnt[2]+'</b> analysts</span>'+cpu;
   var sig=ag.map(function(a){return a.id+":"+a.role}).join(",");
   if(sig!==SQ_SIG){SQ_SIG=sig;
     $("squads").innerHTML=ROLES.map(function(r){var m=ag.filter(r[3]);if(!m.length)return "";
